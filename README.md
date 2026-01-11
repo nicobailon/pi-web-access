@@ -92,6 +92,28 @@ get_search_content({ responseId: "abc123", url: "https://..." })
 get_search_content({ responseId: "abc123", query: "original query" })
 ```
 
+## Shortcuts
+
+### Ctrl+Shift+O
+
+Toggle the activity monitor widget showing live request/response activity:
+
+```
+─── Web Search Activity ────────────────────────────────────
+  API  "typescript best practices"     200    2.1s ✓
+  GET  docs.example.com/article        200    0.8s ✓
+  GET  blog.example.com/post           404    0.3s ✗
+  GET  news.example.com/latest         ...    1.2s ⋯
+────────────────────────────────────────────────────────────
+Rate: 3/10 (resets in 42s)
+```
+
+Status indicators:
+- `✓` Success (2xx)
+- `✗` Error (4xx/5xx or network error)
+- `⋯` Pending
+- `○` Aborted
+
 ## Commands
 
 ### /search
@@ -187,10 +209,11 @@ Content extraction uses:
 
 | File | Purpose |
 |------|---------|
-| `index.ts` | Extension entry, tool definitions, commands |
+| `index.ts` | Extension entry, tool definitions, commands, widget |
 | `perplexity.ts` | Perplexity API client, rate limiting |
 | `extract.ts` | URL fetching, content extraction |
 | `storage.ts` | Session-aware result storage |
+| `activity.ts` | Activity tracking for observability widget |
 
 ## Limitations
 

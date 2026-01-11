@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { activityMonitor } from "./activity.js";
 
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
@@ -93,6 +94,15 @@ function validateDomainFilter(domains: string[]): string[] {
 export async function searchWithPerplexity(query: string, options: SearchOptions = {}): Promise<PerplexityResponse> {
 	checkRateLimit();
 
+	const activityId = activityMonitor.logStart({ type: "api", query });
+
+	activityMonitor.updateRateLimit({
+		used: requestTimestamps.length,
+		max: RATE_LIMIT.maxRequests,
+		oldestTimestamp: requestTimestamps[0] ?? null,
+		windowMs: RATE_LIMIT.windowMs,
+	});
+
 	const apiKey = getApiKey();
 	const numResults = Math.min(options.numResults ?? 5, 20);
 
@@ -114,17 +124,29 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 		}
 	}
 
-	const response = await fetch(PERPLEXITY_API_URL, {
-		method: "POST",
-		headers: {
-			Authorization: `Bearer ${apiKey}`,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify(requestBody),
-		signal: options.signal,
-	});
+	let response: Response;
+	try {
+		response = await fetch(PERPLEXITY_API_URL, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${apiKey}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify(requestBody),
+			signal: options.signal,
+		});
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		if (message.toLowerCase().includes("abort")) {
+			activityMonitor.logComplete(activityId, 0);
+		} else {
+			activityMonitor.logError(activityId, message);
+		}
+		throw err;
+	}
 
 	if (!response.ok) {
+		activityMonitor.logComplete(activityId, response.status);
 		const errorText = await response.text();
 		throw new Error(`Perplexity API error ${response.status}: ${errorText}`);
 	}
@@ -133,6 +155,7 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 	try {
 		data = await response.json();
 	} catch {
+		activityMonitor.logComplete(activityId, response.status);
 		throw new Error("Perplexity API returned invalid JSON");
 	}
 
@@ -153,5 +176,6 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 		}
 	}
 
+	activityMonitor.logComplete(activityId, response.status);
 	return { answer, results };
 }

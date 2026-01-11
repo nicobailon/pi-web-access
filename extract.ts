@@ -2,6 +2,7 @@ import { Readability } from "@mozilla/readability";
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 import pLimit from "p-limit";
+import { activityMonitor } from "./activity.js";
 
 const MAX_CONTENT_LENGTH = 10000;
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -36,6 +37,8 @@ export async function extractContent(
 		return { url, title: "", content: "", error: "Invalid URL" };
 	}
 
+	const activityId = activityMonitor.logStart({ type: "fetch", url });
+
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -52,6 +55,7 @@ export async function extractContent(
 		});
 
 		if (!response.ok) {
+			activityMonitor.logComplete(activityId, response.status);
 			return {
 				url,
 				title: "",
@@ -67,6 +71,7 @@ export async function extractContent(
 		const article = reader.parse();
 
 		if (!article) {
+			activityMonitor.logComplete(activityId, response.status);
 			return {
 				url,
 				title: "",
@@ -80,6 +85,7 @@ export async function extractContent(
 			markdown = markdown.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated...]";
 		}
 
+		activityMonitor.logComplete(activityId, response.status);
 		return {
 			url,
 			title: article.title || "",
@@ -89,7 +95,9 @@ export async function extractContent(
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		if (message.toLowerCase().includes("abort")) {
-			return { url, title: "", content: "", error: "Aborted" };
+			activityMonitor.logComplete(activityId, 0);
+		} else {
+			activityMonitor.logError(activityId, message);
 		}
 		return { url, title: "", content: "", error: message };
 	} finally {

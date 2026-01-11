@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2026-01-11
+
+### Added
+
+- Activity monitor widget (`Ctrl+Shift+O`) showing live request/response activity
+  - Displays last 10 API calls and URL fetches with status codes and timing
+  - Shows rate limit usage and reset countdown
+  - Live updates as requests complete
+  - Auto-clears on session switch
+
+### Changed
+
+- Refactored activity tracking into dedicated `activity.ts` module
+
 ## [0.1.0] - 2026-01-06
 
 Initial release. Designed for pi v0.37.3.
