@@ -14,10 +14,7 @@ fetch_content({ url: "https://docs.example.com/guide" })
 ## Install
 
 ```bash
-# Clone to extensions directory
-git clone https://github.com/nicobailon/pi-web-access ~/.pi/agent/extensions/pi-web-access
-cd ~/.pi/agent/extensions/pi-web-access
-npm install
+pi install npm:pi-web-access
 ```
 
 Add your Perplexity API key:
