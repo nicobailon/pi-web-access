@@ -21,6 +21,8 @@ let sessionActive = false;
 let widgetVisible = false;
 let widgetUnsubscribe: (() => void) | null = null;
 
+const MAX_INLINE_CONTENT = 30000; // Content returned directly to agent
+
 function formatSearchSummary(results: SearchResult[], answer: string): string {
 	let output = answer ? `${answer}\n\n---\n\n**Sources:**\n` : "";
 	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n\n");
@@ -388,7 +390,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "fetch_content",
 		label: "Fetch Content",
-		description: "Fetch URL(s) and extract readable content as markdown. For multiple URLs, content is stored and can be retrieved with get_search_content.",
+		description: "Fetch URL(s) and extract readable content as markdown. Content is always stored and can be retrieved with get_search_content.",
 		parameters: Type.Object({
 			url: Type.Optional(Type.String({ description: "Single URL to fetch" })),
 			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
@@ -412,20 +414,7 @@ export default function (pi: ExtensionAPI) {
 			const successful = fetchResults.filter((r) => !r.error).length;
 			const totalChars = fetchResults.reduce((sum, r) => sum + r.content.length, 0);
 
-			if (urlList.length === 1) {
-				const result = fetchResults[0];
-				if (result.error) {
-					return {
-						content: [{ type: "text", text: `Error: ${result.error}` }],
-						details: { urls: urlList, urlCount: 1, successful: 0, error: result.error },
-					};
-				}
-				return {
-					content: [{ type: "text", text: result.content }],
-					details: { urls: urlList, urlCount: 1, successful: 1, totalChars: result.content.length, title: result.title },
-				};
-			}
-
+			// ALWAYS store results (even for single URL)
 			const responseId = generateId();
 			const data: StoredSearchData = {
 				id: responseId,
@@ -436,6 +425,42 @@ export default function (pi: ExtensionAPI) {
 			storeResult(responseId, data);
 			pi.appendEntry("web-search-results", data);
 
+			// Single URL: return content directly (possibly truncated) with responseId
+			if (urlList.length === 1) {
+				const result = fetchResults[0];
+				if (result.error) {
+					return {
+						content: [{ type: "text", text: `Error: ${result.error}` }],
+						details: { urls: urlList, urlCount: 1, successful: 0, error: result.error, responseId },
+					};
+				}
+
+				const fullLength = result.content.length;
+				const truncated = fullLength > MAX_INLINE_CONTENT;
+				let output = truncated
+					? result.content.slice(0, MAX_INLINE_CONTENT) + "\n\n[Content truncated...]"
+					: result.content;
+
+				if (truncated) {
+					output += `\n\n---\nShowing ${MAX_INLINE_CONTENT} of ${fullLength} chars. ` +
+						`Use get_search_content({ responseId: "${responseId}", urlIndex: 0 }) for full content.`;
+				}
+
+				return {
+					content: [{ type: "text", text: output }],
+					details: {
+						urls: urlList,
+						urlCount: 1,
+						successful: 1,
+						totalChars: fullLength,
+						title: result.title,
+						responseId,
+						truncated,
+					},
+				};
+			}
+
+			// Multi-URL: existing behavior (summary + responseId)
 			let output = "## Fetched URLs\n\n";
 			for (const { url, title, content, error } of fetchResults) {
 				if (error) {
@@ -444,7 +469,7 @@ export default function (pi: ExtensionAPI) {
 					output += `- ${title || url} (${content.length} chars)\n`;
 				}
 			}
-			output += `\n---\nUse get_search_content("${responseId}", {urlIndex: 0}) to retrieve full content.`;
+			output += `\n---\nUse get_search_content({ responseId: "${responseId}", urlIndex: 0 }) to retrieve full content.`;
 
 			return {
 				content: [{ type: "text", text: output }],
@@ -480,6 +505,8 @@ export default function (pi: ExtensionAPI) {
 				totalChars?: number;
 				error?: string;
 				title?: string;
+				truncated?: boolean;
+				responseId?: string;
 			};
 
 			if (details?.error) {
@@ -488,7 +515,10 @@ export default function (pi: ExtensionAPI) {
 
 			if (details?.urlCount === 1) {
 				const title = details?.title || "Untitled";
-				const statusLine = theme.fg("success", title) + theme.fg("muted", ` (${details?.totalChars ?? 0} chars)`);
+				let statusLine = theme.fg("success", title) + theme.fg("muted", ` (${details?.totalChars ?? 0} chars)`);
+				if (details?.truncated) {
+					statusLine += theme.fg("warning", " [truncated]");
+				}
 				if (!expanded) {
 					return new Text(statusLine, 0, 0);
 				}

@@ -6,7 +6,6 @@ import { activityMonitor } from "./activity.js";
 import { extractRSCContent } from "./rsc-extract.js";
 import { extractPDFToMarkdown, isPDF } from "./pdf-extract.js";
 
-const MAX_CONTENT_LENGTH = 10000;
 const DEFAULT_TIMEOUT_MS = 30000;
 const CONCURRENT_LIMIT = 3;
 
@@ -128,10 +127,7 @@ export async function extractContent(
 
 		if (isPlainText) {
 			activityMonitor.logComplete(activityId, response.status);
-			let content = text;
-			if (content.length > MAX_CONTENT_LENGTH) {
-				content = content.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated...]";
-			}
+			const content = text;
 			// Extract filename from URL as title
 			const urlPath = new URL(url).pathname;
 			const title = urlPath.split("/").pop() || url;
@@ -149,11 +145,7 @@ export async function extractContent(
 			const rscResult = extractRSCContent(html);
 			if (rscResult) {
 				activityMonitor.logComplete(activityId, response.status);
-				let content = rscResult.content;
-				if (content.length > MAX_CONTENT_LENGTH) {
-					content = content.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated...]";
-				}
-				return { url, title: rscResult.title, content, error: null };
+				return { url, title: rscResult.title, content: rscResult.content, error: null };
 			}
 			
 			activityMonitor.logComplete(activityId, response.status);
@@ -165,10 +157,7 @@ export async function extractContent(
 			};
 		}
 
-		let markdown = turndown.turndown(article.content);
-		if (markdown.length > MAX_CONTENT_LENGTH) {
-			markdown = markdown.slice(0, MAX_CONTENT_LENGTH) + "\n\n[Content truncated...]";
-		}
+		const markdown = turndown.turndown(article.content);
 
 		activityMonitor.logComplete(activityId, response.status);
 		return {

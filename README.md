@@ -66,10 +66,10 @@ When `includeContent: true`, sources are fetched in the background. Agent receiv
 Fetch URL(s) and extract readable content as markdown.
 
 ```typescript
-// Single URL - returns content directly
+// Single URL - returns content directly (also stored for retrieval)
 fetch_content({ url: "https://example.com/article" })
 
-// Multiple URLs - stores content for retrieval
+// Multiple URLs - returns summary (content stored for retrieval)
 fetch_content({ urls: ["url1", "url2", "url3"] })
 
 // PDFs - extracted and saved to ~/Downloads/
@@ -175,5 +175,5 @@ Agent Request → Perplexity API → Synthesized Answer + Citations
 - Heavy JS sites may not extract well (no browser rendering), though Next.js App Router pages with RSC flight data are supported
 - PDFs are extracted as text (no OCR for scanned documents)
 - Max response size: 20MB for PDFs, 5MB for HTML
-- Max content length: 10,000 chars per URL for HTML (truncated), full text for PDFs (saved to file)
+- Max inline content: 30,000 chars per URL (larger content stored for retrieval via get_search_content)
 - Requires Pi restart after config file changes

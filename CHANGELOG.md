@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-01-27
+
+### Fixed
+
+- Single-URL fetches now store content for retrieval via `get_search_content` (previously only multi-URL)
+- Corrected `get_search_content` usage syntax in fetch_content help messages
+
+### Changed
+
+- Increased inline content limit from 10K to 30K chars (larger content truncated but fully retrievable)
+
+### Added
+
+- Banner image for README
+
 ## [0.4.1] - 2026-01-26
 
 ### Changed
