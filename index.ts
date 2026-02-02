@@ -172,7 +172,7 @@ export default function (pi: ExtensionAPI) {
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 		}),
 
-		async execute(_toolCallId, params, onUpdate, _ctx, signal) {
+		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const queryList = params.queries ?? (params.query ? [params.query] : []);
 			if (queryList.length === 0) {
 				return {
@@ -395,7 +395,7 @@ export default function (pi: ExtensionAPI) {
 			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
 		}),
 
-		async execute(_toolCallId, params, onUpdate, _ctx, signal) {
+		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
 			const urlList = params.urls ?? (params.url ? [params.url] : []);
 			if (urlList.length === 0) {
 				return {
@@ -548,7 +548,7 @@ export default function (pi: ExtensionAPI) {
 			urlIndex: Type.Optional(Type.Number({ description: "Get content for URL at index" })),
 		}),
 
-		async execute(_toolCallId, params, _onUpdate, _ctx, _signal) {
+		async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
 			const data = getResult(params.responseId);
 			if (!data) {
 				return {

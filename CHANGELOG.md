@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-02-01
+
+### Fixed
+- Adapt execute signatures to pi v0.51.0: reorder signal, onUpdate, ctx parameters across all three tools
+
 ## [0.4.3] - 2026-01-27
 
 ### Fixed
