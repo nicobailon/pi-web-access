@@ -1,6 +1,6 @@
 {
   "name": "pi-web-access",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "type": "module",
   "keywords": ["pi-package", "pi", "pi-coding-agent", "extension", "web-search", "perplexity", "fetch", "scraping"],
   "dependencies": {
@@ -11,6 +11,7 @@
     "unpdf": "^1.4.0"
   },
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": ["./index.ts"],
+    "skills": ["./skills"]
   }
 }

@@ -41,7 +41,7 @@ export async function checkRepoSize(owner: string, repo: string): Promise<number
 	});
 }
 
-export async function getDefaultBranch(owner: string, repo: string): Promise<string | null> {
+async function getDefaultBranch(owner: string, repo: string): Promise<string | null> {
 	if (!(await checkGhAvailable())) return null;
 
 	return new Promise((resolve) => {
@@ -186,9 +186,10 @@ export async function fetchViaApi(
 
 	lines.push("This is an API-only view. Clone the repo or use `read`/`bash` for deeper exploration.");
 
+	const title = info.path ? `${owner}/${repo} - ${info.path}` : `${owner}/${repo}`;
 	return {
 		url,
-		title: `${owner}/${repo}`,
+		title,
 		content: lines.join("\n"),
 		error: null,
 	};

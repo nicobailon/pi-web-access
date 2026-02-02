@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-02-02
+
+### Added
+- Bundled `librarian` skill -- structured research workflow for open-source libraries with GitHub permalinks, combining fetch_content (cloning), web_search (recent info), and git operations (blame, log, show)
+
+### Fixed
+- Session fork event handler was registered as `session_branch` (non-existent event) instead of `session_fork`, meaning forks never triggered cleanup (abort pending fetches, clear clone cache, restore session data)
+- API fallback title for tree URLs with a path (e.g. `/tree/main/src`) now includes the path (`owner/repo - src`), consistent with clone-based results
+- Removed unnecessary export on `getDefaultBranch` (only used internally by `fetchViaApi`)
+
 ## [0.5.0] - 2026-02-01
 
 ### Added

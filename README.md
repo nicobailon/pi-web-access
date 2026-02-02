@@ -140,6 +140,16 @@ Tool calls render with real-time progress:
 └───────────────────────────────────────────────────────────────────┘
 ```
 
+## Skills
+
+Skills are bundled with the extension and available automatically after install -- no extra setup needed.
+
+### librarian
+
+Structured research workflow for open-source libraries with evidence-backed answers and GitHub permalinks. Loaded automatically when the task involves understanding library internals, finding implementation details, or tracing code history.
+
+Combines `fetch_content` (GitHub cloning), `web_search` (recent info), and git operations (blame, log, show). Pi auto-detects when to load it based on your prompt. If you have [pi-skill-palette](https://github.com/nicobailon/pi-skill-palette) installed, you can also load it explicitly via `/skill:librarian`.
+
 ## Commands
 
 ### /search
@@ -228,6 +238,7 @@ All `githubClone` fields are optional with the defaults shown above. Set `"enabl
 | `rsc-extract.ts` | RSC flight data parser for Next.js pages |
 | `storage.ts` | Session-aware result storage |
 | `activity.ts` | Activity tracking for observability widget |
+| `skills/librarian/` | Bundled skill for library research with permalinks |
 
 ## Limitations
 
