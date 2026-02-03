@@ -1,6 +1,6 @@
 {
   "name": "pi-web-access",
-  "version": "0.5.1",
+  "version": "0.7.0",
   "type": "module",
   "keywords": ["pi-package", "pi", "pi-coding-agent", "extension", "web-search", "perplexity", "fetch", "scraping"],
   "dependencies": {
@@ -12,6 +12,7 @@
   },
   "pi": {
     "extensions": ["./index.ts"],
-    "skills": ["./skills"]
+    "skills": ["./skills"],
+    "video": "https://github.com/nicobailon/pi-web-access/raw/refs/heads/main/pi-web-fetch-demo.mp4"
   }
 }

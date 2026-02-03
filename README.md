@@ -4,7 +4,7 @@
 
 # Pi Web Access
 
-An extension for [Pi coding agent](https://github.com/badlogic/pi-mono/) that gives Pi web capabilities: search via Perplexity AI, fetch and extract content from URLs, clone GitHub repos for local exploration, and read PDFs.
+An extension for [Pi coding agent](https://github.com/badlogic/pi-mono/) that gives Pi web capabilities: search via Perplexity AI or Gemini, fetch and extract content from URLs, clone GitHub repos for local exploration, read PDFs, understand YouTube videos, and analyze local video files.
 
 ```typescript
 web_search({ query: "TypeScript best practices 2025" })
@@ -17,25 +17,36 @@ fetch_content({ url: "https://docs.example.com/guide" })
 pi install npm:pi-web-access
 ```
 
-Add your Perplexity API key:
+Configure at least one search provider:
 
 ```bash
-# Option 1: Environment variable
-export PERPLEXITY_API_KEY="pplx-..."
+# Option 1: Sign into gemini.google.com in Chrome (free, zero config)
 
-# Option 2: Config file
+# Option 2: Gemini API key
+echo '{"geminiApiKey": "AIza..."}' > ~/.pi/web-search.json
+
+# Option 3: Perplexity API key
 echo '{"perplexityApiKey": "pplx-..."}' > ~/.pi/web-search.json
 ```
 
-Get a key at https://perplexity.ai/settings/api
+All three work simultaneously. In `auto` mode (default), the extension tries Perplexity first, then Gemini API, then Gemini Web.
 
 **Requires:** Pi v0.37.3+
+
+**Optional dependencies** for video frame extraction:
+
+```bash
+brew install ffmpeg   # frame extraction, video thumbnails, local video duration
+brew install yt-dlp   # YouTube frame extraction (stream URL + duration lookup)
+```
+
+Without these, video content analysis (transcripts via Gemini) still works. The binaries are only needed for extracting visual frames from videos. `ffprobe` (bundled with ffmpeg) is used for local video duration lookup when sampling frames across an entire video.
 
 ## Tools
 
 ### web_search
 
-Search the web via Perplexity AI. Returns synthesized answer with source citations.
+Search the web via Perplexity AI or Gemini. Returns synthesized answer with source citations.
 
 ```typescript
 // Single query
@@ -52,11 +63,16 @@ web_search({
   domainFilter: ["github.com"] // Prefix with - to exclude
 })
 
+// Explicit provider
+web_search({ query: "...", provider: "gemini" })  // auto, perplexity, gemini
+
 // Fetch full page content (async)
 web_search({ query: "...", includeContent: true })
 ```
 
 When `includeContent: true`, sources are fetched in the background. Agent receives notification when ready.
+
+Provider selection in `auto` mode: Perplexity (if key configured) → Gemini API (if key configured, uses Google Search grounding) → Gemini Web (if signed into Chrome). Gemini API returns structured citations with source mappings. Gemini Web returns markdown with embedded links.
 
 ### fetch_content
 
@@ -92,6 +108,63 @@ fetch_content({ url: "https://github.com/big/repo", forceClone: true })
 ```
 
 Repos over 350MB get a lightweight API-based view instead of a full clone. Commit SHA URLs are also handled via the API. Clones are cached for the session -- multiple files from the same repo share one clone, but clones are wiped on session change/shutdown and re-cloned as needed.
+
+**YouTube videos:** YouTube URLs are automatically detected and processed via Gemini for full video understanding (visual + audio + transcript). Three-tier fallback:
+
+```typescript
+// Returns transcript with timestamps, visual descriptions, chapter markers
+fetch_content({ url: "https://youtube.com/watch?v=dQw4w9WgXcQ" })
+
+// Ask a specific question about the video
+fetch_content({ url: "https://youtube.com/watch?v=abc", prompt: "What libraries are imported?" })
+```
+
+1. **Gemini Web** (primary) -- reads your Chrome session cookies. Zero config if you're signed into Google.
+2. **Gemini API** (secondary) -- uses `GEMINI_API_KEY` env var or `geminiApiKey` in config.
+3. **Perplexity** (fallback) -- topic summary when neither Gemini path is available.
+
+YouTube results include the video thumbnail as an image content part, so the agent receives visual context alongside the transcript.
+
+Handles all YouTube URL formats: `/watch?v=`, `youtu.be/`, `/shorts/`, `/live/`, `/embed/`, `/v/`, `m.youtube.com`. Playlist-only URLs fall through to normal extraction.
+
+**Local video files:** Pass a file path to analyze video content via Gemini. Supports MP4, MOV, WebM, AVI, and other common formats. Max 50MB (configurable).
+
+```typescript
+// Analyze a screen recording
+fetch_content({ url: "/path/to/recording.mp4" })
+
+// Ask about specific content in the video
+fetch_content({ url: "./demo.mov", prompt: "What error message appears on screen?" })
+```
+
+Two-tier fallback: Gemini API (needs key, proper Files API with MIME types) → Gemini Web (free, needs Chrome login). File paths are detected by prefix (`/`, `./`, `../`, `file://`). If ffmpeg is installed, a frame from the video is included as a thumbnail image alongside the analysis.
+
+**Video frame extraction (YouTube + local):** Use `timestamp` and/or `frames` to pull visuals for scanning.
+
+```typescript
+// Single frame at an exact time
+fetch_content({ url: "https://youtube.com/watch?v=abc", timestamp: "23:41" })
+
+// Range scan (default 6 frames)
+fetch_content({ url: "https://youtube.com/watch?v=abc", timestamp: "23:41-25:00" })
+
+// Custom density across a range
+fetch_content({ url: "https://youtube.com/watch?v=abc", timestamp: "23:41-25:00", frames: 3 })
+
+// N frames at 5s intervals starting from a single timestamp
+fetch_content({ url: "https://youtube.com/watch?v=abc", timestamp: "23:41", frames: 5 })
+
+// Whole-video sampling (no timestamp)
+fetch_content({ url: "https://youtube.com/watch?v=abc", frames: 6 })
+```
+
+The same `timestamp`/`frames` syntax works with local file paths (e.g. `/path/to/video.mp4`).
+
+Requirements: YouTube frame extraction needs `yt-dlp` + `ffmpeg`. Local video frames need `ffmpeg` (and `ffprobe`, bundled with ffmpeg, for whole-video sampling).
+
+Common errors include missing binaries, private/age-restricted videos, region blocks, live streams, expired stream URLs (403), and timestamps beyond the video duration.
+
+**Gemini extraction fallback:** When Readability fails or a site blocks bot traffic (403, 429), the extension automatically retries via Gemini URL Context (API) or Gemini Web. This handles SPAs, JS-heavy pages, and anti-bot protections that the HTTP pipeline can't.
 
 **PDF handling:** When fetching a PDF URL, the extension extracts text and saves it as a markdown file in `~/Downloads/`. The agent can then use `read` to access specific sections without loading 200K+ chars into context.
 
@@ -161,7 +234,11 @@ Browse stored search results interactively.
 ### fetch_content routing
 
 ```
-fetch_content(url)
+fetch_content(url_or_path, prompt?)
+       │
+       ├── Local video file? ──→ Gemini API → Gemini Web
+       │                              ↓
+       │                         Video analysis (prompt forwarded)
        │
        ├── github.com code URL? ──→ Clone repo (gh/git --depth 1)
        │                                    │
@@ -177,29 +254,40 @@ fetch_content(url)
        │                           Return content + local
        │                           path for read/bash
        │
+       ├── YouTube URL? ──→ Gemini Web → Gemini API → Perplexity
+       │                         ↓              (prompt forwarded)
+       │                    Transcript + visual descriptions
+       │
        ├── PDF? ──→ unpdf → Save to ~/Downloads/
        │
-       ├── Plain text? ──→ Return directly
+       ├── Plain text/markdown/JSON? ──→ Return directly
        │
        └── HTML ──→ Readability → Markdown
                          │
                     [if fails]
                          ↓
                     RSC Parser → Markdown
+                         │
+                    [if all fail]
+                         ↓
+                    Gemini URL Context → Gemini Web extraction
 ```
 
-### web_search with includeContent
+### web_search routing
 
 ```
-Agent Request → Perplexity API → Synthesized Answer + Citations
-                                         ↓
-                              [if includeContent: true]
-                                         ↓
-                              Background Fetch (3 concurrent)
-                              (uses same routing as above)
-                                         ↓
-                              Agent Notification (triggerTurn)
+web_search(query, provider?)
+       │
+       ├── provider = "perplexity" ──→ Perplexity API
+       ├── provider = "gemini"     ──→ Gemini API → Gemini Web
+       └── provider = "auto"
+              ├── Perplexity key? ──→ Perplexity API
+              ├── Gemini API key? ──→ Gemini API (grounded search)
+              ├── Chrome cookies? ──→ Gemini Web (grounded search)
+              └── Error
 ```
+
+When `includeContent: true`, sources are fetched in the background using the fetch_content routing above, and the agent receives a notification when ready.
 
 ## Configuration
 
@@ -208,16 +296,29 @@ All config lives in `~/.pi/web-search.json`:
 ```json
 {
   "perplexityApiKey": "pplx-...",
+  "geminiApiKey": "AIza...",
+  "searchProvider": "auto",
   "githubClone": {
     "enabled": true,
     "maxRepoSizeMB": 350,
     "cloneTimeoutSeconds": 30,
     "clonePath": "/tmp/pi-github-repos"
+  },
+  "youtube": {
+    "enabled": true,
+    "preferredModel": "gemini-2.5-flash"
+  },
+  "video": {
+    "enabled": true,
+    "preferredModel": "gemini-2.5-flash",
+    "maxSizeMB": 50
   }
 }
 ```
 
-All `githubClone` fields are optional with the defaults shown above. Set `"enabled": false` to disable GitHub cloning entirely and fall through to normal HTML extraction.
+All fields are optional. `GEMINI_API_KEY` and `PERPLEXITY_API_KEY` env vars take precedence over config file values. Set `"enabled": false` under `githubClone`, `youtube`, or `video` to disable those features.
+
+`searchProvider` controls `web_search` default: `"auto"` (Perplexity → Gemini API → Gemini Web), `"perplexity"`, or `"gemini"` (API → Web).
 
 ## Rate Limits
 
@@ -231,7 +332,15 @@ All `githubClone` fields are optional with the defaults shown above. Set `"enabl
 |------|---------|
 | `index.ts` | Extension entry, tool definitions, commands, widget |
 | `perplexity.ts` | Perplexity API client, rate limiting |
-| `extract.ts` | URL fetching, content extraction routing |
+| `gemini-search.ts` | Gemini search providers (Web + API with grounding), search routing |
+| `extract.ts` | URL/file path routing, HTTP extraction, Gemini fallback orchestration |
+| `gemini-url-context.ts` | Gemini URL Context + Web extraction fallbacks |
+| `video-extract.ts` | Local video file detection, upload, Gemini Web/API analysis |
+| `youtube-extract.ts` | YouTube URL detection, three-tier extraction orchestrator |
+| `chrome-cookies.ts` | macOS Chrome cookie extraction (Keychain + SQLite) |
+| `gemini-web.ts` | Gemini Web client (cookie auth, StreamGenerate) |
+| `gemini-api.ts` | Gemini REST API client (generateContent, file upload) |
+| `utils.ts` | Shared formatting (`formatSeconds`) and error helpers for frame extraction |
 | `github-extract.ts` | GitHub URL parser, clone cache, content generation |
 | `github-api.ts` | GitHub API fallback for oversized repos and commit SHAs |
 | `pdf-extract.ts` | PDF text extraction, saves to markdown |
@@ -242,12 +351,16 @@ All `githubClone` fields are optional with the defaults shown above. Set `"enabl
 
 ## Limitations
 
-- Content extraction works best on article-style pages
-- Heavy JS sites may not extract well (no browser rendering), though Next.js App Router pages with RSC flight data are supported
+- Content extraction works best on article-style pages; JS-heavy sites fall back to Gemini extraction when available
+- Gemini extraction fallback requires either a Gemini API key or Chrome login to Google
 - PDFs are extracted as text (no OCR for scanned documents)
 - Max response size: 20MB for PDFs, 5MB for HTML
 - Max inline content: 30,000 chars per URL (larger content stored for retrieval via get_search_content)
 - GitHub cloning requires `gh` CLI for private repos (public repos fall back to `git clone`)
 - GitHub branch names with slashes (e.g. `feature/foo`) may resolve the wrong file path; the clone still succeeds and the agent can navigate manually
 - Non-code GitHub URLs (issues, PRs, wiki, etc.) fall through to normal Readability extraction
+- YouTube extraction via Gemini Web requires macOS (Chrome cookie decryption is OS-specific); other platforms fall through to Gemini API or Perplexity
+- YouTube private/age-restricted videos may fail on all paths
+- Gemini can process videos up to ~1 hour at default resolution; longer videos may be truncated
+- First-time Chrome cookie access may trigger a macOS Keychain permission dialog
 - Requires Pi restart after config file changes

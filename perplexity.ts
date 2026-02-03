@@ -19,7 +19,7 @@ export interface SearchResult {
 	snippet: string;
 }
 
-export interface PerplexityResponse {
+export interface SearchResponse {
 	answer: string;
 	results: SearchResult[];
 }
@@ -91,7 +91,12 @@ function validateDomainFilter(domains: string[]): string[] {
 	});
 }
 
-export async function searchWithPerplexity(query: string, options: SearchOptions = {}): Promise<PerplexityResponse> {
+export function isPerplexityAvailable(): boolean {
+	const config = loadConfig();
+	return Boolean(config.perplexityApiKey || process.env.PERPLEXITY_API_KEY);
+}
+
+export async function searchWithPerplexity(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	checkRateLimit();
 
 	const activityId = activityMonitor.logStart({ type: "api", query });

@@ -136,6 +136,43 @@ function isStale(query: Query, staleTime: number): boolean {
 
 For conceptual answers, link to official docs and relevant source files. For implementation answers, every function/class reference should have a permalink.
 
+## Video Analysis
+
+For questions about video tutorials, conference talks, or screen recordings:
+
+```typescript
+// Full extraction (transcript + visual descriptions)
+fetch_content({ url: "https://youtube.com/watch?v=abc" })
+
+// Ask a specific question about a video
+fetch_content({ url: "https://youtube.com/watch?v=abc", prompt: "What libraries are imported in this tutorial?" })
+
+// Single frame at a known moment
+fetch_content({ url: "https://youtube.com/watch?v=abc", timestamp: "23:41" })
+
+// Range scan for visual discovery
+fetch_content({ url: "https://youtube.com/watch?v=abc", timestamp: "23:41-25:00" })
+
+// Custom density across a range
+fetch_content({ url: "https://youtube.com/watch?v=abc", timestamp: "23:41-25:00", frames: 3 })
+
+// Whole-video sampling
+fetch_content({ url: "https://youtube.com/watch?v=abc", frames: 6 })
+
+// Analyze a local recording
+fetch_content({ url: "/path/to/demo.mp4", prompt: "What error message appears on screen?" })
+
+// Batch multiple videos with the same question
+fetch_content({
+  urls: ["https://youtube.com/watch?v=abc", "https://youtube.com/watch?v=def"],
+  prompt: "What packages are installed?"
+})
+```
+
+Use single timestamps for known moments, ranges for visual scanning, and frames-alone for a quick overview of the whole video.
+
+The `prompt` parameter only applies to video content (YouTube URLs and local video files). For non-video URLs, it's ignored.
+
 ## Failure Recovery
 
 | Failure | Recovery |
@@ -145,6 +182,9 @@ For conceptual answers, link to official docs and relevant source files. For imp
 | Repo too large to clone | fetch_content returns an API-only view automatically; use that or add `forceClone: true` |
 | File not found in clone | Branch name with slashes may have misresolved; list the repo tree and navigate manually |
 | Uncertain about implementation | State your uncertainty explicitly, propose a hypothesis, show what evidence you did find |
+| Video extraction fails | Ensure Chrome is signed into gemini.google.com (free) or set GEMINI_API_KEY |
+| Page returns 403/bot block | Gemini fallback triggers automatically; no action needed if Gemini is configured |
+| web_search fails | Check provider config; try explicit `provider: "gemini"` if Perplexity key is missing |
 
 ## Guidelines
 

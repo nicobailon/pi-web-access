@@ -4,7 +4,9 @@ import { Type } from "@sinclair/typebox";
 import { StringEnum } from "@mariozechner/pi-ai";
 import { fetchAllContent, type ExtractedContent } from "./extract.js";
 import { clearCloneCache } from "./github-extract.js";
-import { searchWithPerplexity, type SearchResult } from "./perplexity.js";
+import { search, type SearchProvider } from "./gemini-search.js";
+import type { SearchResult } from "./perplexity.js";
+import { formatSeconds } from "./utils.js";
 import {
 	clearResults,
 	deleteResult,
@@ -24,6 +26,10 @@ let widgetVisible = false;
 let widgetUnsubscribe: (() => void) | null = null;
 
 const MAX_INLINE_CONTENT = 30000; // Content returned directly to agent
+
+function stripThumbnails(results: ExtractedContent[]): ExtractedContent[] {
+	return results.map(({ thumbnail, frames, ...rest }) => rest);
+}
 
 function formatSearchSummary(results: SearchResult[], answer: string): string {
 	let output = answer ? `${answer}\n\n---\n\n**Sources:**\n` : "";
@@ -163,7 +169,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			"Search the web using Perplexity AI. Returns an AI-synthesized answer with source citations. Supports batch searching with multiple queries. When includeContent is true, full page content is fetched in the background.",
+			"Search the web using Perplexity AI or Gemini. Returns an AI-synthesized answer with source citations. Supports batch searching with multiple queries. When includeContent is true, full page content is fetched in the background. Provider auto-selects: Perplexity if configured, else Gemini API (needs key), else Gemini Web (needs Chrome login).",
 		parameters: Type.Object({
 			query: Type.Optional(Type.String({ description: "Single search query" })),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries (batch)" })),
@@ -173,6 +179,9 @@ export default function (pi: ExtensionAPI) {
 				StringEnum(["day", "week", "month", "year"], { description: "Filter by recency" }),
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
+			provider: Type.Optional(
+				StringEnum(["auto", "perplexity", "gemini"], { description: "Search provider (default: auto)" }),
+			),
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate, _ctx) {
@@ -196,7 +205,8 @@ export default function (pi: ExtensionAPI) {
 				});
 
 				try {
-					const { answer, results } = await searchWithPerplexity(query, {
+					const { answer, results } = await search(query, {
+						provider: params.provider as SearchProvider | undefined,
 						numResults: params.numResults,
 						recencyFilter: params.recencyFilter,
 						domainFilter: params.domainFilter,
@@ -249,7 +259,7 @@ export default function (pi: ExtensionAPI) {
 							id: capturedFetchId,
 							type: "fetch",
 							timestamp: Date.now(),
-							urls: fetched,
+							urls: stripThumbnails(fetched),
 						};
 						storeResult(capturedFetchId, data);
 						pi.appendEntry("web-search-results", data);
@@ -392,12 +402,23 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "fetch_content",
 		label: "Fetch Content",
-		description: "Fetch URL(s) and extract readable content as markdown. Content is always stored and can be retrieved with get_search_content.",
+		description: "Fetch URL(s) and extract readable content as markdown. Supports YouTube video transcripts (with thumbnail), GitHub repository contents, and local video files (with frame thumbnail). Video frames can be extracted via timestamp/range or sampled across the entire video with frames alone. Falls back to Gemini for pages that block bots or fail Readability extraction. For YouTube and video files: ALWAYS pass the user's specific question via the prompt parameter — this directs the AI to focus on that aspect of the video, producing much better results than a generic extraction. Content is always stored and can be retrieved with get_search_content.",
 		parameters: Type.Object({
 			url: Type.Optional(Type.String({ description: "Single URL to fetch" })),
 			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
 			forceClone: Type.Optional(Type.Boolean({
 				description: "Force cloning large GitHub repositories that exceed the size threshold",
+			})),
+			prompt: Type.Optional(Type.String({
+				description: "Question or instruction for video analysis (YouTube and video files). Pass the user's specific question here — e.g. 'describe the book shown at the advice for beginners section'. Without this, a generic transcript extraction is used which may miss what the user is asking about.",
+			})),
+			timestamp: Type.Optional(Type.String({
+				description: "Extract video frame(s) at a timestamp or time range. Single: '1:23:45', '23:45', or '85' (seconds). Range: '23:41-25:00' extracts evenly-spaced frames across that span (default 6). Use frames with ranges to control density; single+frames uses a fixed 5s interval. YouTube requires yt-dlp + ffmpeg; local videos require ffmpeg. Use a range when you know the approximate area but not the exact moment — you'll get a contact sheet to visually identify the right frame.",
+			})),
+			frames: Type.Optional(Type.Integer({
+				minimum: 1,
+				maximum: 12,
+				description: "Number of frames to extract. Use with timestamp range for custom density, with single timestamp to get N frames at 5s intervals, or alone to sample across the entire video. Requires yt-dlp + ffmpeg for YouTube, ffmpeg for local video.",
 			})),
 		}),
 
@@ -417,6 +438,9 @@ export default function (pi: ExtensionAPI) {
 
 			const fetchResults = await fetchAllContent(urlList, signal, {
 				forceClone: params.forceClone,
+				prompt: params.prompt,
+				timestamp: params.timestamp,
+				frames: params.frames,
 			});
 			const successful = fetchResults.filter((r) => !r.error).length;
 			const totalChars = fetchResults.reduce((sum, r) => sum + r.content.length, 0);
@@ -427,7 +451,7 @@ export default function (pi: ExtensionAPI) {
 				id: responseId,
 				type: "fetch",
 				timestamp: Date.now(),
-				urls: fetchResults,
+				urls: stripThumbnails(fetchResults),
 			};
 			storeResult(responseId, data);
 			pi.appendEntry("web-search-results", data);
@@ -438,7 +462,7 @@ export default function (pi: ExtensionAPI) {
 				if (result.error) {
 					return {
 						content: [{ type: "text", text: `Error: ${result.error}` }],
-						details: { urls: urlList, urlCount: 1, successful: 0, error: result.error, responseId },
+						details: { urls: urlList, urlCount: 1, successful: 0, error: result.error, responseId, prompt: params.prompt, timestamp: params.timestamp, frames: params.frames },
 					};
 				}
 
@@ -453,8 +477,20 @@ export default function (pi: ExtensionAPI) {
 						`Use get_search_content({ responseId: "${responseId}", urlIndex: 0 }) for full content.`;
 				}
 
+				const content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> = [];
+				if (result.frames?.length) {
+					for (const frame of result.frames) {
+						content.push({ type: "image", data: frame.data, mimeType: frame.mimeType });
+						content.push({ type: "text", text: `Frame at ${frame.timestamp}` });
+					}
+				} else if (result.thumbnail) {
+					content.push({ type: "image", data: result.thumbnail.data, mimeType: result.thumbnail.mimeType });
+				}
+				content.push({ type: "text", text: output });
+
+				const imageCount = (result.frames?.length ?? 0) + (result.thumbnail ? 1 : 0);
 				return {
-					content: [{ type: "text", text: output }],
+					content,
 					details: {
 						urls: urlList,
 						urlCount: 1,
@@ -463,6 +499,12 @@ export default function (pi: ExtensionAPI) {
 						title: result.title,
 						responseId,
 						truncated,
+						hasImage: imageCount > 0,
+						imageCount,
+						prompt: params.prompt,
+						timestamp: params.timestamp,
+						frames: params.frames,
+						duration: result.duration,
 					},
 				};
 			}
@@ -485,22 +527,34 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderCall(args, theme) {
-			const { url, urls } = args as { url?: string; urls?: string[] };
+			const { url, urls, prompt, timestamp, frames } = args as { url?: string; urls?: string[]; prompt?: string; timestamp?: string; frames?: number };
 			const urlList = urls ?? (url ? [url] : []);
 			if (urlList.length === 0) {
 				return new Text(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("error", "(no URL)"), 0, 0);
 			}
+			const lines: string[] = [];
 			if (urlList.length === 1) {
-				const display = urlList[0].length > 50 ? urlList[0].slice(0, 47) + "..." : urlList[0];
-				return new Text(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", display), 0, 0);
+				const display = urlList[0].length > 60 ? urlList[0].slice(0, 57) + "..." : urlList[0];
+				lines.push(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", display));
+			} else {
+				lines.push(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", `${urlList.length} URLs`));
+				for (const u of urlList.slice(0, 5)) {
+					const display = u.length > 60 ? u.slice(0, 57) + "..." : u;
+					lines.push(theme.fg("muted", "  " + display));
+				}
+				if (urlList.length > 5) {
+					lines.push(theme.fg("muted", `  ... and ${urlList.length - 5} more`));
+				}
 			}
-			const lines = [theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", `${urlList.length} URLs`)];
-			for (const u of urlList.slice(0, 5)) {
-				const display = u.length > 60 ? u.slice(0, 57) + "..." : u;
-				lines.push(theme.fg("muted", "  " + display));
+			if (timestamp) {
+				lines.push(theme.fg("dim", "  timestamp: ") + theme.fg("warning", timestamp));
 			}
-			if (urlList.length > 5) {
-				lines.push(theme.fg("muted", `  ... and ${urlList.length - 5} more`));
+			if (typeof frames === "number") {
+				lines.push(theme.fg("dim", "  frames: ") + theme.fg("warning", String(frames)));
+			}
+			if (prompt) {
+				const display = prompt.length > 250 ? prompt.slice(0, 247) + "..." : prompt;
+				lines.push(theme.fg("dim", "  prompt: ") + theme.fg("muted", `"${display}"`));
 			}
 			return new Text(lines.join("\n"), 0, 0);
 		},
@@ -516,6 +570,12 @@ export default function (pi: ExtensionAPI) {
 				responseId?: string;
 				phase?: string;
 				progress?: number;
+				hasImage?: boolean;
+				imageCount?: number;
+				prompt?: string;
+				timestamp?: string;
+				frames?: number;
+				duration?: number;
 			};
 
 			if (isPartial) {
@@ -530,16 +590,37 @@ export default function (pi: ExtensionAPI) {
 
 			if (details?.urlCount === 1) {
 				const title = details?.title || "Untitled";
-				let statusLine = theme.fg("success", title) + theme.fg("muted", ` (${details?.totalChars ?? 0} chars)`);
+				const imgCount = details?.imageCount ?? (details?.hasImage ? 1 : 0);
+				const imageBadge = imgCount > 1
+					? theme.fg("accent", ` [${imgCount} images]`)
+					: imgCount === 1
+						? theme.fg("accent", " [image]")
+						: "";
+				let statusLine = theme.fg("success", title) + theme.fg("muted", ` (${details?.totalChars ?? 0} chars)`) + imageBadge;
 				if (details?.truncated) {
 					statusLine += theme.fg("warning", " [truncated]");
+				}
+				if (typeof details?.duration === "number") {
+					statusLine += theme.fg("muted", ` | ${formatSeconds(Math.floor(details.duration))} total`);
 				}
 				if (!expanded) {
 					return new Text(statusLine, 0, 0);
 				}
+				const lines = [statusLine];
+				if (details?.prompt) {
+					const display = details.prompt.length > 250 ? details.prompt.slice(0, 247) + "..." : details.prompt;
+					lines.push(theme.fg("dim", `  prompt: "${display}"`));
+				}
+				if (details?.timestamp) {
+					lines.push(theme.fg("dim", `  timestamp: ${details.timestamp}`));
+				}
+				if (typeof details?.frames === "number") {
+					lines.push(theme.fg("dim", `  frames: ${details.frames}`));
+				}
 				const textContent = result.content.find((c) => c.type === "text")?.text || "";
 				const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
-				return new Text(statusLine + "\n" + theme.fg("dim", preview), 0, 0);
+				lines.push(theme.fg("dim", preview));
+				return new Text(lines.join("\n"), 0, 0);
 			}
 
 			const countColor = (details?.successful ?? 0) > 0 ? "success" : "error";

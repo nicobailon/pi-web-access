@@ -2,13 +2,65 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [0.7.0] - 2026-02-03
+
+### Added
+- **Multi-provider web search**: `web_search` now supports Perplexity, Gemini API (with Google Search grounding), and Gemini Web (cookie auth) as search providers. New `provider` parameter (`auto`, `perplexity`, `gemini`) controls selection. In `auto` mode (default): Perplexity → Gemini API → Gemini Web. Backwards-compatible — existing Perplexity users see no change.
+- **Gemini API grounded search**: Structured citations via `groundingMetadata` with source URIs and text-to-source mappings. Google proxy URLs are resolved via HEAD redirects. Configured via `GEMINI_API_KEY` or `geminiApiKey` in config.
+- **Gemini Web search**: Zero-config web search for users signed into Google in Chrome. Prompt instructs Gemini to cite sources; URLs extracted from markdown response.
+- **Gemini extraction fallback**: When `fetch_content` fails (HTTP 403/429, Readability fails, network errors), automatically retries via Gemini URL Context API then Gemini Web extraction. Each has an independent 60s timeout. Handles SPAs, JS-heavy pages, and anti-bot protections.
+- **Local video file analysis**: `fetch_content` accepts file paths to video files (MP4, MOV, WebM, AVI, etc.). Detected by path prefix (`/`, `./`, `../`, `file://`), validated by extension and 50MB limit. Two-tier fallback: Gemini API (resumable upload via Files API with proper MIME types, poll-until-active and cleanup) → Gemini Web (free, cookie auth).
+- **Video prompt parameter**: `fetch_content` gains optional `prompt` parameter for asking specific questions about video content. Threads through YouTube and local video extraction. Without prompt, uses default extraction (transcript + visual descriptions).
+- **Video thumbnails**: YouTube results include the video thumbnail (fetched from `img.youtube.com`). Local video results include a frame extracted via ffmpeg (at ~1 second). Returned as image content parts alongside text — the agent sees the thumbnail as vision context.
+- **Configurable frame extraction**: `frames` parameter (1-12) on `fetch_content` for pulling visual frames from YouTube or local video. Works in five modes: frames alone (sample across entire video), single timestamp (one frame), single+frames (N frames at 5s intervals), range (default 6 frames), range+frames (N frames across the range). Endpoint-inclusive distribution with 5-second minimum spacing.
+- **Video duration in responses**: Frame extraction results include the video duration for context.
+- `searchProvider` config option in `~/.pi/web-search.json` for global provider default
+- `video` config section: `enabled`, `preferredModel`, `maxSizeMB`
+
+### Changed
+- `PerplexityResponse` renamed to `SearchResponse` (shared interface for all search providers)
+- Extracted HTTP pipeline from `extractContent` into `extractViaHttp` for cleaner Gemini fallback orchestration
+- `getApiKey()`, `API_BASE`, `DEFAULT_MODEL` exported from `gemini-api.ts` for use by search and URL Context modules
+- `isPerplexityAvailable()` added to `perplexity.ts` as non-throwing API key check
+- Content-type routing in `extract.ts`: only `text/html` and `application/xhtml+xml` go through Readability; all other text types (`text/markdown`, `application/json`, `text/csv`, etc.) returned directly. Fixes the OpenAI cookbook `.md` URL that returned "Untitled (30 chars)".
+- Title extraction for non-HTML content: `extractTextTitle()` pulls from markdown `#`/`##` headings, falls back to URL filename
+- Combined `yt-dlp --print duration -g` call fetches stream URL and duration in a single invocation, reused across all frame extraction paths via `streamInfo` passthrough
+- Shared helpers in `utils.ts` (`formatSeconds`, error mapping) eliminate circular imports and duplication across youtube-extract.ts and video-extract.ts
 
 ### Fixed
 - `fetch_content` TUI rendered `undefined/undefined URLs` during progress updates (renderResult didn't handle `isPartial`, now shows a progress bar like `web_search` does)
 - RSC extractor produced malformed markdown for `<pre><code>` blocks (backticks inside fenced code blocks) -- extremely common on Next.js documentation pages
 - Multi-URL fetch failures rendered in green "success" color even when 0 URLs succeeded (now red)
 - `web_search` queries parameter described as "parallel" in schema but execution is sequential (changed to "batch"; `urls` correctly remains "parallel")
+- Proper error propagation for frame extraction: missing binaries (yt-dlp, ffmpeg, ffprobe), private/age-restricted/region-blocked videos, expired stream URLs (403), timestamp-exceeds-duration, and timeouts all produce specific user-facing messages instead of silent nulls
+- `isTimeoutError` now detects `execFileSync` timeouts via the `killed` flag (SIGTERM from timeout was previously unrecognized)
+- Float video durations (e.g. 15913.7s from yt-dlp) no longer produce out-of-range timestamps — durations are floored before computing frame positions
+- `parseTimestamp` consistently floors results across both bare-number ("90.5" → 90) and colon ("1:30.5" → 90) paths — previously the colon path returned floats
+- YouTube thumbnail assignment no longer sets `null` on the optional `thumbnail` field when fetch fails (was a type mismatch; now only assigned on success)
+
+### New files
+- `gemini-search.ts` -- search routing + Gemini Web/API search providers with grounding
+- `gemini-url-context.ts` -- URL Context API extraction + Gemini Web extraction fallback
+- `video-extract.ts` -- local video file detection, Gemini Web/API analysis with Files API upload
+- `utils.ts` -- shared formatting and error helpers for frame extraction
+
+## [0.6.0] - 2026-02-02
+
+### Added
+- YouTube video understanding in `fetch_content` via three-tier fallback chain:
+  - **Gemini Web** (primary): reads Chrome session cookies from macOS Keychain + SQLite, authenticates to gemini.google.com, sends YouTube URL via StreamGenerate endpoint. Full visual + audio understanding with timestamps. Zero config needed if signed into Google in Chrome.
+  - **Gemini API** (secondary): direct REST calls with `GEMINI_API_KEY`. YouTube URLs passed as `file_data.file_uri`. Configure via `GEMINI_API_KEY` env var or `geminiApiKey` in `~/.pi/web-search.json`.
+  - **Perplexity** (fallback): uses existing `searchWithPerplexity` for a topic summary when neither Gemini path is available. Output labeled as "Summary (via Perplexity)" so the agent knows it's not a full transcript.
+- YouTube URL detection for all common formats: `/watch?v=`, `youtu.be/`, `/shorts/`, `/live/`, `/embed/`, `/v/`, `m.youtube.com`
+- Configurable via `~/.pi/web-search.json` under `youtube` key (`enabled`, `preferredModel`)
+- Actionable error messages when extraction fails (directs user to sign into Chrome or set API key)
+- YouTube URLs no longer fall through to HTTP/Readability (which returns garbage); returns error instead
+
+### New files
+- `chrome-cookies.ts` -- macOS Chrome cookie extraction using Node builtins (`node:crypto`, `node:sqlite`, `child_process`)
+- `gemini-web.ts` -- Gemini Web client ported from surf's gemini-client.cjs (cookie auth, StreamGenerate, model fallback)
+- `gemini-api.ts` -- Gemini REST API client (generateContent, file upload/processing/cleanup for Phase 2)
+- `youtube-extract.ts` -- YouTube extraction orchestrator with three-tier fallback and activity logging
 
 ## [0.5.1] - 2026-02-02
 
