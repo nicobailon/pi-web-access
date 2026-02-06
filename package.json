@@ -1,6 +1,6 @@
 {
   "name": "pi-web-access",
-  "version": "0.7.2",
+  "version": "0.7.3",
   "description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent",
   "type": "module",
   "keywords": [

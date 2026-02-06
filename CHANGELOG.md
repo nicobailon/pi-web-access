@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.7.3] - 2026-02-05
+
+### Added
+- Jina Reader fallback for JS-rendered pages. When Readability returns insufficient content (cookie notices, consent walls, SPA shells), the extraction chain now tries Jina Reader (`r.jina.ai`) before falling back to Gemini. Jina handles JavaScript rendering server-side and returns clean markdown. No API key required.
+- JS-render detection heuristic (`isLikelyJSRendered`) produces more specific error messages when pages appear to load content dynamically.
+- Actionable guidance when all extraction methods fail, listing steps to configure Gemini API or use `web_search` instead.
+
+### Changed
+- HTTP fetch headers now mimic Chrome (realistic `User-Agent`, `Sec-Fetch-*`, `Accept-Language`) instead of the default Node.js user agent. Reduces blocks from bot-detection systems.
+- Short Readability output (< 500 chars) is now treated as a content failure, triggering the fallback chain. Previously, a 266-char cookie notice was returned as "successful" content.
+- Extraction fallback order is now: HTTP+Readability → RSC → Jina Reader → Gemini URL Context → Gemini Web → error with guidance.
+
+### Fixed
+- `parseTimestamp` now rejects negative values in colon-separated format (`-1:30`, `1:-30`). Previously only the numeric path (`-90`) rejected negatives, while the colon path computed and returned negative seconds.
+
 ## [0.7.2] - 2026-02-03
 
 ### Added

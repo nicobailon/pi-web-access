@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
 **Video Understanding** — Point it at a YouTube video or local screen recording and ask questions about what's on screen. Full transcripts, visual descriptions, and frame extraction at exact timestamps.
 
-**Smart Fallbacks** — Every capability has a fallback chain. Search tries Perplexity, then Gemini API, then Gemini Web. YouTube tries Gemini Web, then API, then Perplexity. Blocked pages retry through Gemini extraction. Something always works.
+**Smart Fallbacks** — Every capability has a fallback chain. Search tries Perplexity, then Gemini API, then Gemini Web. YouTube tries Gemini Web, then API, then Perplexity. Blocked pages retry through Jina Reader and Gemini extraction. Something always works.
 
 **GitHub Cloning** — GitHub URLs are cloned locally instead of scraped. The agent gets real file contents and a local path to explore, not rendered HTML.
 
@@ -164,7 +164,7 @@ PDF URLs are extracted as text and saved to `~/Downloads/` as markdown. The agen
 
 ### Blocked pages
 
-When Readability fails or a site blocks bot traffic, the extension retries via Gemini URL Context API or Gemini Web extraction. Handles SPAs, JS-heavy pages, and anti-bot protections transparently. Also parses Next.js RSC flight data when present.
+When Readability fails or returns only a cookie notice, the extension retries via Jina Reader (handles JS rendering server-side, no API key needed), then Gemini URL Context API, then Gemini Web extraction. Handles SPAs, JS-heavy pages, and anti-bot protections transparently. Also parses Next.js RSC flight data when present.
 
 ## How It Works
 
@@ -174,7 +174,7 @@ fetch_content(url)
   → GitHub URL?  Clone repo, return file contents + local path
   → YouTube URL? Gemini Web → Gemini API → Perplexity
   → HTTP fetch → PDF? Extract text, save to ~/Downloads/
-               → HTML? Readability → RSC parser → Gemini fallback
+               → HTML? Readability → RSC parser → Jina Reader → Gemini fallback
                → Text/JSON/Markdown? Return directly
 ```
 

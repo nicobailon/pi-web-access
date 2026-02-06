@@ -15,6 +15,7 @@ const DEFAULT_TIMEOUT_MS = 30000;
 const CONCURRENT_LIMIT = 3;
 
 const NON_RECOVERABLE_ERRORS = ["Unsupported content type", "Response too large"];
+const MIN_USEFUL_CONTENT = 500;
 
 const turndown = new TurndownService({
 	headingStyle: "atx",
@@ -51,11 +52,69 @@ export interface ExtractOptions {
 	model?: string;
 }
 
+const JINA_READER_BASE = "https://r.jina.ai/";
+const JINA_TIMEOUT_MS = 30000;
+
+async function extractWithJinaReader(
+	url: string,
+	signal?: AbortSignal,
+): Promise<ExtractedContent | null> {
+	const jinaUrl = JINA_READER_BASE + url;
+
+	const activityId = activityMonitor.logStart({ type: "api", query: `jina: ${url}` });
+
+	try {
+		const res = await fetch(jinaUrl, {
+			headers: {
+				"Accept": "text/markdown",
+				"X-No-Cache": "true",
+			},
+			signal: AbortSignal.any([
+				AbortSignal.timeout(JINA_TIMEOUT_MS),
+				...(signal ? [signal] : []),
+			]),
+		});
+
+		if (!res.ok) {
+			activityMonitor.logComplete(activityId, res.status);
+			return null;
+		}
+
+		const content = await res.text();
+		activityMonitor.logComplete(activityId, res.status);
+
+		const contentStart = content.indexOf("Markdown Content:");
+		if (contentStart < 0) {
+			return null;
+		}
+
+		const markdownPart = content.slice(contentStart + 17).trim(); // 17 = "Markdown Content:".length
+
+		// Check for failed JS rendering or minimal content
+		if (markdownPart.length < 100 ||
+			markdownPart.startsWith("Loading...") ||
+			markdownPart.startsWith("Please enable JavaScript")) {
+			return null;
+		}
+
+		const title = extractHeadingTitle(markdownPart) ?? (new URL(url).pathname.split("/").pop() || url);
+		return { url, title, content: markdownPart, error: null };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		if (message.toLowerCase().includes("abort")) {
+			activityMonitor.logComplete(activityId, 0);
+		} else {
+			activityMonitor.logError(activityId, message);
+		}
+		return null;
+	}
+}
+
 function parseTimestamp(ts: string): number | null {
 	const num = Number(ts);
 	if (!isNaN(num) && num >= 0) return Math.floor(num);
 	const parts = ts.split(":").map(Number);
-	if (parts.some(isNaN)) return null;
+	if (parts.some(p => isNaN(p) || p < 0)) return null;
 	if (parts.length === 3) return Math.floor(parts[0] * 3600 + parts[1] * 60 + parts[2]);
 	if (parts.length === 2) return Math.floor(parts[0] * 60 + parts[1]);
 	return null;
@@ -286,10 +345,45 @@ export async function extractContent(
 	if (!httpResult.error || signal?.aborted) return httpResult;
 	if (NON_RECOVERABLE_ERRORS.some(prefix => httpResult.error!.startsWith(prefix))) return httpResult;
 
+	const jinaResult = await extractWithJinaReader(url, signal);
+	if (jinaResult) return jinaResult;
+
 	const geminiResult = await extractWithUrlContext(url, signal)
 		?? await extractWithGeminiWeb(url, signal);
 
-	return geminiResult ?? httpResult;
+	if (geminiResult) return geminiResult;
+
+	const guidance = [
+		httpResult.error,
+		"",
+		"Fallback options:",
+		"  \u2022 Set GEMINI_API_KEY in ~/.pi/web-search.json",
+		"  \u2022 Sign into gemini.google.com in Chrome",
+		"  \u2022 Use web_search to find content about this topic",
+	].join("\n");
+	return { ...httpResult, error: guidance };
+}
+
+function isLikelyJSRendered(html: string): boolean {
+	// Extract body content
+	const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+	if (!bodyMatch) return false;
+
+	const bodyHtml = bodyMatch[1];
+
+	// Strip tags to get text content
+	const textContent = bodyHtml
+		.replace(/<script[\s\S]*?<\/script>/gi, "")
+		.replace(/<style[\s\S]*?<\/style>/gi, "")
+		.replace(/<[^>]+>/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
+
+	// Count scripts
+	const scriptCount = (html.match(/<script/gi) || []).length;
+
+	// Heuristic: little text content but many scripts suggests JS rendering
+	return textContent.length < 500 && scriptCount > 3;
 }
 
 async function extractViaHttp(
@@ -310,8 +404,15 @@ async function extractViaHttp(
 		const response = await fetch(url, {
 			signal: controller.signal,
 			headers: {
-				"User-Agent": "Mozilla/5.0 (compatible; pi-agent/1.0)",
-				Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+				"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+				"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+				"Accept-Language": "en-US,en;q=0.9",
+				"Cache-Control": "no-cache",
+				"Sec-Fetch-Dest": "document",
+				"Sec-Fetch-Mode": "navigate",
+				"Sec-Fetch-Site": "none",
+				"Sec-Fetch-User": "?1",
+				"Upgrade-Insecure-Requests": "1",
 			},
 		});
 
@@ -395,16 +496,35 @@ async function extractViaHttp(
 			}
 
 			activityMonitor.logComplete(activityId, response.status);
+
+			// Provide more specific error message
+			const jsRendered = isLikelyJSRendered(text);
+			const errorMsg = jsRendered
+				? "Page appears to be JavaScript-rendered (content loads dynamically)"
+				: "Could not extract readable content from HTML structure";
+
 			return {
 				url,
 				title: "",
 				content: "",
-				error: "Could not extract readable content",
+				error: errorMsg,
 			};
 		}
 
 		const markdown = turndown.turndown(article.content);
 		activityMonitor.logComplete(activityId, response.status);
+
+		if (markdown.length < MIN_USEFUL_CONTENT) {
+			return {
+				url,
+				title: article.title || "",
+				content: markdown,
+				error: isLikelyJSRendered(text)
+					? "Page appears to be JavaScript-rendered (content loads dynamically)"
+					: "Extracted content appears incomplete",
+			};
+		}
+
 		return { url, title: article.title || "", content: markdown, error: null };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
