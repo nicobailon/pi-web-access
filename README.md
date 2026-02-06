@@ -235,7 +235,8 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Content f
 
 ## Limitations
 
-- Chrome cookie extraction is macOS-only — other platforms fall through to API keys. First-time access may trigger a Keychain dialog.
+- Chrome cookie extraction works on macOS and Linux (GNOME Keyring via `secret-tool`, with fallback to default password). Windows requires API keys. First-time access on macOS may trigger a Keychain dialog.
+- On Linux, supports both Chromium and Google Chrome. Requires `libsecret` (`secret-tool` CLI) for keyring access.
 - YouTube private/age-restricted videos may fail on all extraction paths.
 - Gemini can process videos up to ~1 hour; longer videos may be truncated.
 - PDFs are text-extracted only (no OCR for scanned documents).
@@ -253,7 +254,7 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Content f
 | `gemini-url-context.ts` | Gemini URL Context + Web extraction fallbacks |
 | `gemini-web.ts` | Gemini Web client (cookie auth, StreamGenerate) |
 | `gemini-api.ts` | Gemini REST API client (generateContent) |
-| `chrome-cookies.ts` | macOS Chrome cookie extraction (Keychain + SQLite) |
+| `chrome-cookies.ts` | Chrome/Chromium cookie extraction (macOS Keychain, Linux GNOME Keyring) |
 | `youtube-extract.ts` | YouTube detection, three-tier extraction, frame extraction |
 | `video-extract.ts` | Local video detection, Files API upload, Gemini analysis |
 | `github-extract.ts` | GitHub URL parsing, clone cache, content generation |

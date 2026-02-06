@@ -33,31 +33,49 @@ const ALL_COOKIE_NAMES = new Set([
 	"SIDCC",
 ]);
 
-const CHROME_COOKIES_PATH = join(
-	homedir(),
-	"Library/Application Support/Google/Chrome/Default/Cookies",
-);
+function getChromeCookiesPath(): string | null {
+	const plat = platform();
+	if (plat === "darwin") {
+		return join(homedir(), "Library/Application Support/Google/Chrome/Default/Cookies");
+	}
+	if (plat === "linux") {
+		// Try Chromium first (common on Arch/Omarchy), then Chrome
+		const chromiumPath = join(homedir(), ".config/chromium/Default/Cookies");
+		if (existsSync(chromiumPath)) return chromiumPath;
+
+		const chromePath = join(homedir(), ".config/google-chrome/Default/Cookies");
+		if (existsSync(chromePath)) return chromePath;
+
+		return null;
+	}
+	return null;
+}
 
 export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
-	if (platform() !== "darwin") return null;
-	if (!existsSync(CHROME_COOKIES_PATH)) return null;
+	const plat = platform();
+	if (plat !== "darwin" && plat !== "linux") return null;
+
+	const cookiesPath = getChromeCookiesPath();
+	if (!cookiesPath) return null;
 
 	const warnings: string[] = [];
 
-	const password = await readKeychainPassword();
+	const password = await readEncryptionPassword();
 	if (!password) {
-		warnings.push("Could not read Chrome Safe Storage password from Keychain");
+		warnings.push("Could not read Chrome encryption password");
 		return { cookies: {}, warnings };
 	}
 
-	const key = pbkdf2Sync(password, "saltysalt", 1003, 16, "sha1");
+	// On macOS, derive key with 1003 iterations; on Linux v10, 1 iteration (handled in decryptLinuxCookieValue)
+	// For macOS, we still need the pre-derived key for the existing decryptCookieValue function
+	const macKey = plat === "darwin" ? pbkdf2Sync(password, "saltysalt", 1003, 16, "sha1") : Buffer.alloc(0);
 	const tempDir = mkdtempSync(join(tmpdir(), "pi-chrome-cookies-"));
 
 	try {
 		const tempDb = join(tempDir, "Cookies");
-		copyFileSync(CHROME_COOKIES_PATH, tempDb);
-		copySidecar(CHROME_COOKIES_PATH, tempDb, "-wal");
-		copySidecar(CHROME_COOKIES_PATH, tempDb, "-shm");
+		copyFileSync(cookiesPath, tempDb);
+		copySidecar(cookiesPath, tempDb, "-wal");
+		copySidecar(cookiesPath, tempDb, "-shm");
 
 		const metaVersion = await readMetaVersion(tempDb);
 		const stripHash = metaVersion >= 24;
@@ -79,7 +97,11 @@ export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings
 			if (!value) {
 				const encrypted = row.encrypted_value;
 				if (encrypted instanceof Uint8Array) {
-					value = decryptCookieValue(encrypted, key, stripHash);
+					if (plat === "linux") {
+						value = decryptLinuxCookieValue(encrypted, password, stripHash);
+					} else {
+						value = decryptCookieValue(encrypted, macKey, stripHash);
+					}
 				}
 			}
 			if (value) cookies[name] = value;
@@ -117,6 +139,38 @@ function decryptCookieValue(encrypted: Uint8Array, key: Buffer, stripHash: boole
 	}
 }
 
+function decryptLinuxCookieValue(encrypted: Uint8Array, keyringSecret: string, stripHash: boolean): string | null {
+	const buf = Buffer.from(encrypted);
+	if (buf.length < 3) return null;
+
+	const prefix = buf.subarray(0, 3).toString("utf8");
+	// Both v10 and v11 on Linux use AES-128-CBC (per Chromium source os_crypt_linux.cc)
+	// v10 uses hardcoded "peanuts" password, v11 uses password from keyring
+	// Both derive key via PBKDF2 with 1 iteration
+	if (prefix !== "v10" && prefix !== "v11") return null;
+
+	const ciphertext = buf.subarray(3);
+	if (!ciphertext.length) return "";
+
+	try {
+		// Derive key using PBKDF2 with 1 iteration (Linux uses 1, macOS uses 1003)
+		// The keyring secret is used directly as the password (not base64-decoded)
+		const key = pbkdf2Sync(keyringSecret, "saltysalt", 1, 16, "sha1");
+		const iv = Buffer.alloc(16, 0x20);
+		const decipher = createDecipheriv("aes-128-cbc", key, iv);
+		decipher.setAutoPadding(false);
+		const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+		const unpadded = removePkcs7Padding(plaintext);
+		const bytes = stripHash && unpadded.length >= 32 ? unpadded.subarray(32) : unpadded;
+		const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+		let i = 0;
+		while (i < decoded.length && decoded.charCodeAt(i) < 0x20) i++;
+		return decoded.slice(i);
+	} catch {
+		return null;
+	}
+}
+
 function removePkcs7Padding(buf: Buffer): Buffer {
 	if (!buf.length) return buf;
 	const padding = buf[buf.length - 1];
@@ -136,6 +190,48 @@ function readKeychainPassword(): Promise<string | null> {
 			},
 		);
 	});
+}
+
+function readLinuxKeyringPassword(): Promise<string | null> {
+	return new Promise((resolve) => {
+		// Try Chromium first, then Chrome
+		execFile(
+			"secret-tool",
+			["lookup", "application", "chromium"],
+			{ timeout: 5000 },
+			(err, stdout) => {
+				if (!err && stdout.trim()) {
+					resolve(stdout.trim());
+					return;
+				}
+				// Fallback to Chrome
+				execFile(
+					"secret-tool",
+					["lookup", "application", "chrome"],
+					{ timeout: 5000 },
+					(err2, stdout2) => {
+						if (!err2 && stdout2.trim()) {
+							resolve(stdout2.trim());
+							return;
+						}
+						// Final fallback: hardcoded password (Chrome's default when no keyring)
+						resolve("peanuts");
+					},
+				);
+			},
+		);
+	});
+}
+
+async function readEncryptionPassword(): Promise<string | null> {
+	const plat = platform();
+	if (plat === "darwin") {
+		return readKeychainPassword();
+	}
+	if (plat === "linux") {
+		return readLinuxKeyringPassword();
+	}
+	return null;
 }
 
 let sqliteModule: typeof import("node:sqlite") | null = null;
