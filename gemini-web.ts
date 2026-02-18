@@ -1,4 +1,4 @@
-import { type CookieMap, getGoogleCookies } from "./chrome-cookies.js";
+import { type CookieMap, getGoogleCookies, getActiveGoogleEmail } from "./chrome-cookies.js";
 
 const GEMINI_APP_URL = "https://gemini.google.com/app";
 const GEMINI_STREAM_GENERATE_URL =
@@ -30,10 +30,16 @@ function hasRequiredCookies(cookieMap: CookieMap): boolean {
 	return REQUIRED_COOKIES.every((name) => Boolean(cookieMap[name]));
 }
 
-export async function isGeminiWebAvailable(): Promise<CookieMap | null> {
+export interface GeminiWebAvailability {
+	cookies: CookieMap;
+	email: string | null;
+}
+
+export async function isGeminiWebAvailable(): Promise<GeminiWebAvailability | null> {
 	const result = await getGoogleCookies();
 	if (!result || !hasRequiredCookies(result.cookies)) return null;
-	return result.cookies;
+	const email = await getActiveGoogleEmail(result.cookies);
+	return { cookies: result.cookies, email };
 }
 
 export async function queryWithCookies(

@@ -196,12 +196,12 @@ async function tryGeminiWeb(
 	signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
 	try {
-		const cookies = await isGeminiWebAvailable();
-		if (!cookies) return null;
+		const availability = await isGeminiWebAvailable();
+		if (!availability) return null;
 
 		if (signal?.aborted) return null;
 
-		const text = await queryWithCookies(prompt, cookies, {
+		const text = await queryWithCookies(prompt, availability.cookies, {
 			youtubeUrl: url,
 			model,
 			signal,

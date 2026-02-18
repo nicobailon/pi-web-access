@@ -115,14 +115,14 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 }
 
 async function searchWithGeminiWeb(query: string, options: SearchOptions = {}): Promise<SearchResponse | null> {
-	const cookies = await isGeminiWebAvailable();
-	if (!cookies) return null;
+	const availability = await isGeminiWebAvailable();
+	if (!availability) return null;
 
 	const prompt = buildSearchPrompt(query, options);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
-		const text = await queryWithCookies(prompt, cookies, {
+		const text = await queryWithCookies(prompt, availability.cookies, {
 			model: "gemini-3-flash-preview",
 			signal: options.signal,
 			timeoutMs: 60000,
