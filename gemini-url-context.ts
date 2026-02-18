@@ -73,13 +73,13 @@ export async function extractWithGeminiWeb(
 	url: string,
 	signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
-	const cookies = await isGeminiWebAvailable();
-	if (!cookies) return null;
+	const availability = await isGeminiWebAvailable();
+	if (!availability) return null;
 
 	const activityId = activityMonitor.logStart({ type: "api", query: `gemini_web: ${url}` });
 
 	try {
-		const text = await queryWithCookies(EXTRACTION_PROMPT + url, cookies, {
+		const text = await queryWithCookies(EXTRACTION_PROMPT + url, availability.cookies, {
 			model: "gemini-3-flash-preview",
 			signal,
 			timeoutMs: 60000,

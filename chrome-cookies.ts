@@ -238,3 +238,36 @@ function copySidecar(srcDb: string, targetDb: string, suffix: string): void {
 		copyFileSync(sidecar, `${targetDb}${suffix}`);
 	} catch {}
 }
+
+const USER_AGENT =
+	"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
+/**
+ * Fetches the email of the active (primary) Google account using the cookies.
+ * Uses the accounts.google.com/ListAccounts endpoint, which returns all
+ * logged-in accounts. The first account is the primary one (authuser=0).
+ */
+export async function getActiveGoogleEmail(cookies: CookieMap): Promise<string | null> {
+	const cookieHeader = Object.entries(cookies)
+		.filter(([, v]) => typeof v === "string" && v.length > 0)
+		.map(([k, v]) => `${k}=${v}`)
+		.join("; ");
+
+	try {
+		const res = await fetch("https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser", {
+			headers: {
+				"user-agent": USER_AGENT,
+				cookie: cookieHeader,
+			},
+			signal: AbortSignal.timeout(5000),
+		});
+		if (!res.ok) return null;
+
+		const text = await res.text();
+		// Response format: ["gaia.l.a",[[1,"user@gmail.com","Full Name",...],...]
+		const emailMatch = text.match(/\["gaia\.l\.a",\[\[.*?,"([^"]+@[^"]+)"/);
+		return emailMatch?.[1] ?? null;
+	} catch {
+		return null;
+	}
+}

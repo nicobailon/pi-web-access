@@ -5,6 +5,7 @@ import { StringEnum } from "@mariozechner/pi-ai";
 import { fetchAllContent, type ExtractedContent } from "./extract.js";
 import { clearCloneCache } from "./github-extract.js";
 import { search, type SearchProvider } from "./gemini-search.js";
+import { isGeminiWebAvailable } from "./gemini-web.js";
 import type { SearchResult } from "./perplexity.js";
 import { formatSeconds } from "./utils.js";
 import {
@@ -144,6 +145,22 @@ export default function (pi: ExtensionAPI) {
 				widgetUnsubscribe?.();
 				widgetUnsubscribe = null;
 				ctx.ui.setWidget("web-activity", null);
+			}
+		},
+	});
+
+	pi.registerCommand("google-account", {
+		description: "Show which Google account is used for Gemini Web search",
+		handler: async (_args, ctx) => {
+			const availability = await isGeminiWebAvailable();
+			if (!availability) {
+				ctx.ui.notify("Gemini Web not available. Sign into gemini.google.com in Chrome.", "warning");
+				return;
+			}
+			if (availability.email) {
+				ctx.ui.notify(`Gemini Web using: ${availability.email}`, "info");
+			} else {
+				ctx.ui.notify("Gemini Web available, but could not determine account email.", "warning");
 			}
 		},
 	});
