@@ -33,31 +33,56 @@ const ALL_COOKIE_NAMES = new Set([
 	"SIDCC",
 ]);
 
-const CHROME_COOKIES_PATH = join(
-	homedir(),
-	"Library/Application Support/Google/Chrome/Default/Cookies",
-);
+interface PlatformConfig {
+	cookiePath: string;
+	getPassword: () => Promise<string | null>;
+	pbkdf2Iterations: number;
+}
+
+function getDarwinConfig(): PlatformConfig {
+	return {
+		cookiePath: join(homedir(), "Library/Application Support/Google/Chrome/Default/Cookies"),
+		getPassword: readMacKeychainPassword,
+		pbkdf2Iterations: 1003,
+	};
+}
+
+function getLinuxConfig(): PlatformConfig {
+	return {
+		cookiePath: join(homedir(), ".config/google-chrome/Default/Cookies"),
+		getPassword: readLinuxKeychainPassword,
+		pbkdf2Iterations: 1,
+	};
+}
+
+function getPlatformConfig(): PlatformConfig | null {
+	const os = platform();
+	if (os === "darwin") return getDarwinConfig();
+	if (os === "linux") return getLinuxConfig();
+	return null;
+}
 
 export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
-	if (platform() !== "darwin") return null;
-	if (!existsSync(CHROME_COOKIES_PATH)) return null;
+	const config = getPlatformConfig();
+	if (!config) return null;
+	if (!existsSync(config.cookiePath)) return null;
 
 	const warnings: string[] = [];
 
-	const password = await readKeychainPassword();
+	const password = await config.getPassword();
 	if (!password) {
-		warnings.push("Could not read Chrome Safe Storage password from Keychain");
+		warnings.push("Could not read Chrome Safe Storage password");
 		return { cookies: {}, warnings };
 	}
 
-	const key = pbkdf2Sync(password, "saltysalt", 1003, 16, "sha1");
+	const key = pbkdf2Sync(password, "saltysalt", config.pbkdf2Iterations, 16, "sha1");
 	const tempDir = mkdtempSync(join(tmpdir(), "pi-chrome-cookies-"));
 
 	try {
 		const tempDb = join(tempDir, "Cookies");
-		copyFileSync(CHROME_COOKIES_PATH, tempDb);
-		copySidecar(CHROME_COOKIES_PATH, tempDb, "-wal");
-		copySidecar(CHROME_COOKIES_PATH, tempDb, "-shm");
+		copyFileSync(config.cookiePath, tempDb);
+		copySidecar(config.cookiePath, tempDb, "-wal");
+		copySidecar(config.cookiePath, tempDb, "-shm");
 
 		const metaVersion = await readMetaVersion(tempDb);
 		const stripHash = metaVersion >= 24;
@@ -124,7 +149,8 @@ function removePkcs7Padding(buf: Buffer): Buffer {
 	return buf.subarray(0, buf.length - padding);
 }
 
-function readKeychainPassword(): Promise<string | null> {
+// macOS: read password from Keychain via `security` CLI
+function readMacKeychainPassword(): Promise<string | null> {
 	return new Promise((resolve) => {
 		execFile(
 			"security",
@@ -135,6 +161,82 @@ function readKeychainPassword(): Promise<string | null> {
 				resolve(stdout.trim() || null);
 			},
 		);
+	});
+}
+
+// Linux: read password from GNOME Keyring (libsecret) via `secret-tool`,
+// then try KWallet via `kwallet-query`, fallback to "peanuts"
+async function readLinuxKeychainPassword(): Promise<string> {
+	// Try GNOME Keyring / libsecret via secret-tool
+	const secretToolPassword = await runCommand(
+		"secret-tool",
+		["lookup", "xdg:schema", "chrome_libsecret_os_crypt_password_v2", "application", "chrome"],
+	);
+	if (secretToolPassword) return secretToolPassword;
+
+	// Try older v1 schema
+	const secretToolV1 = await runCommand(
+		"secret-tool",
+		["lookup", "xdg:schema", "chrome_libsecret_os_crypt_password_v1", "application", "chrome"],
+	);
+	if (secretToolV1) return secretToolV1;
+
+	// Try KWallet via kwallet-query (KDE)
+	const kwalletPassword = await readKWalletPassword();
+	if (kwalletPassword) return kwalletPassword;
+
+	// Chromium fallback when no keyring is available
+	return "peanuts";
+}
+
+function readKWalletPassword(): Promise<string | null> {
+	return new Promise((resolve) => {
+		// First check if KWallet is available
+		execFile("dbus-send", [
+			"--session",
+			"--dest=org.kde.kwalletd6",
+			"--print-reply",
+			"/modules/kwalletd6",
+			"org.kde.KWallet.isEnabled",
+		], { timeout: 3000 }, (err, stdout) => {
+			if (err) {
+				// Try kwalletd5
+				execFile("dbus-send", [
+					"--session",
+					"--dest=org.kde.kwalletd5",
+					"--print-reply",
+					"/modules/kwalletd5",
+					"org.kde.KWallet.isEnabled",
+				], { timeout: 3000 }, (err2) => {
+					if (err2) { resolve(null); return; }
+					readFromKWallet("kwalletd5", resolve);
+				});
+				return;
+			}
+			readFromKWallet("kwalletd6", resolve);
+		});
+	});
+}
+
+function readFromKWallet(daemon: string, resolve: (value: string | null) => void): void {
+	// kwallet-query reads a password entry from KWallet
+	execFile("kwallet-query", [
+		"-r", "Chrome Safe Storage",
+		"-f", "Chrome Keys",
+		"kdewallet",
+	], { timeout: 5000 }, (err, stdout) => {
+		if (err) { resolve(null); return; }
+		const pw = stdout.trim();
+		resolve(pw || null);
+	});
+}
+
+function runCommand(cmd: string, args: string[]): Promise<string | null> {
+	return new Promise((resolve) => {
+		execFile(cmd, args, { timeout: 5000 }, (err, stdout) => {
+			if (err) { resolve(null); return; }
+			resolve(stdout.trim() || null);
+		});
 	});
 }
 
