@@ -244,8 +244,9 @@ const USER_AGENT =
 
 /**
  * Fetches the email of the active (primary) Google account using the cookies.
- * Uses the accounts.google.com/ListAccounts endpoint, which returns all
- * logged-in accounts. The first account is the primary one (authuser=0).
+ * Extracts the email from the gemini.google.com/app page HTML, which embeds
+ * the logged-in user's email. Falls back to the accounts.google.com/ListAccounts
+ * endpoint if not found.
  */
 export async function getActiveGoogleEmail(cookies: CookieMap): Promise<string | null> {
 	const cookieHeader = Object.entries(cookies)
@@ -253,6 +254,28 @@ export async function getActiveGoogleEmail(cookies: CookieMap): Promise<string |
 		.map(([k, v]) => `${k}=${v}`)
 		.join("; ");
 
+	// Try extracting from Gemini app page HTML
+	try {
+		const res = await fetch("https://gemini.google.com/app", {
+			headers: {
+				"user-agent": USER_AGENT,
+				cookie: cookieHeader,
+			},
+			redirect: "follow",
+			signal: AbortSignal.timeout(10000),
+		});
+		if (res.ok) {
+			const html = await res.text();
+			// Find non-Google email addresses in the HTML (skip internal @google.com addresses)
+			const emails = html.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
+			if (emails) {
+				const userEmail = emails.find((e) => !e.endsWith("@google.com"));
+				if (userEmail) return userEmail;
+			}
+		}
+	} catch {}
+
+	// Fallback: try ListAccounts endpoint
 	try {
 		const res = await fetch("https://accounts.google.com/ListAccounts?gpsia=1&source=ChromiumBrowser", {
 			headers: {
