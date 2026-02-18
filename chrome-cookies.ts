@@ -36,6 +36,7 @@ const ALL_COOKIE_NAMES = new Set([
 interface PlatformConfig {
 	cookiePath: string;
 	getPassword: () => Promise<string | null>;
+	getFallbackPassword?: () => Promise<string | null>;
 	pbkdf2Iterations: number;
 }
 
@@ -51,6 +52,7 @@ function getLinuxConfig(): PlatformConfig {
 	return {
 		cookiePath: join(homedir(), ".config/google-chrome/Default/Cookies"),
 		getPassword: readLinuxKeychainPassword,
+		getFallbackPassword: readLinuxFallbackPassword,
 		pbkdf2Iterations: 1,
 	};
 }
@@ -76,6 +78,17 @@ export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings
 	}
 
 	const key = pbkdf2Sync(password, "saltysalt", config.pbkdf2Iterations, 16, "sha1");
+
+	// On Linux, v10 and v11 cookies may use different encryption keys.
+	// Get a fallback key for cookies that fail with the primary key.
+	let fallbackKey: Buffer | null = null;
+	if (config.getFallbackPassword) {
+		const fallbackPassword = await config.getFallbackPassword();
+		if (fallbackPassword && fallbackPassword !== password) {
+			fallbackKey = pbkdf2Sync(fallbackPassword, "saltysalt", config.pbkdf2Iterations, 16, "sha1");
+		}
+	}
+
 	const tempDir = mkdtempSync(join(tmpdir(), "pi-chrome-cookies-"));
 
 	try {
@@ -105,6 +118,10 @@ export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings
 				const encrypted = row.encrypted_value;
 				if (encrypted instanceof Uint8Array) {
 					value = decryptCookieValue(encrypted, key, stripHash);
+					// If primary key fails, try fallback key (handles v10/v11 key mismatch)
+					if (!value && fallbackKey) {
+						value = decryptCookieValue(encrypted, fallbackKey, stripHash);
+					}
 				}
 			}
 			if (value) cookies[name] = value;
@@ -186,6 +203,21 @@ async function readLinuxKeychainPassword(): Promise<string> {
 	if (kwalletPassword) return kwalletPassword;
 
 	// Chromium fallback when no keyring is available
+	return "peanuts";
+}
+
+// Returns a fallback password for v10 cookies when the primary key (from v2 schema) doesn't work.
+// On Linux, Chrome may have migrated from v1/"peanuts" key to v2, leaving older v10 cookies
+// encrypted with the old key while newer v11 cookies use the v2 key.
+async function readLinuxFallbackPassword(): Promise<string | null> {
+	// Try v1 schema first
+	const secretToolV1 = await runCommand(
+		"secret-tool",
+		["lookup", "xdg:schema", "chrome_libsecret_os_crypt_password_v1", "application", "chrome"],
+	);
+	if (secretToolV1) return secretToolV1;
+
+	// Chromium fallback
 	return "peanuts";
 }
 
