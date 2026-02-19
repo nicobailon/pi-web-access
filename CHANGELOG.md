@@ -2,17 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-
-### Added
-- **Perplexity Chrome-cookie auth fallback.** `web_search` can now use a logged-in Perplexity web session from Chrome (macOS) when an API key is missing or fails auth/rate limits.
-- Perplexity availability now considers local Chrome cookie store presence, enabling cookie-auth flows in auto provider mode.
-- **Cloudflare fallback for Perplexity web.** If Node fetch is blocked with a Cloudflare challenge, the extension now retries via Python `curl_cffi` Chrome impersonation (auto-bootstrapped venv at `~/.pi/cache/pi-web-access/curl-cffi-venv`).
-
-### Changed
-- Search auto-routing now falls back to Gemini if Perplexity fails at runtime, and includes the Perplexity failure reason in the final error message.
-- Chrome cookie extraction was generalized to support multiple origin/cookie-name sets (Google + Perplexity).
-
 ## [0.10.2] - 2026-02-18
 
 ### Added
