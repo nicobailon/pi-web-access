@@ -98,6 +98,15 @@ function resolveProvider(
 	return provider;
 }
 
+function resolveSearchProvider(
+	requestedProvider: string,
+	resolvedProvider: string,
+): SearchProvider | undefined {
+	return requestedProvider === "auto"
+		? undefined
+		: (resolvedProvider as SearchProvider | undefined);
+}
+
 const pendingFetches = new Map<string, AbortController>();
 let sessionActive = false;
 let widgetVisible = false;
@@ -115,6 +124,7 @@ interface PendingCurate {
 	domainFilter?: string[];
 	availableProviders: { perplexity: boolean; gemini: boolean };
 	defaultProvider: string;
+	providerPreference: string;
 	onUpdate: ((update: { content: Array<{ type: string; text: string }>; details?: Record<string, unknown> }) => void) | undefined;
 	signal: AbortSignal | undefined;
 	timer?: ReturnType<typeof setTimeout>;
@@ -471,10 +481,12 @@ export default function (pi: ExtensionAPI) {
 					},
 					onProviderChange(provider) {
 						saveConfig({ provider });
+						pc.defaultProvider = provider;
+						pc.providerPreference = provider;
 					},
 					async onAddSearch(query, queryIndex) {
 						const { answer, results } = await search(query, {
-							provider: pc.defaultProvider as SearchProvider | undefined,
+							provider: resolveSearchProvider(pc.providerPreference, pc.defaultProvider),
 							numResults: pc.numResults,
 							recencyFilter: pc.recencyFilter,
 							domainFilter: pc.domainFilter,
@@ -577,7 +589,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using Perplexity AI or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Multi-query searches include a brief review window where the user can press ${curateLabel} to curate results in the browser before they're sent. Set curate to false to skip this. Provider auto-selects: Perplexity if configured, else Gemini API (needs key), else Gemini Web (needs Chrome login).`,
+			`Search the web using Perplexity AI or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Multi-query searches include a brief review window where the user can press ${curateLabel} to curate results in the browser before they're sent. Set curate to false to skip this. Provider auto-selects: Perplexity (API key or Chrome cookies on macOS), else Gemini API (needs key), else Gemini Web (needs Chrome login).`,
 		parameters: Type.Object({
 			query: Type.Optional(Type.String({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched in sequence, each returning its own synthesized answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
@@ -626,7 +638,9 @@ export default function (pi: ExtensionAPI) {
 					perplexity: pplxAvail,
 					gemini: geminiApiAvail || !!geminiWebAvail,
 				};
-				const defaultProvider = resolveProvider(params.provider, availableProviders);
+				const requestedProvider = params.provider || loadConfig().provider || "auto";
+				const defaultProvider = resolveProvider(requestedProvider, availableProviders);
+				const initialSearchProvider = resolveSearchProvider(requestedProvider, defaultProvider);
 				const curateConfig = loadConfig();
 				const curateWindow = curateConfig.curateWindow ?? DEFAULT_CURATE_WINDOW;
 
@@ -641,6 +655,7 @@ export default function (pi: ExtensionAPI) {
 					domainFilter: params.domainFilter,
 					availableProviders,
 					defaultProvider,
+					providerPreference: requestedProvider,
 					onUpdate: onUpdate as PendingCurate["onUpdate"],
 					signal,
 					finish: () => {},
@@ -682,7 +697,7 @@ export default function (pi: ExtensionAPI) {
 					});
 					try {
 						const { answer, results } = await search(queryList[qi], {
-							provider: defaultProvider as SearchProvider | undefined,
+							provider: initialSearchProvider,
 							numResults: params.numResults,
 							recencyFilter: params.recencyFilter,
 							domainFilter: params.domainFilter,
@@ -1448,7 +1463,10 @@ export default function (pi: ExtensionAPI) {
 				perplexity: pplxAvail,
 				gemini: geminiApiAvail || !!geminiWebAvail,
 			};
-			const defaultProvider = resolveProvider(undefined, availableProviders);
+			const requestedProvider = loadConfig().provider || "auto";
+			let providerPreference = requestedProvider;
+			let currentProvider = resolveProvider(requestedProvider, availableProviders);
+			const initialSearchProvider = resolveSearchProvider(requestedProvider, currentProvider);
 
 			ctx.ui.notify("Opening web search curator...", "info");
 
@@ -1484,7 +1502,7 @@ export default function (pi: ExtensionAPI) {
 
 			try {
 				const handle = await startCuratorServer(
-					{ queries, sessionToken, timeout: 120, availableProviders, defaultProvider },
+					{ queries, sessionToken, timeout: 120, availableProviders, defaultProvider: currentProvider },
 					{
 						onSubmit(selectedQueryIndices) {
 							aborted = true;
@@ -1498,10 +1516,14 @@ export default function (pi: ExtensionAPI) {
 							if (reason === "timeout") sendResults();
 							closeCurator();
 						},
-						onProviderChange(provider) { saveConfig({ provider }); },
+						onProviderChange(provider) {
+							saveConfig({ provider });
+							providerPreference = provider;
+							currentProvider = provider;
+						},
 						async onAddSearch(query, queryIndex) {
 							const { answer, results } = await search(query, {
-								provider: defaultProvider as SearchProvider | undefined,
+								provider: resolveSearchProvider(providerPreference, currentProvider),
 								signal: searchAbort.signal,
 							});
 							collected.set(queryIndex, { query, answer, results, error: null });
@@ -1522,7 +1544,7 @@ export default function (pi: ExtensionAPI) {
 							if (aborted) break;
 							try {
 								const { answer, results } = await search(queries[qi], {
-									provider: defaultProvider as SearchProvider | undefined,
+									provider: initialSearchProvider,
 									signal: searchAbort.signal,
 								});
 								if (aborted) break;
