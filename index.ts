@@ -39,6 +39,7 @@ const DEFAULT_CURATE_WINDOW = 10;
 
 interface WebSearchConfig {
 	provider?: string;
+	chromeProfile?: string;
 	curateWindow?: number;
 	autoFilter?: boolean | {
 		enabled?: boolean;

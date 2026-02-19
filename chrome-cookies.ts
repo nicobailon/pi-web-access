@@ -33,14 +33,19 @@ const ALL_COOKIE_NAMES = new Set([
 	"SIDCC",
 ]);
 
-const CHROME_COOKIES_PATH = join(
-	homedir(),
-	"Library/Application Support/Google/Chrome/Default/Cookies",
-);
+function chromeCookiesPath(profile: string): string {
+	return join(
+		homedir(),
+		"Library/Application Support/Google/Chrome",
+		profile,
+		"Cookies",
+	);
+}
 
-export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
+export async function getGoogleCookies(profile?: string): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
 	if (platform() !== "darwin") return null;
-	if (!existsSync(CHROME_COOKIES_PATH)) return null;
+	const cookiesPath = chromeCookiesPath(profile ?? "Default");
+	if (!existsSync(cookiesPath)) return null;
 
 	const warnings: string[] = [];
 
@@ -55,9 +60,9 @@ export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings
 
 	try {
 		const tempDb = join(tempDir, "Cookies");
-		copyFileSync(CHROME_COOKIES_PATH, tempDb);
-		copySidecar(CHROME_COOKIES_PATH, tempDb, "-wal");
-		copySidecar(CHROME_COOKIES_PATH, tempDb, "-shm");
+		copyFileSync(cookiesPath, tempDb);
+		copySidecar(cookiesPath, tempDb, "-wal");
+		copySidecar(cookiesPath, tempDb, "-shm");
 
 		const metaVersion = await readMetaVersion(tempDb);
 		const stripHash = metaVersion >= 24;
