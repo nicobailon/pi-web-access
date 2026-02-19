@@ -1,4 +1,19 @@
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { type CookieMap, getGoogleCookies } from "./chrome-cookies.js";
+
+const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+
+function getChromeProfileFromConfig(): string | undefined {
+	try {
+		if (existsSync(WEB_SEARCH_CONFIG_PATH)) {
+			const config = JSON.parse(readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8"));
+			return config.chromeProfile ?? undefined;
+		}
+	} catch {}
+	return undefined;
+}
 
 const GEMINI_APP_URL = "https://gemini.google.com/app";
 const GEMINI_STREAM_GENERATE_URL =
@@ -30,8 +45,9 @@ function hasRequiredCookies(cookieMap: CookieMap): boolean {
 	return REQUIRED_COOKIES.every((name) => Boolean(cookieMap[name]));
 }
 
-export async function isGeminiWebAvailable(): Promise<CookieMap | null> {
-	const result = await getGoogleCookies();
+export async function isGeminiWebAvailable(chromeProfile?: string): Promise<CookieMap | null> {
+	const profile = chromeProfile ?? getChromeProfileFromConfig();
+	const result = await getGoogleCookies(profile);
 	if (!result || !hasRequiredCookies(result.cookies)) return null;
 	return result.cookies;
 }
