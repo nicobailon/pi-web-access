@@ -98,6 +98,15 @@ function resolveProvider(
 	return provider;
 }
 
+function resolveSearchProvider(
+	requestedProvider: string,
+	resolvedProvider: string,
+): SearchProvider | undefined {
+	return requestedProvider === "auto"
+		? undefined
+		: (resolvedProvider as SearchProvider | undefined);
+}
+
 const pendingFetches = new Map<string, AbortController>();
 let sessionActive = false;
 let widgetVisible = false;
@@ -115,6 +124,7 @@ interface PendingCurate {
 	domainFilter?: string[];
 	availableProviders: { perplexity: boolean; gemini: boolean };
 	defaultProvider: string;
+	providerPreference: string;
 	onUpdate: ((update: { content: Array<{ type: string; text: string }>; details?: Record<string, unknown> }) => void) | undefined;
 	signal: AbortSignal | undefined;
 	timer?: ReturnType<typeof setTimeout>;
@@ -472,10 +482,11 @@ export default function (pi: ExtensionAPI) {
 					onProviderChange(provider) {
 						saveConfig({ provider });
 						pc.defaultProvider = provider;
+						pc.providerPreference = provider;
 					},
 					async onAddSearch(query, queryIndex) {
 						const { answer, results } = await search(query, {
-							provider: pc.defaultProvider as SearchProvider | undefined,
+							provider: resolveSearchProvider(pc.providerPreference, pc.defaultProvider),
 							numResults: pc.numResults,
 							recencyFilter: pc.recencyFilter,
 							domainFilter: pc.domainFilter,
@@ -629,9 +640,7 @@ export default function (pi: ExtensionAPI) {
 				};
 				const requestedProvider = params.provider || loadConfig().provider || "auto";
 				const defaultProvider = resolveProvider(requestedProvider, availableProviders);
-				const initialSearchProvider = requestedProvider === "auto"
-					? undefined
-					: (defaultProvider as SearchProvider | undefined);
+				const initialSearchProvider = resolveSearchProvider(requestedProvider, defaultProvider);
 				const curateConfig = loadConfig();
 				const curateWindow = curateConfig.curateWindow ?? DEFAULT_CURATE_WINDOW;
 
@@ -646,6 +655,7 @@ export default function (pi: ExtensionAPI) {
 					domainFilter: params.domainFilter,
 					availableProviders,
 					defaultProvider,
+					providerPreference: requestedProvider,
 					onUpdate: onUpdate as PendingCurate["onUpdate"],
 					signal,
 					finish: () => {},
@@ -1454,10 +1464,9 @@ export default function (pi: ExtensionAPI) {
 				gemini: geminiApiAvail || !!geminiWebAvail,
 			};
 			const requestedProvider = loadConfig().provider || "auto";
+			let providerPreference = requestedProvider;
 			let currentProvider = resolveProvider(requestedProvider, availableProviders);
-			const initialSearchProvider = requestedProvider === "auto"
-				? undefined
-				: (currentProvider as SearchProvider | undefined);
+			const initialSearchProvider = resolveSearchProvider(requestedProvider, currentProvider);
 
 			ctx.ui.notify("Opening web search curator...", "info");
 
@@ -1509,11 +1518,12 @@ export default function (pi: ExtensionAPI) {
 						},
 						onProviderChange(provider) {
 							saveConfig({ provider });
+							providerPreference = provider;
 							currentProvider = provider;
 						},
 						async onAddSearch(query, queryIndex) {
 							const { answer, results } = await search(query, {
-								provider: currentProvider as SearchProvider | undefined,
+								provider: resolveSearchProvider(providerPreference, currentProvider),
 								signal: searchAbort.signal,
 							});
 							collected.set(queryIndex, { query, answer, results, error: null });
