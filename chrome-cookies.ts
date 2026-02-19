@@ -12,7 +12,7 @@ const GOOGLE_ORIGINS = [
 	"https://www.google.com",
 ];
 
-const ALL_COOKIE_NAMES = new Set([
+const GOOGLE_COOKIE_NAMES = new Set([
 	"__Secure-1PSID",
 	"__Secure-1PSIDTS",
 	"__Secure-1PSIDCC",
@@ -33,14 +33,47 @@ const ALL_COOKIE_NAMES = new Set([
 	"SIDCC",
 ]);
 
+const PERPLEXITY_ORIGINS = [
+	"https://www.perplexity.ai",
+	"https://perplexity.ai",
+];
+
+const PERPLEXITY_COOKIE_NAMES = new Set([
+	"__Secure-next-auth.session-token",
+	"next-auth.session-token",
+	"__Secure-next-auth.csrf-token",
+	"next-auth.csrf-token",
+	"pplx.is-incognito",
+	"_px3",
+	"_pxvid",
+	"cf_clearance",
+	"__cf_bm",
+	"__cflb",
+	"CF_AppSession",
+]);
+
 const CHROME_COOKIES_PATH = join(
 	homedir(),
 	"Library/Application Support/Google/Chrome/Default/Cookies",
 );
 
+export function isChromeCookieStoreAvailable(): boolean {
+	return platform() === "darwin" && existsSync(CHROME_COOKIES_PATH);
+}
+
 export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
-	if (platform() !== "darwin") return null;
-	if (!existsSync(CHROME_COOKIES_PATH)) return null;
+	return getChromeCookiesForOrigins(GOOGLE_ORIGINS, GOOGLE_COOKIE_NAMES);
+}
+
+export async function getPerplexityCookies(): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
+	return getChromeCookiesForOrigins(PERPLEXITY_ORIGINS, PERPLEXITY_COOKIE_NAMES);
+}
+
+async function getChromeCookiesForOrigins(
+	origins: string[],
+	allowedCookieNames: Set<string>,
+): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
+	if (!isChromeCookieStoreAvailable()) return null;
 
 	const warnings: string[] = [];
 
@@ -62,7 +95,7 @@ export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings
 		const metaVersion = await readMetaVersion(tempDb);
 		const stripHash = metaVersion >= 24;
 
-		const hosts = GOOGLE_ORIGINS.map((o) => new URL(o).hostname);
+		const hosts = origins.map((o) => new URL(o).hostname);
 		const rows = await queryCookieRows(tempDb, hosts);
 		if (!rows) {
 			warnings.push("Failed to query Chrome cookie database");
@@ -72,7 +105,7 @@ export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings
 		const cookies: CookieMap = {};
 		for (const row of rows) {
 			const name = row.name as string;
-			if (!ALL_COOKIE_NAMES.has(name)) continue;
+			if (!allowedCookieNames.has(name)) continue;
 			if (cookies[name]) continue;
 
 			let value = typeof row.value === "string" && row.value.length > 0 ? row.value : null;

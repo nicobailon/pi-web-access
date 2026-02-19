@@ -48,8 +48,13 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		);
 	}
 
+	let perplexityError: Error | null = null;
 	if (isPerplexityAvailable()) {
-		return searchWithPerplexity(query, options);
+		try {
+			return await searchWithPerplexity(query, options);
+		} catch (err) {
+			perplexityError = err instanceof Error ? err : new Error(String(err));
+		}
 	}
 
 	const geminiResult = await searchWithGeminiApi(query, options)
@@ -59,8 +64,10 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	throw new Error(
 		"No search provider available. Either:\n" +
 		"  1. Set perplexityApiKey in ~/.pi/web-search.json\n" +
-		"  2. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
-		"  3. Sign into gemini.google.com in Chrome"
+		"  2. Sign into perplexity.ai in Chrome (macOS)\n" +
+		"  3. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
+		"  4. Sign into gemini.google.com in Chrome" +
+		(perplexityError ? `\n\nPerplexity error: ${perplexityError.message}` : "")
 	);
 }
 

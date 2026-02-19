@@ -14,11 +14,11 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
 ## Why Pi Web Access
 
-**Zero Config** — Signed into Google in Chrome? That's it. The extension reads your Chrome session cookies to access Gemini directly. No API keys, no setup, no subscriptions.
+**Zero Config** — Signed into Google or Perplexity in Chrome? That's it. The extension reads your Chrome session cookies to access Gemini Web and Perplexity Web directly. No API keys required for cookie-auth paths.
 
 **Video Understanding** — Point it at a YouTube video or local screen recording and ask questions about what's on screen. Full transcripts, visual descriptions, and frame extraction at exact timestamps.
 
-**Smart Fallbacks** — Every capability has a fallback chain. Search tries Perplexity, then Gemini API, then Gemini Web. YouTube tries Gemini Web, then API, then Perplexity. Blocked pages retry through Jina Reader and Gemini extraction. Something always works.
+**Smart Fallbacks** — Every capability has a fallback chain. Search tries Perplexity (API key or Chrome cookies), then Gemini API, then Gemini Web. YouTube tries Gemini Web, then API, then Perplexity. Blocked pages retry through Jina Reader and Gemini extraction. Something always works.
 
 **GitHub Cloning** — GitHub URLs are cloned locally instead of scraped. The agent gets real file contents and a local path to explore, not rendered HTML.
 
@@ -37,7 +37,7 @@ If you're not signed into Chrome, or prefer a different provider, add API keys t
 }
 ```
 
-You can configure one or both. In `auto` mode (default), `web_search` tries Perplexity first, then Gemini API, then Gemini Web.
+You can configure one or both. In `auto` mode (default), `web_search` tries Perplexity first (API key or Chrome cookies), then Gemini API, then Gemini Web.
 
 Optional dependencies for video frame extraction:
 
@@ -297,7 +297,9 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Content f
 
 ## Limitations
 
-- Chrome cookie extraction is macOS-only — other platforms fall through to API keys. First-time access may trigger a Keychain dialog.
+- Chrome cookie extraction is macOS-only — other platforms fall through to API keys (for Gemini and Perplexity). First-time access may trigger a Keychain dialog.
+- Perplexity cookie-auth uses a private web endpoint and may break if Perplexity changes their web protocol.
+- If Cloudflare blocks Perplexity web requests from Node fetch, the extension attempts a macOS fallback via Python `curl_cffi` impersonation (requires `python3` with `venv`; first run bootstraps under `~/.pi/cache/pi-web-access/`).
 - YouTube private/age-restricted videos may fail on all extraction paths.
 - Gemini can process videos up to ~1 hour; longer videos may be truncated.
 - PDFs are text-extracted only (no OCR for scanned documents).
@@ -323,7 +325,7 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Content f
 | `video-extract.ts` | Local video detection, Files API upload, Gemini analysis |
 | `github-extract.ts` | GitHub URL parsing, clone cache, content generation |
 | `github-api.ts` | GitHub API fallback for large repos and commit SHAs |
-| `perplexity.ts` | Perplexity API client with rate limiting |
+| `perplexity.ts` | Perplexity client with API-key auth + Chrome-cookie web auth fallback |
 | `pdf-extract.ts` | PDF text extraction, saves to markdown |
 | `rsc-extract.ts` | RSC flight data parser for Next.js pages |
 | `utils.ts` | Shared formatting and error helpers |
