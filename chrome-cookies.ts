@@ -33,31 +33,55 @@ const ALL_COOKIE_NAMES = new Set([
 	"SIDCC",
 ]);
 
-const CHROME_COOKIES_PATH = join(
+const CHROME_COOKIES_PATH_DARWIN = join(
 	homedir(),
 	"Library/Application Support/Google/Chrome/Default/Cookies",
 );
 
+const CHROME_COOKIES_PATH_LINUX = join(
+	homedir(),
+	".config/google-chrome/Default/Cookies",
+);
+
+function getChromeCookiesPath(): string {
+	if (platform() === "darwin") return CHROME_COOKIES_PATH_DARWIN;
+	return CHROME_COOKIES_PATH_LINUX;
+}
+
 export async function getGoogleCookies(): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
-	if (platform() !== "darwin") return null;
-	if (!existsSync(CHROME_COOKIES_PATH)) return null;
+	const plat = platform();
+	if (plat !== "darwin" && plat !== "linux") return null;
+
+	const cookiesPath = getChromeCookiesPath();
+	if (!existsSync(cookiesPath)) return null;
 
 	const warnings: string[] = [];
 
-	const password = await readKeychainPassword();
-	if (!password) {
-		warnings.push("Could not read Chrome Safe Storage password from Keychain");
-		return { cookies: {}, warnings };
+	let password: string | null;
+	let iterations: number;
+
+	if (plat === "darwin") {
+		password = await readKeychainPassword();
+		iterations = 1003;
+		if (!password) {
+			warnings.push("Could not read Chrome Safe Storage password from Keychain");
+			return { cookies: {}, warnings };
+		}
+	} else {
+		// Linux: Chrome uses "peanuts" as the default password with 1 iteration
+		// when GNOME Keyring / kwallet is not accessible
+		password = await readLinuxChromePassword() ?? "peanuts";
+		iterations = 1;
 	}
 
-	const key = pbkdf2Sync(password, "saltysalt", 1003, 16, "sha1");
+	const key = pbkdf2Sync(password, "saltysalt", iterations, 16, "sha1");
 	const tempDir = mkdtempSync(join(tmpdir(), "pi-chrome-cookies-"));
 
 	try {
 		const tempDb = join(tempDir, "Cookies");
-		copyFileSync(CHROME_COOKIES_PATH, tempDb);
-		copySidecar(CHROME_COOKIES_PATH, tempDb, "-wal");
-		copySidecar(CHROME_COOKIES_PATH, tempDb, "-shm");
+		copyFileSync(cookiesPath, tempDb);
+		copySidecar(cookiesPath, tempDb, "-wal");
+		copySidecar(cookiesPath, tempDb, "-shm");
 
 		const metaVersion = await readMetaVersion(tempDb);
 		const stripHash = metaVersion >= 24;
@@ -133,6 +157,31 @@ function readKeychainPassword(): Promise<string | null> {
 			(err, stdout) => {
 				if (err) { resolve(null); return; }
 				resolve(stdout.trim() || null);
+			},
+		);
+	});
+}
+
+function readLinuxChromePassword(): Promise<string | null> {
+	return new Promise((resolve) => {
+		// Try to read from GNOME Keyring / Secret Service via secret-tool
+		execFile(
+			"secret-tool",
+			["lookup", "xdg:schema", "chrome_libsecret_os_crypt_password_v2"],
+			{ timeout: 5000 },
+			(err, stdout) => {
+				if (!err && stdout.trim()) { resolve(stdout.trim()); return; }
+				// Try v1 schema
+				execFile(
+					"secret-tool",
+					["lookup", "xdg:schema", "chrome_libsecret_os_crypt_password_v1"],
+					{ timeout: 5000 },
+					(err2, stdout2) => {
+						if (!err2 && stdout2.trim()) { resolve(stdout2.trim()); return; }
+						// Fall back to null (caller will use "peanuts")
+						resolve(null);
+					},
+				);
 			},
 		);
 	});
