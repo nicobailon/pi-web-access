@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 export const API_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
-export const DEFAULT_MODEL = "gemini-3-flash-preview";
+export const DEFAULT_MODEL = "gemini-2.5-flash";
 
 interface GeminiApiConfig {
 	geminiApiKey?: string;
