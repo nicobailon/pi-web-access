@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Reduced repeated macOS Keychain prompts during Gemini Web cookie lookup by checking for required Google cookie names before reading the browser encryption password.
+- Gemini Web cookie lookup now auto-scans detected Chromium profiles when `chromeProfile` is unset, reducing false negatives for users signed into a non-Default profile.
+- Browser encryption passwords are cached in-process so repeated Gemini Web checks in the same Pi session do not re-run Keychain/secret-tool lookups.
+
 ## [0.10.3] - 2026-03-12
 
 ### Added

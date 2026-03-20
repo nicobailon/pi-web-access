@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { pbkdf2Sync, createDecipheriv } from "node:crypto";
-import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir, homedir, platform } from "node:os";
 import { join } from "node:path";
 
@@ -67,6 +67,8 @@ const LINUX_BROWSER_CONFIGS: BrowserConfig[] = [
 	{ name: "Chrome", baseDir: ".config/google-chrome", secretToolApp: "chrome" },
 ];
 
+const browserPasswordCache = new Map<string, string>();
+
 export async function getGoogleCookies(
 	options?: { profile?: string; requiredCookies?: string[] },
 ): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
@@ -78,64 +80,127 @@ export async function getGoogleCookies(
 			: [];
 	if (configs.length === 0) return null;
 
-	const warnings: string[] = [];
-	const profile = options?.profile ?? "Default";
+	const warningSet = new Set<string>();
+	const requestedProfile = normalizeProfileName(options?.profile);
+	const requiredCookies = normalizeCookieNames(options?.requiredCookies);
 	const hosts = GOOGLE_ORIGINS.map((origin) => new URL(origin).hostname);
+	const home = homedir();
 
 	for (const config of configs) {
-		const cookiesPath = join(homedir(), config.baseDir, profile, "Cookies");
-		if (!existsSync(cookiesPath)) continue;
+		const profiles = requestedProfile ? [requestedProfile] : listBrowserProfiles(home, config);
+		for (const profile of profiles) {
+			const cookiesPath = join(home, config.baseDir, profile, "Cookies");
+			if (!existsSync(cookiesPath)) continue;
 
-		const password = await readBrowserPassword(config, currentPlatform);
-		if (!password) {
-			warnings.push(`Could not read ${config.name} cookie encryption password`);
-			continue;
-		}
+			const tempDir = mkdtempSync(join(tmpdir(), "pi-chrome-cookies-"));
+			try {
+				const tempDb = join(tempDir, "Cookies");
+				copyFileSync(cookiesPath, tempDb);
+				copySidecar(cookiesPath, tempDb, "-wal");
+				copySidecar(cookiesPath, tempDb, "-shm");
 
-		const key = pbkdf2Sync(password, "saltysalt", currentPlatform === "darwin" ? 1003 : 1, 16, "sha1");
-		const tempDir = mkdtempSync(join(tmpdir(), "pi-chrome-cookies-"));
-
-		try {
-			const tempDb = join(tempDir, "Cookies");
-			copyFileSync(cookiesPath, tempDb);
-			copySidecar(cookiesPath, tempDb, "-wal");
-			copySidecar(cookiesPath, tempDb, "-shm");
-
-			const metaVersion = await readMetaVersion(tempDb);
-			const stripHash = metaVersion >= 24;
-			const rows = await queryCookieRows(tempDb, hosts);
-			if (!rows) {
-				warnings.push(`Failed to query ${config.name} cookie database`);
-				continue;
-			}
-
-			const cookies: CookieMap = {};
-			for (const row of rows) {
-				const name = row.name as string;
-				if (!ALL_COOKIE_NAMES.has(name)) continue;
-				if (cookies[name]) continue;
-
-				let value = typeof row.value === "string" && row.value.length > 0 ? row.value : null;
-				if (!value) {
-					const encrypted = row.encrypted_value;
-					if (encrypted instanceof Uint8Array) {
-						value = decryptCookieValue(encrypted, key, stripHash);
-					}
+				if (requiredCookies && requiredCookies.length > 0) {
+					// Cheap preflight: avoid touching Keychain/secret-tool until this profile actually
+					// contains the cookie names Gemini Web needs. This prevents pointless password prompts
+					// when the user is signed into Chrome but not into gemini.google.com in that profile.
+					const hasRequiredCookies = await hasCookieNames(tempDb, hosts, requiredCookies);
+					if (!hasRequiredCookies) continue;
 				}
-				if (value) cookies[name] = value;
-			}
 
-			if (options?.requiredCookies?.length && !options.requiredCookies.every((name) => Boolean(cookies[name]))) {
-				continue;
-			}
+				const password = await readBrowserPassword(config, currentPlatform);
+				if (!password) {
+					warningSet.add(`Could not read ${config.name} cookie encryption password`);
+					continue;
+				}
 
-			return { cookies, warnings };
-		} finally {
-			rmSync(tempDir, { recursive: true, force: true });
+				const key = pbkdf2Sync(password, "saltysalt", currentPlatform === "darwin" ? 1003 : 1, 16, "sha1");
+				const metaVersion = await readMetaVersion(tempDb);
+				const stripHash = metaVersion >= 24;
+				const rows = await queryCookieRows(tempDb, hosts, ALL_COOKIE_NAMES);
+				if (!rows) {
+					warningSet.add(`Failed to query ${config.name} cookie database`);
+					continue;
+				}
+
+				const cookies: CookieMap = {};
+				for (const row of rows) {
+					const name = row.name as string;
+					if (!ALL_COOKIE_NAMES.has(name)) continue;
+					if (cookies[name]) continue;
+
+					let value = typeof row.value === "string" && row.value.length > 0 ? row.value : null;
+					if (!value) {
+						const encrypted = row.encrypted_value;
+						if (encrypted instanceof Uint8Array) {
+							value = decryptCookieValue(encrypted, key, stripHash);
+						}
+					}
+					if (value) cookies[name] = value;
+				}
+
+				if (requiredCookies && !requiredCookies.every((name) => Boolean(cookies[name]))) {
+					continue;
+				}
+
+				return { cookies, warnings: [...warningSet] };
+			} finally {
+				rmSync(tempDir, { recursive: true, force: true });
+			}
 		}
 	}
 
 	return null;
+}
+
+function normalizeProfileName(value: string | undefined): string | undefined {
+	return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function normalizeCookieNames(names: string[] | undefined): string[] | undefined {
+	if (!names?.length) return undefined;
+	const normalized = names
+		.filter((name): name is string => typeof name === "string" && name.length > 0)
+		.map((name) => name.trim())
+		.filter(Boolean);
+	return normalized.length > 0 ? normalized : undefined;
+}
+
+function listBrowserProfiles(home: string, config: BrowserConfig): string[] {
+	const basePath = join(home, config.baseDir);
+	if (!existsSync(basePath)) return ["Default"];
+
+	const profiles = new Set<string>();
+	if (existsSync(join(basePath, "Default", "Cookies"))) profiles.add("Default");
+
+	try {
+		for (const entry of readdirSync(basePath, { withFileTypes: true })) {
+			if (!entry.isDirectory()) continue;
+			if (!existsSync(join(basePath, entry.name, "Cookies"))) continue;
+			profiles.add(entry.name);
+		}
+	} catch {}
+
+	const resolved = [...profiles];
+	if (resolved.length === 0) return ["Default"];
+	resolved.sort(compareProfileNames);
+	return resolved;
+}
+
+function compareProfileNames(a: string, b: string): number {
+	const aKey = getProfileSortKey(a);
+	const bKey = getProfileSortKey(b);
+	if (aKey.priority !== bKey.priority) return aKey.priority - bKey.priority;
+	if (aKey.index !== bKey.index) return aKey.index - bKey.index;
+	return a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+}
+
+function getProfileSortKey(name: string): { priority: number; index: number } {
+	if (name === "Default") return { priority: 0, index: 0 };
+	const profileMatch = /^Profile\s+(\d+)$/i.exec(name);
+	if (profileMatch) return { priority: 1, index: Number(profileMatch[1]) };
+	const personMatch = /^Person\s+(\d+)$/i.exec(name);
+	if (personMatch) return { priority: 2, index: Number(personMatch[1]) };
+	return { priority: 3, index: Number.MAX_SAFE_INTEGER };
 }
 
 function decryptCookieValue(encrypted: Uint8Array, key: Buffer, stripHash: boolean): string | null {
@@ -186,6 +251,10 @@ function readBrowserPassword(
 }
 
 function readKeychainPassword(account: string, service: string): Promise<string | null> {
+	const cacheKey = `darwin:${account}:${service}`;
+	const cached = browserPasswordCache.get(cacheKey);
+	if (cached) return Promise.resolve(cached);
+
 	return new Promise((resolve) => {
 		execFile(
 			"security",
@@ -193,14 +262,22 @@ function readKeychainPassword(account: string, service: string): Promise<string 
 			{ timeout: 5000 },
 			(err, stdout) => {
 				if (err) { resolve(null); return; }
-				resolve(stdout.trim() || null);
+				const password = stdout.trim() || null;
+				if (password) browserPasswordCache.set(cacheKey, password);
+				resolve(password);
 			},
 		);
 	});
 }
 
 function readLinuxPassword(secretToolApp: string | undefined): Promise<string> {
-	if (!secretToolApp) return Promise.resolve("peanuts");
+	const cacheKey = `linux:${secretToolApp ?? "peanuts"}`;
+	const cached = browserPasswordCache.get(cacheKey);
+	if (cached) return Promise.resolve(cached);
+	if (!secretToolApp) {
+		browserPasswordCache.set(cacheKey, "peanuts");
+		return Promise.resolve("peanuts");
+	}
 
 	return new Promise((resolve) => {
 		execFile(
@@ -210,10 +287,13 @@ function readLinuxPassword(secretToolApp: string | undefined): Promise<string> {
 			(err, stdout) => {
 				if (err) {
 					// KDE Wallet users fall through to peanuts intentionally.
+					browserPasswordCache.set(cacheKey, "peanuts");
 					resolve("peanuts");
 					return;
 				}
-				resolve(stdout.trim() || "peanuts");
+				const password = stdout.trim() || "peanuts";
+				browserPasswordCache.set(cacheKey, password);
+				resolve(password);
 			},
 		);
 	});
@@ -266,23 +346,45 @@ async function readMetaVersion(dbPath: string): Promise<number> {
 	}
 }
 
+async function hasCookieNames(
+	dbPath: string,
+	hosts: string[],
+	cookieNames: Iterable<string>,
+): Promise<boolean> {
+	const sqlite = await importSqlite();
+	if (!sqlite) return false;
+	const where = buildCookieWhere(hosts, cookieNames);
+	const opts: Record<string, unknown> = { readOnly: true };
+	if (supportsReadBigInts()) opts.readBigInts = true;
+	const db = new sqlite.DatabaseSync(dbPath, opts);
+	try {
+		const rows = db
+			.prepare(`SELECT DISTINCT name FROM cookies WHERE ${where}`)
+			.all() as Array<Record<string, unknown>>;
+		const present = new Set(
+			rows
+				.map((row) => (typeof row.name === "string" ? row.name : ""))
+				.filter(Boolean),
+		);
+		for (const name of cookieNames) {
+			if (!present.has(name)) return false;
+		}
+		return true;
+	} catch {
+		return false;
+	} finally {
+		db.close();
+	}
+}
+
 async function queryCookieRows(
 	dbPath: string,
 	hosts: string[],
+	cookieNames?: Iterable<string>,
 ): Promise<Array<Record<string, unknown>> | null> {
 	const sqlite = await importSqlite();
 	if (!sqlite) return null;
-
-	const clauses: string[] = [];
-	for (const host of hosts) {
-		for (const candidate of expandHosts(host)) {
-			const esc = candidate.replaceAll("'", "''");
-			clauses.push(`host_key = '${esc}'`);
-			clauses.push(`host_key = '.${esc}'`);
-			clauses.push(`host_key LIKE '%.${esc}'`);
-		}
-	}
-	const where = clauses.join(" OR ");
+	const where = buildCookieWhere(hosts, cookieNames);
 
 	const opts: Record<string, unknown> = { readOnly: true };
 	if (supportsReadBigInts()) opts.readBigInts = true;
@@ -290,7 +392,7 @@ async function queryCookieRows(
 	try {
 		return db
 			.prepare(
-				`SELECT name, value, host_key, encrypted_value FROM cookies WHERE (${where}) ORDER BY expires_utc DESC`,
+				`SELECT name, value, host_key, encrypted_value FROM cookies WHERE ${where} ORDER BY expires_utc DESC`,
 			)
 			.all() as Array<Record<string, unknown>>;
 	} catch {
@@ -298,6 +400,30 @@ async function queryCookieRows(
 	} finally {
 		db.close();
 	}
+}
+
+function buildCookieWhere(hosts: string[], cookieNames?: Iterable<string>): string {
+	const hostClauses: string[] = [];
+	for (const host of hosts) {
+		for (const candidate of expandHosts(host)) {
+			const esc = escapeSqlString(candidate);
+			hostClauses.push(`host_key = '${esc}'`);
+			hostClauses.push(`host_key = '.${esc}'`);
+			hostClauses.push(`host_key LIKE '%.${esc}'`);
+		}
+	}
+
+	let where = `(${hostClauses.join(" OR ")})`;
+	const normalizedNames = cookieNames ? [...cookieNames].filter(Boolean) : [];
+	if (normalizedNames.length > 0) {
+		const nameList = normalizedNames.map((name) => `'${escapeSqlString(name)}'`).join(", ");
+		where += ` AND name IN (${nameList})`;
+	}
+	return where;
+}
+
+function escapeSqlString(value: string): string {
+	return value.replaceAll("'", "''");
 }
 
 function expandHosts(host: string): string[] {
