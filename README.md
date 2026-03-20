@@ -14,7 +14,7 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
 ## Why Pi Web Access
 
-**Zero Config** — Signed into Google in Chrome, Arc, Helium, or Chromium? That's it. The extension reads your browser session cookies to access Gemini directly. No API keys, no setup, no subscriptions.
+**Zero Config** — Signed into Google in Chrome, Arc, Helium, or Chromium? That's it. The extension reads your browser session cookies to access Gemini directly. When `chromeProfile` is unset, it auto-scans detected Chromium profiles and uses the first one with usable Gemini cookies. No API keys, no setup, no subscriptions.
 
 **Video Understanding** — Point it at a YouTube video or local screen recording and ask questions about what's on screen. Full transcripts, visual descriptions, and frame extraction at exact timestamps.
 
@@ -255,7 +255,7 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
 ```
 
 `GEMINI_API_KEY` and `PERPLEXITY_API_KEY` env vars take precedence over config file values. `provider` sets the default search provider: `"perplexity"` or `"gemini"`. This is also updated automatically when you change the provider in the curator UI. `curateWindow` controls how many seconds multi-query searches wait before auto-sending results (default: 10). During the countdown, press Ctrl+Shift+S to open the browser curator. Set to 0 to always send immediately (Ctrl+Shift+S still works during the search itself).
-`chromeProfile` overrides the Chromium profile directory used for Gemini Web cookie lookup. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults.
+`chromeProfile` pins Gemini Web cookie lookup to a specific Chromium profile. When omitted, pi-web-access auto-scans detected profiles and uses the first one with the required Gemini cookies. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults.
 
 ### Shortcuts
 
@@ -304,7 +304,7 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Content f
 
 ## Limitations
 
-- Chromium cookie extraction works on macOS and Linux. Linux uses `secret-tool` when available and falls back to Chromium's default password otherwise; other platforms fall through to API keys. First-time macOS access may trigger a Keychain dialog.
+- Chromium cookie extraction works on macOS and Linux. Linux uses `secret-tool` when available and falls back to Chromium's default password otherwise; other platforms fall through to API keys. First-time macOS access may trigger a Keychain dialog. pi-web-access now preflights cookie names before touching Keychain and caches the browser encryption password in-process to reduce repeated prompts.
 - YouTube private/age-restricted videos may fail on all extraction paths.
 - Gemini can process videos up to ~1 hour; longer videos may be truncated.
 - PDFs are text-extracted only (no OCR for scanned documents).
