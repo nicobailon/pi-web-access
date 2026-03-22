@@ -5,8 +5,9 @@ import { activityMonitor } from "./activity.js";
 import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
+import { isTavilyAvailable, searchWithTavily } from "./tavily.js";
 
-export type SearchProvider = "auto" | "perplexity" | "gemini";
+export type SearchProvider = "auto" | "perplexity" | "gemini" | "tavily";
 
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
@@ -43,6 +44,10 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	const config = getSearchConfig();
 	const provider = options.provider ?? config.searchProvider;
 
+	if (provider === "tavily") {
+		return searchWithTavily(query, options);
+	}
+
 	if (provider === "perplexity") {
 		return searchWithPerplexity(query, options);
 	}
@@ -58,6 +63,10 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		);
 	}
 
+	if (isTavilyAvailable()) {
+		return searchWithTavily(query, options);
+	}
+
 	if (isPerplexityAvailable()) {
 		return searchWithPerplexity(query, options);
 	}
@@ -68,9 +77,10 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 
 	throw new Error(
 		"No search provider available. Either:\n" +
-		"  1. Set perplexityApiKey in ~/.pi/web-search.json\n" +
-		"  2. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
-		"  3. Sign into gemini.google.com in a supported Chromium-based browser"
+		"  1. Set tavilyApiKey in ~/.pi/web-search.json or TAVILY_API_KEY env var\n" +
+		"  2. Set perplexityApiKey in ~/.pi/web-search.json\n" +
+		"  3. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
+		"  4. Sign into gemini.google.com in a supported Chromium-based browser"
 	);
 }
 

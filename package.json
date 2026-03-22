@@ -25,6 +25,7 @@
   "homepage": "https://github.com/nicobailon/pi-web-access#readme",
   "dependencies": {
     "@mozilla/readability": "^0.5.0",
+    "@tavily/core": "^0.6.0",
     "linkedom": "^0.16.0",
     "p-limit": "^6.1.0",
     "turndown": "^7.2.0",
