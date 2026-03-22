@@ -25,6 +25,7 @@ import { platform, homedir } from "node:os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.js";
+import { isTavilyAvailable } from "./tavily.js";
 import { isGeminiApiAvailable } from "./gemini-api.js";
 import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
 import {
@@ -39,6 +40,7 @@ const DEFAULT_CURATE_WINDOW = 10;
 
 interface WebSearchConfig {
 	provider?: string;
+	tavilyApiKey?: string;
 	curateWindow?: number;
 	autoFilter?: boolean | {
 		enabled?: boolean;
@@ -81,18 +83,26 @@ function formatShortcut(key: string): string {
 
 function resolveProvider(
 	requested: string | undefined,
-	available: { perplexity: boolean; gemini: boolean },
+	available: { tavily: boolean; perplexity: boolean; gemini: boolean },
 ): string {
 	const provider = requested || loadConfig().provider || "auto";
 	if (provider === "auto" || provider === "") {
+		if (available.tavily) return "tavily";
 		if (available.perplexity) return "perplexity";
 		if (available.gemini) return "gemini";
 		return "perplexity";
 	}
+	if (provider === "tavily" && !available.tavily) {
+		if (available.perplexity) return "perplexity";
+		if (available.gemini) return "gemini";
+		return "tavily";
+	}
 	if (provider === "perplexity" && !available.perplexity) {
+		if (available.tavily) return "tavily";
 		return available.gemini ? "gemini" : "perplexity";
 	}
 	if (provider === "gemini" && !available.gemini) {
+		if (available.tavily) return "tavily";
 		return available.perplexity ? "perplexity" : "gemini";
 	}
 	return provider;
@@ -113,7 +123,7 @@ interface PendingCurate {
 	numResults?: number;
 	recencyFilter?: "day" | "week" | "month" | "year";
 	domainFilter?: string[];
-	availableProviders: { perplexity: boolean; gemini: boolean };
+	availableProviders: { tavily: boolean; perplexity: boolean; gemini: boolean };
 	defaultProvider: string;
 	onUpdate: ((update: { content: Array<{ type: string; text: string }>; details?: Record<string, unknown> }) => void) | undefined;
 	signal: AbortSignal | undefined;
@@ -577,7 +587,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using Perplexity AI or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Multi-query searches include a brief review window where the user can press ${curateLabel} to curate results in the browser before they're sent. Set curate to false to skip this. Provider auto-selects: Perplexity if configured, else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login).`,
+			`Search the web using Tavily, Perplexity AI, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Multi-query searches include a brief review window where the user can press ${curateLabel} to curate results in the browser before they're sent. Set curate to false to skip this. Provider auto-selects: Tavily if configured, else Perplexity, else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login).`,
 		parameters: Type.Object({
 			query: Type.Optional(Type.String({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched in sequence, each returning its own synthesized answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
@@ -588,7 +598,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "perplexity", "gemini"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "tavily", "perplexity", "gemini"], { description: "Search provider (default: auto)" }),
 			),
 			curate: Type.Optional(Type.Boolean({
 				description: `Hold results for review after searching. The user can press ${curateLabel} to open an interactive review page in the browser, or wait for the countdown to auto-send all results. Enabled by default for multi-query searches. Set to false to skip the review window.`,
@@ -619,10 +629,12 @@ export default function (pi: ExtensionAPI) {
 				const allUrls: string[] = [];
 				let cancelled = false;
 
+				const tavilyAvail = isTavilyAvailable();
 				const pplxAvail = isPerplexityAvailable();
 				const geminiApiAvail = isGeminiApiAvailable();
 				const geminiWebAvail = await isGeminiWebAvailable();
 				const availableProviders = {
+					tavily: tavilyAvail,
 					perplexity: pplxAvail,
 					gemini: geminiApiAvail || !!geminiWebAvail,
 				};
@@ -1441,10 +1453,12 @@ export default function (pi: ExtensionAPI) {
 			const sessionToken = randomUUID();
 			const queries = args.trim() ? args.trim().split(/\s*,\s*/) : [];
 
+			const tavilyAvail = isTavilyAvailable();
 			const pplxAvail = isPerplexityAvailable();
 			const geminiApiAvail = isGeminiApiAvailable();
 			const geminiWebAvail = await isGeminiWebAvailable();
 			const availableProviders = {
+				tavily: tavilyAvail,
 				perplexity: pplxAvail,
 				gemini: geminiApiAvail || !!geminiWebAvail,
 			};
