@@ -1,9 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { tavily, type TavilySearchOptions } from "@tavily/core";
 import { activityMonitor } from "./activity.js";
-
-export type { SearchResult, SearchResponse, SearchOptions } from "./perplexity.js";
 import type { SearchResult, SearchResponse, SearchOptions } from "./perplexity.js";
 
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
@@ -54,14 +53,13 @@ export async function searchWithTavily(query: string, options: SearchOptions = {
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
-		const { tavily } = await import("@tavily/core");
 		const client = tavily({ apiKey });
 
 		const numResults = Math.min(options.numResults ?? 5, 20);
 
-		const searchOptions: Record<string, unknown> = {
+		const searchOptions: TavilySearchOptions = {
 			maxResults: numResults,
-			includeAnswer: "advanced",
+			includeAnswer: true,
 			searchDepth: "advanced",
 		};
 
@@ -76,6 +74,8 @@ export async function searchWithTavily(query: string, options: SearchOptions = {
 			if (excludes.length) searchOptions.excludeDomains = excludes;
 		}
 
+		// Note: @tavily/core does not accept an AbortSignal parameter.
+		// Unlike Perplexity and Gemini, in-flight Tavily requests cannot be cancelled.
 		const response = await client.search(query, searchOptions);
 
 		const answer = response.answer ?? "";
