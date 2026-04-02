@@ -11,7 +11,8 @@
     "web-search",
     "perplexity",
     "fetch",
-    "scraping"
+    "scraping",
+    "tavily"
   ],
   "author": "Nico Bailon",
   "license": "MIT",

@@ -35,6 +35,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.js";
 import { isExaAvailable } from "./exa.js";
+import { isTavilyAvailable } from "./tavily.js";
 import { isGeminiApiAvailable } from "./gemini-api.js";
 import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
 
@@ -53,6 +54,7 @@ interface WebSearchConfig {
 interface ProviderAvailability {
 	perplexity: boolean;
 	exa: boolean;
+	tavily: boolean;
 	gemini: boolean;
 }
 
@@ -112,7 +114,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini") {
+	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini" || normalized === "tavily") {
 		return normalized;
 	}
 	return "auto";
@@ -151,6 +153,7 @@ async function getProviderAvailability(): Promise<ProviderAvailability> {
 	return {
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
+		tavily: isTavilyAvailable(),
 		gemini: isGeminiApiAvailable() || !!geminiWebAvail,
 	};
 }
@@ -172,20 +175,29 @@ function resolveProvider(
 
 	if (provider === "auto") {
 		if (available.exa) return "exa";
+		if (available.tavily) return "tavily";
 		if (available.perplexity) return "perplexity";
 		if (available.gemini) return "gemini";
 		return "exa";
 	}
 	if (provider === "exa" && !available.exa) {
+		if (available.tavily) return "tavily";
 		if (available.perplexity) return "perplexity";
 		return available.gemini ? "gemini" : "exa";
 	}
+	if (provider === "tavily" && !available.tavily) {
+		if (available.exa) return "exa";
+		if (available.perplexity) return "perplexity";
+		return available.gemini ? "gemini" : "tavily";
+	}
 	if (provider === "perplexity" && !available.perplexity) {
 		if (available.exa) return "exa";
+		if (available.tavily) return "tavily";
 		return available.gemini ? "gemini" : "perplexity";
 	}
 	if (provider === "gemini" && !available.gemini) {
 		if (available.exa) return "exa";
+		if (available.tavily) return "tavily";
 		return available.perplexity ? "perplexity" : "gemini";
 	}
 	return provider;
