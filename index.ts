@@ -37,6 +37,7 @@ import { isPerplexityAvailable } from "./perplexity.js";
 import { isExaAvailable } from "./exa.js";
 import { isGeminiApiAvailable } from "./gemini-api.js";
 import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
+import { isOpenAIAvailable } from "./openai-search.js";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
@@ -54,6 +55,7 @@ interface ProviderAvailability {
 	perplexity: boolean;
 	exa: boolean;
 	gemini: boolean;
+	openai: boolean;
 }
 
 type WebSearchWorkflow = "none" | "summary-review";
@@ -112,7 +114,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini") {
+	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini" || normalized === "openai") {
 		return normalized;
 	}
 	return "auto";
@@ -146,17 +148,26 @@ function getCuratorTimeoutSeconds(): number {
 	return normalizeCuratorTimeoutSeconds(source.curatorTimeoutSeconds) ?? DEFAULT_CURATOR_TIMEOUT_SECONDS;
 }
 
-async function getProviderAvailability(): Promise<ProviderAvailability> {
+async function getProviderAvailability(
+	ctx?: Pick<ExtensionContext, "modelRegistry" | "model">,
+): Promise<ProviderAvailability> {
 	const geminiWebAvail = await isGeminiWebAvailable();
 	return {
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
 		gemini: isGeminiApiAvailable() || !!geminiWebAvail,
+		openai: await isOpenAIAvailable({
+			modelRegistry: ctx?.modelRegistry,
+			currentModel: ctx?.model ?? null,
+		}),
 	};
 }
 
-async function loadCuratorBootstrap(requestedProvider: unknown): Promise<CuratorBootstrap> {
-	const availableProviders = await getProviderAvailability();
+async function loadCuratorBootstrap(
+	requestedProvider: unknown,
+	ctx?: Pick<ExtensionContext, "modelRegistry" | "model">,
+): Promise<CuratorBootstrap> {
+	const availableProviders = await getProviderAvailability(ctx);
 	return {
 		availableProviders,
 		defaultProvider: resolveProvider(requestedProvider, availableProviders),
@@ -174,6 +185,7 @@ function resolveProvider(
 		if (available.exa) return "exa";
 		if (available.perplexity) return "perplexity";
 		if (available.gemini) return "gemini";
+		if (available.openai) return "openai";
 		return "exa";
 	}
 	if (provider === "exa" && !available.exa) {
@@ -187,6 +199,11 @@ function resolveProvider(
 	if (provider === "gemini" && !available.gemini) {
 		if (available.exa) return "exa";
 		return available.perplexity ? "perplexity" : "gemini";
+	}
+	if (provider === "openai" && !available.openai) {
+		if (available.exa) return "exa";
+		if (available.perplexity) return "perplexity";
+		return available.gemini ? "gemini" : "openai";
 	}
 	return provider;
 }
@@ -954,6 +971,8 @@ export default function (pi: ExtensionAPI) {
 								domainFilter: pc.domainFilter,
 								includeContent: pc.includeContent,
 								signal: addSearchSignal,
+								modelRegistry: pc.summaryContext.modelRegistry,
+								currentModel: pc.summaryContext.model,
 							});
 							if (pendingCurate !== pc) throw new Error("Curator session is no longer active.");
 							pc.searchResults.set(queryIndex, { query, answer, results, error: null, provider: actualProvider });
@@ -1079,7 +1098,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login).`,
+			`Search the web using OpenAI/Codex native web search, Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login). Use provider=openai for Pi-managed OpenAI/Codex auth.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
 		parameters: Type.Object({
@@ -1092,7 +1111,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "perplexity", "gemini", "exa"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "perplexity", "gemini", "exa", "openai"], { description: "Search provider (default: auto)" }),
 			),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review"], {
@@ -1140,7 +1159,7 @@ export default function (pi: ExtensionAPI) {
 					: searchAbort.signal;
 				let cancelled = false;
 
-				const bootstrap = await loadCuratorBootstrap(params.provider);
+				const bootstrap = await loadCuratorBootstrap(params.provider, ctx);
 				const availableProviders = bootstrap.availableProviders;
 				const defaultProvider = bootstrap.defaultProvider;
 				const curatorTimeoutSeconds = bootstrap.timeoutSeconds;
@@ -1214,6 +1233,8 @@ export default function (pi: ExtensionAPI) {
 							domainFilter: params.domainFilter,
 							includeContent: params.includeContent,
 							signal: searchSignal,
+							modelRegistry: ctx.modelRegistry,
+							currentModel: ctx.model,
 						});
 						if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
 						searchResults.set(qi, { query: queryList[qi], answer, results, error: null, provider });
@@ -1273,6 +1294,8 @@ export default function (pi: ExtensionAPI) {
 						domainFilter: params.domainFilter,
 						includeContent: params.includeContent,
 						signal,
+						modelRegistry: ctx?.modelRegistry,
+						currentModel: ctx?.model,
 					});
 
 					searchResults.push({ query, answer, results, error: null, provider });
@@ -1977,7 +2000,7 @@ export default function (pi: ExtensionAPI) {
 
 			let bootstrap: CuratorBootstrap;
 			try {
-				bootstrap = await loadCuratorBootstrap(undefined);
+				bootstrap = await loadCuratorBootstrap(undefined, ctx);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`Failed to load web search config: ${message}`, "error");
@@ -2103,6 +2126,8 @@ export default function (pi: ExtensionAPI) {
 								const { answer, results, provider: actualProvider } = await search(query, {
 									provider: requestedProvider,
 									signal: searchAbort.signal,
+									modelRegistry: summaryContext.modelRegistry,
+									currentModel: summaryContext.model,
 								});
 								if (commandHandle && activeCurator !== commandHandle) {
 									throw new Error("Curator session is no longer active.");
@@ -2162,6 +2187,8 @@ export default function (pi: ExtensionAPI) {
 								const { answer, results, provider } = await search(queries[qi], {
 									provider: requestedProvider,
 									signal: searchAbort.signal,
+									modelRegistry: summaryContext.modelRegistry,
+									currentModel: summaryContext.model,
 								});
 								if (aborted || activeCurator !== handle) break;
 								handle.pushResult(qi, {

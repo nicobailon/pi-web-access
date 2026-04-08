@@ -8,11 +8,12 @@ function safeInlineJSON(data: unknown): string {
 }
 
 function buildProviderButtons(
-	available: { perplexity: boolean; exa: boolean; gemini: boolean },
+	available: { perplexity: boolean; exa: boolean; gemini: boolean; openai: boolean },
 	selected: string,
 	hasInitialQueries: boolean,
 ): string {
 	const providers = [
+		{ value: "openai", label: "OpenAI", available: available.openai },
 		{ value: "perplexity", label: "Perplexity", available: available.perplexity },
 		{ value: "exa", label: "Exa", available: available.exa },
 		{ value: "gemini", label: "Gemini", available: available.gemini },
@@ -34,7 +35,7 @@ export function generateCuratorPage(
 	queries: string[],
 	sessionToken: string,
 	timeout: number,
-	availableProviders: { perplexity: boolean; exa: boolean; gemini: boolean },
+	availableProviders: { perplexity: boolean; exa: boolean; gemini: boolean; openai: boolean },
 	defaultProvider: string,
 	summaryModels: Array<{ value: string; label: string }>,
 	defaultSummaryModel: string | null,
@@ -1364,7 +1365,7 @@ const SCRIPT = `(function() {
   var token = DATA.sessionToken;
   var timeoutSec = DATA.timeout;
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
-  var providers = ["perplexity", "exa", "gemini"];
+  var providers = ["openai", "perplexity", "exa", "gemini"];
   var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
   var workflow = "summary-review";
   var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";
@@ -1561,6 +1562,7 @@ const SCRIPT = `(function() {
   }
 
   function providerLabel(provider) {
+    if (provider === "openai") return "OpenAI";
     if (provider === "perplexity") return "Perplexity";
     if (provider === "exa") return "Exa";
     if (provider === "gemini") return "Gemini";

@@ -6,8 +6,10 @@ import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
+import { isOpenAIAvailable, resolveOpenAISearchAuth, searchWithOpenAI, type SearchModelRegistry } from "./openai-search.js";
+import type { Model } from "@mariozechner/pi-ai";
 
-export type SearchProvider = "auto" | "perplexity" | "gemini" | "exa";
+export type SearchProvider = "auto" | "perplexity" | "gemini" | "exa" | "openai";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -57,7 +59,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa"
+	return normalized === "auto" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "openai"
 		? normalized
 		: "auto";
 }
@@ -65,6 +67,8 @@ function normalizeSearchProvider(value: unknown): SearchProvider {
 export interface FullSearchOptions extends SearchOptions {
 	provider?: SearchProvider;
 	includeContent?: boolean;
+	modelRegistry?: SearchModelRegistry;
+	currentModel?: Model<any> | null;
 }
 
 function errorMessage(err: unknown): string {
@@ -146,6 +150,22 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
+	if (provider === "openai") {
+		const auth = options.modelRegistry
+			? await resolveOpenAISearchAuth({
+				modelRegistry: options.modelRegistry,
+				currentModel: options.currentModel,
+			})
+			: null;
+		if (!auth) {
+			throw new Error(
+				"OpenAI/Codex search unavailable. Configure Pi `openai-codex` login or an `openai` API key."
+			);
+		}
+		const result = await searchWithOpenAI(query, { auth, signal: options.signal });
+		return { ...result, provider: "openai" };
+	}
+
 	const fallbackErrors: string[] = [];
 
 	if (provider !== "exa" && isExaAvailable()) {
@@ -155,6 +175,25 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		} catch (err) {
 			if (isAbortError(err)) throw err;
 			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
+		}
+	}
+
+	if (await isOpenAIAvailable({ modelRegistry: options.modelRegistry, currentModel: options.currentModel })) {
+		try {
+			if (!options.modelRegistry) {
+				throw new Error("OpenAI search requires model registry access");
+			}
+			const auth = await resolveOpenAISearchAuth({
+				modelRegistry: options.modelRegistry,
+				currentModel: options.currentModel,
+			});
+			if (auth) {
+				const result = await searchWithOpenAI(query, { auth, signal: options.signal });
+				return { ...result, provider: "openai" };
+			}
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			fallbackErrors.push(`OpenAI: ${errorMessage(err)}`);
 		}
 	}
 
@@ -182,10 +221,11 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 
 	throw new Error(
 		"No search provider available. Either:\n" +
-		"  1. Set perplexityApiKey in ~/.pi/web-search.json\n" +
-		"  2. Set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
-		"  3. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
-		"  4. Sign into gemini.google.com in a supported Chromium-based browser"
+		"  1. Configure Pi `openai-codex` login or an `openai` API key\n" +
+		"  2. Set perplexityApiKey in ~/.pi/web-search.json\n" +
+		"  3. Set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
+		"  4. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
+		"  5. Sign into gemini.google.com in a supported Chromium-based browser"
 	);
 }
 
