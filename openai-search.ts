@@ -20,6 +20,9 @@ export interface OpenAISearchAuth {
 
 interface SearchWithOpenAIOptions {
 	auth: OpenAISearchAuth;
+	freshness?: "cached" | "live";
+	domainFilter?: string[];
+	recencyFilter?: "day" | "week" | "month" | "year";
 	fetchImpl?: typeof fetch;
 	signal?: AbortSignal;
 }
@@ -192,7 +195,61 @@ function buildHeaders(auth: OpenAISearchAuth): Record<string, string> {
 	return headers;
 }
 
+function normalizeAllowedDomain(value: string): string | null {
+	const trimmed = value.trim();
+	if (!trimmed) return null;
+	if (trimmed.startsWith("-")) return null;
+	try {
+		const withScheme = /^[a-z]+:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+		const url = new URL(withScheme);
+		return url.hostname || null;
+	} catch {
+		return null;
+	}
+}
+
+function buildWebSearchTool(options: {
+	freshness?: "cached" | "live";
+	domainFilter?: string[];
+}): Record<string, unknown> {
+	const tool: Record<string, unknown> = { type: "web_search" };
+
+	if (options.freshness === "cached") {
+		tool.external_web_access = false;
+	} else if (options.freshness === "live") {
+		tool.external_web_access = true;
+	}
+
+	if (options.domainFilter?.length) {
+		const excluded = options.domainFilter.filter((domain) => domain.trim().startsWith("-"));
+		if (excluded.length > 0) {
+			throw new Error("OpenAI web search does not support excluded domains; use an allow-list only.");
+		}
+
+		const allowedDomains = [...new Set(
+			options.domainFilter
+				.map(normalizeAllowedDomain)
+				.filter((domain): domain is string => !!domain),
+		)];
+
+		if (allowedDomains.length === 0) {
+			throw new Error("OpenAI web search domainFilter must include at least one valid domain.");
+		}
+
+		if (allowedDomains.length > 100) {
+			throw new Error("OpenAI web search supports at most 100 allowed domains.");
+		}
+
+		tool.filters = { allowed_domains: allowedDomains };
+	}
+
+	return tool;
+}
+
 export async function searchWithOpenAI(query: string, options: SearchWithOpenAIOptions): Promise<SearchResponse> {
+	if (options.recencyFilter) {
+		throw new Error("OpenAI web search does not support recencyFilter; use freshness or another provider.");
+	}
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const response = await fetchImpl(resolveResponsesUrl(options.auth), {
 		method: "POST",
@@ -201,7 +258,10 @@ export async function searchWithOpenAI(query: string, options: SearchWithOpenAIO
 			model: options.auth.model.id,
 			instructions: "Search the web and return a concise answer with inline citations.",
 			input: [{ role: "user", content: [{ type: "input_text", text: query }] }],
-			tools: [{ type: "web_search" }],
+			tools: [buildWebSearchTool({
+				freshness: options.freshness,
+				domainFilter: options.domainFilter,
+			})],
 			include: ["web_search_call.action.sources"],
 			store: false,
 			stream: true,

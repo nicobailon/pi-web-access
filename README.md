@@ -14,11 +14,11 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
 ## Why Pi Web Access
 
-**Zero Config** — Works out of the box with Exa MCP (no API key needed). Or sign into Google in Chrome, Arc, Helium, or Chromium for Gemini Web. Add API keys for Exa, Perplexity, Gemini API, or OpenAI for more control.
+**Zero Config** — Works out of the box with Exa MCP (no API key needed). Or sign into Google in Chrome, Arc, Helium, or Chromium for Gemini Web. Add API keys for Exa, Perplexity, Gemini API, or OpenAI for more control. If Pi is already authenticated with `openai-codex`, you can also use `provider: "openai"` without a separate CLI bridge.
 
 **Video Understanding** — Point it at a YouTube video or local screen recording and ask questions about what's on screen. Full transcripts, visual descriptions, and frame extraction at exact timestamps.
 
-**Smart Fallbacks** — Every capability has a fallback chain. Search tries Exa, then Perplexity, then Gemini API, then Gemini Web. An explicit OpenAI/Codex-native search provider is also available when your Pi auth/config includes `openai-codex` or `openai`. YouTube tries Gemini Web, then API, then Perplexity. Blocked pages retry through Jina Reader and Gemini extraction. Something always works.
+**Smart Fallbacks** — Every capability has a fallback chain. Search auto mode tries Exa, then Perplexity, then Gemini API, then Gemini Web. An explicit OpenAI/Codex-native search provider is also available when your Pi auth/config includes `openai-codex` or `openai`. YouTube tries Gemini Web, then API, then Perplexity. Blocked pages retry through Jina Reader and Gemini extraction. Something always works.
 
 **GitHub Cloning** — GitHub URLs are cloned locally instead of scraped. The agent gets real file contents and a local path to explore, not rendered HTML.
 
@@ -38,7 +38,7 @@ Works immediately with no API keys — Exa MCP provides zero-config search. For 
 }
 ```
 
-In `auto` mode (default), `web_search` tries Exa first (direct API if keyed, MCP if not), then Perplexity, then Gemini API, then Gemini Web. An explicit `openai` provider is also available for native OpenAI/Codex web search using Pi-managed `openai-codex` auth or a standard `openai` API key.
+In `auto` mode (default), `web_search` tries Exa first (direct API if keyed, MCP if not), then Perplexity, then Gemini API, then Gemini Web. An explicit `openai` provider is also available for native OpenAI/Codex web search using Pi-managed `openai-codex` auth or a standard `openai` API key. For the OpenAI provider, `freshness: "cached"` maps to cache-only search and `freshness: "live"` enables live web access. OpenAI domain filtering is allow-list only, and `recencyFilter` is not supported there.
 
 Optional dependencies for video frame extraction:
 
@@ -74,7 +74,7 @@ fetch_content({ url: "/path/to/recording.mp4", prompt: "What error appears on sc
 
 ### web_search
 
-Search the web via Exa, Perplexity AI, Gemini, or native OpenAI/Codex web search. Returns a synthesized answer with source citations.
+Search the web via Exa, Perplexity AI, Gemini, or native OpenAI/Codex web search. Returns a synthesized answer with source citations. The OpenAI provider can be pinned to cache-only or live mode with `freshness`.
 
 ```typescript
 web_search({ query: "rust async programming" })
@@ -83,6 +83,7 @@ web_search({ query: "latest news", numResults: 10, recencyFilter: "week" })
 web_search({ query: "...", domainFilter: ["github.com"] })
 web_search({ query: "...", provider: "exa" })
 web_search({ query: "...", provider: "openai" })
+web_search({ query: "...", provider: "openai", freshness: "cached" })
 web_search({ query: "...", includeContent: true })
 web_search({ queries: ["query 1", "query 2"], workflow: "none" })
 web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
@@ -92,8 +93,9 @@ web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
 |-----------|-------------|
 | `query` / `queries` | Single query or batch of queries |
 | `numResults` | Results per query (default: 5, max: 20) |
-| `recencyFilter` | `day`, `week`, `month`, or `year` |
-| `domainFilter` | Limit to domains (prefix with `-` to exclude) |
+| `recencyFilter` | `day`, `week`, `month`, or `year` (`provider: "openai"` does not support this) |
+| `domainFilter` | Limit to domains (prefix with `-` to exclude). `provider: "openai"` supports allow-list domains only |
+| `freshness` | `cached` or `live` for `provider: "openai"` |
 | `provider` | `auto` (default), `exa`, `perplexity`, `gemini`, or `openai` |
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator) or `summary-review` (auto-generate summary draft after search completion, default) |
@@ -191,6 +193,7 @@ When Readability fails or returns only a cookie notice, the extension retries vi
 web_search(query)
   → Exa (direct API with key, MCP without) → Perplexity → Gemini API → Gemini Web
   → Explicit OpenAI path available via `provider: "openai"` using Pi-managed `openai-codex` auth or standard `openai` API-key auth
+  → OpenAI supports `freshness: "cached"` (cache-only) and `freshness: "live"` (live web)
 
 fetch_content(url)
   → Video file?  Gemini API (Files API) → Gemini Web

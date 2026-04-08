@@ -5,6 +5,7 @@ import { StringEnum, complete, getModel, type Model } from "@mariozechner/pi-ai"
 import { fetchAllContent, type ExtractedContent } from "./extract.js";
 import { clearCloneCache } from "./github-extract.js";
 import { search, type SearchProvider, type ResolvedSearchProvider } from "./gemini-search.js";
+import { pickAutoProvider } from "./search-provider-order.js";
 import { executeCodeSearch } from "./code-search.js";
 import type { SearchResult } from "./perplexity.js";
 import { formatSeconds } from "./utils.js";
@@ -182,11 +183,7 @@ function resolveProvider(
 	const provider = normalizeProviderInput(requested ?? loadConfig().provider ?? "auto") ?? "auto";
 
 	if (provider === "auto") {
-		if (available.exa) return "exa";
-		if (available.perplexity) return "perplexity";
-		if (available.gemini) return "gemini";
-		if (available.openai) return "openai";
-		return "exa";
+		return pickAutoProvider(available) ?? "exa";
 	}
 	if (provider === "exa" && !available.exa) {
 		if (available.perplexity) return "perplexity";
@@ -226,6 +223,7 @@ interface PendingCurate {
 	numResults?: number;
 	recencyFilter?: "day" | "week" | "month" | "year";
 	domainFilter?: string[];
+	freshness?: "cached" | "live";
 	availableProviders: ProviderAvailability;
 	defaultProvider: ResolvedSearchProvider;
 	summaryModels: Array<{ value: string; label: string }>;
@@ -969,6 +967,7 @@ export default function (pi: ExtensionAPI) {
 								numResults: pc.numResults,
 								recencyFilter: pc.recencyFilter,
 								domainFilter: pc.domainFilter,
+								freshness: pc.freshness,
 								includeContent: pc.includeContent,
 								signal: addSearchSignal,
 								modelRegistry: pc.summaryContext.modelRegistry,
@@ -1098,7 +1097,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using OpenAI/Codex native web search, Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login). Use provider=openai for Pi-managed OpenAI/Codex auth.`,
+			`Search the web using OpenAI/Codex native web search, Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login). Use provider=openai for Pi-managed OpenAI/Codex auth. OpenAI also supports freshness=cached|live.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
 		parameters: Type.Object({
@@ -1107,9 +1106,14 @@ export default function (pi: ExtensionAPI) {
 			numResults: Type.Optional(Type.Number({ description: "Results per query (default: 5, max: 20)" })),
 			includeContent: Type.Optional(Type.Boolean({ description: "Fetch full page content (async)" })),
 			recencyFilter: Type.Optional(
-				StringEnum(["day", "week", "month", "year"], { description: "Filter by recency" }),
+				StringEnum(["day", "week", "month", "year"], { description: "Filter by recency. OpenAI provider does not support this." }),
 			),
-			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
+			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude). OpenAI supports allow-list domains only." })),
+			freshness: Type.Optional(
+				StringEnum(["cached", "live"], {
+					description: "Search freshness. Native for provider=openai; other providers may ignore it. OpenAI recencyFilter is unsupported.",
+				}),
+			),
 			provider: Type.Optional(
 				StringEnum(["auto", "perplexity", "gemini", "exa", "openai"], { description: "Search provider (default: auto)" }),
 			),
@@ -1182,6 +1186,7 @@ export default function (pi: ExtensionAPI) {
 					numResults: params.numResults,
 					recencyFilter: params.recencyFilter,
 					domainFilter: params.domainFilter,
+					freshness: params.freshness,
 					availableProviders,
 					defaultProvider,
 					summaryModels: summaryModelChoices.summaryModels,
@@ -1231,6 +1236,7 @@ export default function (pi: ExtensionAPI) {
 							numResults: params.numResults,
 							recencyFilter: params.recencyFilter,
 							domainFilter: params.domainFilter,
+							freshness: params.freshness,
 							includeContent: params.includeContent,
 							signal: searchSignal,
 							modelRegistry: ctx.modelRegistry,
@@ -1292,6 +1298,7 @@ export default function (pi: ExtensionAPI) {
 						numResults: params.numResults,
 						recencyFilter: params.recencyFilter,
 						domainFilter: params.domainFilter,
+						freshness: params.freshness,
 						includeContent: params.includeContent,
 						signal,
 						modelRegistry: ctx?.modelRegistry,

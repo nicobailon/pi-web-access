@@ -6,10 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - **OpenAI native web search provider.** `web_search` now supports an explicit `provider: "openai"` mode that uses Pi-managed `openai-codex` auth when available and otherwise falls back to standard `openai` API-key auth. This path uses native OpenAI/Codex web search directly instead of the local Codex CLI.
+- **OpenAI freshness control.** `web_search` now accepts `freshness: "cached" | "live"` for the explicit OpenAI provider, mapped directly to the native web-search tool's cache-only vs live internet mode.
 
 ### Changed
 - Curator provider selection now includes OpenAI alongside Exa, Perplexity, and Gemini when Pi auth/config makes it available.
 - README documentation now covers the explicit OpenAI provider, its auth behavior, and the fact that `auto` provider selection remains unchanged in this first pass.
+- OpenAI provider handling is now explicit about capability differences: domain filtering is allow-list only, `recencyFilter` is rejected for `provider: "openai"`, and `auto` mode continues to exclude OpenAI.
 
 ## [0.10.6] - 2026-04-04
 

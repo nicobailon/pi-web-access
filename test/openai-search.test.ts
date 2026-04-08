@@ -8,6 +8,7 @@ import {
 	searchWithOpenAI,
 	type SearchModelRegistry,
 } from "../openai-search.ts";
+import { pickAutoProvider } from "../search-provider-order.ts";
 
 function makeJwt(payload: Record<string, unknown>): string {
 	const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
@@ -223,4 +224,143 @@ test("searchWithOpenAI parses streamed output items when the completed envelope 
 			snippet: "",
 		},
 	]);
+});
+
+test("searchWithOpenAI maps cached freshness to offline web search", async () => {
+	const model = makeModel("openai", "gpt-4.1-mini", "https://api.openai.com/v1");
+	const calls: Array<{ url: string; init: RequestInit }> = [];
+
+	await searchWithOpenAI("latest changelog", {
+		auth: {
+			provider: "openai",
+			model,
+			apiKey: "sk-test",
+		},
+		freshness: "cached",
+		fetchImpl: async (url, init) => {
+			calls.push({ url: String(url), init: init ?? {} });
+			return new Response(JSON.stringify({ output: [] }), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		},
+	});
+
+	assert.equal(calls.length, 1);
+	const body = JSON.parse(String(calls[0]!.init.body));
+	assert.deepEqual(body.tools, [{ type: "web_search", external_web_access: false }]);
+});
+
+test("searchWithOpenAI maps live freshness to live web search", async () => {
+	const model = makeModel("openai", "gpt-4.1-mini", "https://api.openai.com/v1");
+	const calls: Array<{ url: string; init: RequestInit }> = [];
+
+	await searchWithOpenAI("latest changelog", {
+		auth: {
+			provider: "openai",
+			model,
+			apiKey: "sk-test",
+		},
+		freshness: "live",
+		fetchImpl: async (url, init) => {
+			calls.push({ url: String(url), init: init ?? {} });
+			return new Response(JSON.stringify({ output: [] }), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		},
+	});
+
+	assert.equal(calls.length, 1);
+	const body = JSON.parse(String(calls[0]!.init.body));
+	assert.deepEqual(body.tools, [{ type: "web_search", external_web_access: true }]);
+});
+
+test("searchWithOpenAI maps domain filters to allowed_domains for OpenAI web search", async () => {
+	const model = makeModel("openai", "gpt-4.1-mini", "https://api.openai.com/v1");
+	const calls: Array<{ url: string; init: RequestInit }> = [];
+
+	await searchWithOpenAI("OpenAI docs", {
+		auth: {
+			provider: "openai",
+			model,
+			apiKey: "sk-test",
+		},
+		domainFilter: ["openai.com", "developers.openai.com"],
+		fetchImpl: async (url, init) => {
+			calls.push({ url: String(url), init: init ?? {} });
+			return new Response(JSON.stringify({ output: [] }), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			});
+		},
+	});
+
+	assert.equal(calls.length, 1);
+	const body = JSON.parse(String(calls[0]!.init.body));
+	assert.deepEqual(body.tools, [{
+		type: "web_search",
+		filters: {
+			allowed_domains: ["openai.com", "developers.openai.com"],
+		},
+	}]);
+});
+
+test("searchWithOpenAI rejects excluded domains because OpenAI only supports allow-list filtering", async () => {
+	const model = makeModel("openai", "gpt-4.1-mini", "https://api.openai.com/v1");
+
+	await assert.rejects(
+		() => searchWithOpenAI("OpenAI docs", {
+			auth: {
+				provider: "openai",
+				model,
+				apiKey: "sk-test",
+			},
+			domainFilter: ["-example.com"],
+			fetchImpl: async () => new Response(JSON.stringify({ output: [] }), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			}),
+		}),
+		/excluded domains/i,
+	);
+});
+
+test("searchWithOpenAI rejects recency filters because OpenAI web search has no native recency parameter", async () => {
+	const model = makeModel("openai", "gpt-4.1-mini", "https://api.openai.com/v1");
+
+	await assert.rejects(
+		() => searchWithOpenAI("latest OpenAI API release notes", {
+			auth: {
+				provider: "openai",
+				model,
+				apiKey: "sk-test",
+			},
+			recencyFilter: "week",
+			fetchImpl: async () => new Response(JSON.stringify({ output: [] }), {
+				status: 200,
+				headers: { "Content-Type": "application/json" },
+			}),
+		}),
+		/does not support recencyFilter/i,
+	);
+});
+
+test("pickAutoProvider preserves the existing non-openai auto order", () => {
+	assert.equal(
+		pickAutoProvider({ exa: true, perplexity: true, gemini: true }),
+		"exa",
+	);
+	assert.equal(
+		pickAutoProvider({ exa: false, perplexity: true, gemini: true }),
+		"perplexity",
+	);
+	assert.equal(
+		pickAutoProvider({ exa: false, perplexity: false, gemini: true }),
+		"gemini",
+	);
+	assert.equal(
+		pickAutoProvider({ exa: false, perplexity: false, gemini: false }),
+		null,
+	);
 });
