@@ -1,15 +1,5 @@
 import type { Model } from "@mariozechner/pi-ai";
-
-export interface SearchResult {
-	title: string;
-	url: string;
-	snippet: string;
-}
-
-export interface SearchResponse {
-	answer: string;
-	results: SearchResult[];
-}
+import type { SearchResponse } from "./perplexity.js";
 
 type ResolvedRequestAuth =
 	| { ok: true; apiKey?: string; headers?: Record<string, string> }
