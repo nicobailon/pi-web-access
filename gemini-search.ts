@@ -7,7 +7,7 @@ import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
 import { resolveOpenAISearchAuth, searchWithOpenAI, type SearchModelRegistry } from "./openai-search.js";
-import { pickAutoProvider } from "./search-provider-order.js";
+import { getAutoProviderOrder } from "./search-provider-order.js";
 import type { Model } from "@mariozechner/pi-ai";
 
 export type SearchProvider = "auto" | "perplexity" | "gemini" | "exa" | "openai";
@@ -175,40 +175,74 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	const fallbackErrors: string[] = [];
+	const openaiAuth = options.modelRegistry
+		? await resolveOpenAISearchAuth({
+			modelRegistry: options.modelRegistry,
+			currentModel: options.currentModel,
+		})
+		: null;
+	const autoOrder = getAutoProviderOrder(
+		{
+			openai: openaiAuth !== null,
+			exa: isExaAvailable(),
+			perplexity: isPerplexityAvailable(),
+			gemini: isGeminiApiAvailable() || !!(await isGeminiWebAvailable()),
+		},
+		{
+			recencyFilter: options.recencyFilter,
+			domainFilter: options.domainFilter,
+		},
+	);
 
-	const autoProvider = pickAutoProvider({
-		exa: isExaAvailable(),
-		perplexity: isPerplexityAvailable(),
-		gemini: isGeminiApiAvailable() || !!(await isGeminiWebAvailable()),
-	});
-
-	if (autoProvider === "exa") {
-		try {
-			const result = await searchWithExa(query, options);
-			if (result && "answer" in result) return { ...result, provider: "exa" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
+	for (const autoProvider of autoOrder) {
+		if (autoProvider === "openai") {
+			if (!openaiAuth) continue;
+			try {
+				const result = await searchWithOpenAI(query, {
+					auth: openaiAuth,
+					domainFilter: options.domainFilter,
+					freshness: options.freshness,
+					recencyFilter: options.recencyFilter,
+					signal: options.signal,
+				});
+				return { ...result, provider: "openai" };
+			} catch (err) {
+				if (isAbortError(err)) throw err;
+				fallbackErrors.push(`OpenAI: ${errorMessage(err)}`);
+				continue;
+			}
 		}
-	}
 
-	if (autoProvider === "perplexity") {
-		try {
-			const result = await searchWithPerplexity(query, options);
-			return { ...result, provider: "perplexity" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
+		if (autoProvider === "exa") {
+			try {
+				const result = await searchWithExa(query, options);
+				if (result && "answer" in result) return { ...result, provider: "exa" };
+			} catch (err) {
+				if (isAbortError(err)) throw err;
+				fallbackErrors.push(`Exa: ${errorMessage(err)}`);
+			}
+			continue;
 		}
-	}
 
-	if (autoProvider === "gemini") {
-		try {
-			const geminiResult = await searchWithGemini(query, options, false);
-			if (geminiResult) return { ...geminiResult, provider: "gemini" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
+		if (autoProvider === "perplexity") {
+			try {
+				const result = await searchWithPerplexity(query, options);
+				return { ...result, provider: "perplexity" };
+			} catch (err) {
+				if (isAbortError(err)) throw err;
+				fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
+			}
+			continue;
+		}
+
+		if (autoProvider === "gemini") {
+			try {
+				const geminiResult = await searchWithGemini(query, options, false);
+				if (geminiResult) return { ...geminiResult, provider: "gemini" };
+			} catch (err) {
+				if (isAbortError(err)) throw err;
+				fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
+			}
 		}
 	}
 
@@ -218,11 +252,11 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 
 	throw new Error(
 		"No auto search provider available. Either:\n" +
-		"  1. Use Exa MCP/network access or set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
-		"  2. Set perplexityApiKey in ~/.pi/web-search.json\n" +
-		"  3. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
-		"  4. Sign into gemini.google.com in a supported Chromium-based browser\n" +
-		"  5. For native OpenAI/Codex search, use provider: 'openai' with Pi `openai-codex` login or an `openai` API key"
+		"  1. Use OpenAI/Codex-compatible auth with Pi `openai-codex` login or an `openai` API key\n" +
+		"  2. Use Exa MCP/network access or set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
+		"  3. Set perplexityApiKey in ~/.pi/web-search.json\n" +
+		"  4. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
+		"  5. Sign into gemini.google.com in a supported Chromium-based browser"
 	);
 }
 

@@ -10,8 +10,9 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 - Curator provider selection now includes OpenAI alongside Exa, Perplexity, and Gemini when Pi auth/config makes it available.
-- README documentation now covers the explicit OpenAI provider, its auth behavior, and the fact that `auto` provider selection remains unchanged in this first pass.
-- OpenAI provider handling is now explicit about capability differences: domain filtering is allow-list only, `recencyFilter` is rejected for `provider: "openai"`, and `auto` mode continues to exclude OpenAI.
+- `auto` search mode now prefers OpenAI/Codex native web search first when the request is compatible, then falls back through Exa, Perplexity, and Gemini. Compatibility-aware skipping avoids the OpenAI path when `recencyFilter` is set or `domainFilter` contains excluded domains.
+- README documentation now covers the OpenAI-first auto ordering, its compatibility rules, and the explicit OpenAI provider behavior.
+- OpenAI provider handling is now explicit about capability differences: domain filtering is allow-list only, `recencyFilter` is rejected for `provider: "openai"`, and `auto` mode skips incompatible requests instead of sending them to OpenAI first.
 
 ## [0.10.6] - 2026-04-04
 
