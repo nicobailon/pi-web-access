@@ -1,6 +1,10 @@
 import { activityMonitor } from "./activity.js";
 import { callExaMcp } from "./exa.js";
 
+function maxTokensToContextMaxCharacters(maxTokens: number): number {
+	return Math.max(3000, Math.min(Math.round(maxTokens * 4), 50000));
+}
+
 export async function executeCodeSearch(
 	_toolCallId: string,
 	params: { query: string; maxTokens?: number },
@@ -22,10 +26,13 @@ export async function executeCodeSearch(
 
 	try {
 		const text = await callExaMcp(
-			"get_code_context_exa",
+			"web_search_exa",
 			{
 				query,
-				tokensNum: maxTokens,
+				numResults: 5,
+				livecrawl: "fallback",
+				type: "auto",
+				contextMaxCharacters: maxTokensToContextMaxCharacters(maxTokens),
 			},
 			signal,
 		);
