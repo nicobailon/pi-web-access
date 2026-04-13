@@ -38,6 +38,8 @@ import { isExaAvailable } from "./exa.js";
 import { isGeminiApiAvailable } from "./gemini-api.js";
 import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
 import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
+import { isBraveAvailable } from "./brave.js";
+import { isOpenAISearchAvailable } from "./openai-search.js";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
@@ -53,6 +55,8 @@ interface WebSearchConfig {
 }
 
 interface ProviderAvailability {
+	openai: boolean;
+	brave: boolean;
 	perplexity: boolean;
 	exa: boolean;
 	gemini: boolean;
@@ -114,10 +118,8 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini") {
-		return normalized;
-	}
-	return "auto";
+	const valid: SearchProvider[] = ["auto", "openai", "brave", "exa", "perplexity", "gemini"];
+	return valid.includes(normalized as SearchProvider) ? (normalized as SearchProvider) : "auto";
 }
 
 function normalizeCuratorTimeoutSeconds(value: unknown): number | undefined {
@@ -148,17 +150,20 @@ function getCuratorTimeoutSeconds(): number {
 	return normalizeCuratorTimeoutSeconds(source.curatorTimeoutSeconds) ?? DEFAULT_CURATOR_TIMEOUT_SECONDS;
 }
 
-async function getProviderAvailability(): Promise<ProviderAvailability> {
+async function getProviderAvailability(ctx: import("@mariozechner/pi-coding-agent").ExtensionContext): Promise<ProviderAvailability> {
 	const geminiWebAvail = await isGeminiWebAvailable();
+	const openaiAvail = await isOpenAISearchAvailable(ctx);
 	return {
+		openai: openaiAvail,
+		brave: isBraveAvailable(),
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
 		gemini: isGeminiApiAvailable() || !!geminiWebAvail,
 	};
 }
 
-async function loadCuratorBootstrap(requestedProvider: unknown): Promise<CuratorBootstrap> {
-	const availableProviders = await getProviderAvailability();
+async function loadCuratorBootstrap(requestedProvider: unknown, ctx: import("@mariozechner/pi-coding-agent").ExtensionContext): Promise<CuratorBootstrap> {
+	const availableProviders = await getProviderAvailability(ctx);
 	return {
 		availableProviders,
 		defaultProvider: resolveProvider(requestedProvider, availableProviders),
@@ -173,21 +178,38 @@ function resolveProvider(
 	const provider = normalizeProviderInput(requested ?? loadConfig().provider ?? "auto") ?? "auto";
 
 	if (provider === "auto") {
+		if (available.openai) return "openai";
 		if (available.exa) return "exa";
+		if (available.brave) return "brave";
 		if (available.perplexity) return "perplexity";
 		if (available.gemini) return "gemini";
 		return "exa";
 	}
+	if (provider === "openai" && !available.openai) {
+		if (available.exa) return "exa";
+		if (available.brave) return "brave";
+		return available.perplexity ? "perplexity" : available.gemini ? "gemini" : "openai";
+	}
 	if (provider === "exa" && !available.exa) {
-		if (available.perplexity) return "perplexity";
-		return available.gemini ? "gemini" : "exa";
+		if (available.openai) return "openai";
+		if (available.brave) return "brave";
+		return available.perplexity ? "perplexity" : available.gemini ? "gemini" : "exa";
+	}
+	if (provider === "brave" && !available.brave) {
+		if (available.openai) return "openai";
+		if (available.exa) return "exa";
+		return available.perplexity ? "perplexity" : available.gemini ? "gemini" : "brave";
 	}
 	if (provider === "perplexity" && !available.perplexity) {
+		if (available.openai) return "openai";
 		if (available.exa) return "exa";
+		if (available.brave) return "brave";
 		return available.gemini ? "gemini" : "perplexity";
 	}
 	if (provider === "gemini" && !available.gemini) {
+		if (available.openai) return "openai";
 		if (available.exa) return "exa";
+		if (available.brave) return "brave";
 		return available.perplexity ? "perplexity" : "gemini";
 	}
 	return provider;
@@ -964,6 +986,7 @@ export default function (pi: ExtensionAPI) {
 								domainFilter: pc.domainFilter,
 								includeContent: pc.includeContent,
 								signal: addSearchSignal,
+							openAIContext: ctx,
 							});
 							if (pendingCurate !== pc) throw new Error("Curator session is no longer active.");
 							pc.searchResults.set(queryIndex, { query, answer, results, error: null, provider: actualProvider });
@@ -1089,7 +1112,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login).`,
+			`Search the web using OpenAI, Brave, Exa, Perplexity, or Gemini. Returns an AI-synthesized answer with source citations. OpenAI web_search uses your existing Codex subscription or API key with no extra setup. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: OpenAI (if Codex/API key available), then Exa (direct API with key, MCP fallback without), then Brave (needs key), then Perplexity (needs key), then Gemini API (needs key), then Gemini Web (needs a supported Chromium-based browser login).`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
 		parameters: Type.Object({
@@ -1102,7 +1125,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "perplexity", "gemini", "exa"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "openai", "brave", "exa", "perplexity", "gemini"], { description: "Search provider (default: auto)" }),
 			),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review"], {
@@ -1150,7 +1173,7 @@ export default function (pi: ExtensionAPI) {
 					: searchAbort.signal;
 				let cancelled = false;
 
-				const bootstrap = await loadCuratorBootstrap(params.provider);
+				const bootstrap = await loadCuratorBootstrap(params.provider, ctx);
 				const availableProviders = bootstrap.availableProviders;
 				const defaultProvider = bootstrap.defaultProvider;
 				const curatorTimeoutSeconds = bootstrap.timeoutSeconds;
@@ -1224,6 +1247,7 @@ export default function (pi: ExtensionAPI) {
 							domainFilter: params.domainFilter,
 							includeContent: params.includeContent,
 							signal: searchSignal,
+						openAIContext: ctx,
 						});
 						if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
 						searchResults.set(qi, { query: queryList[qi], answer, results, error: null, provider });
@@ -1283,6 +1307,7 @@ export default function (pi: ExtensionAPI) {
 						domainFilter: params.domainFilter,
 						includeContent: params.includeContent,
 						signal,
+					openAIContext: ctx,
 					});
 
 					searchResults.push({ query, answer, results, error: null, provider });
@@ -1987,7 +2012,7 @@ export default function (pi: ExtensionAPI) {
 
 			let bootstrap: CuratorBootstrap;
 			try {
-				bootstrap = await loadCuratorBootstrap(undefined);
+				bootstrap = await loadCuratorBootstrap(undefined, ctx);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`Failed to load web search config: ${message}`, "error");
@@ -2113,6 +2138,7 @@ export default function (pi: ExtensionAPI) {
 								const { answer, results, provider: actualProvider } = await search(query, {
 									provider: requestedProvider,
 									signal: searchAbort.signal,
+								openAIContext: ctx,
 								});
 								if (commandHandle && activeCurator !== commandHandle) {
 									throw new Error("Curator session is no longer active.");
@@ -2172,6 +2198,7 @@ export default function (pi: ExtensionAPI) {
 								const { answer, results, provider } = await search(queries[qi], {
 									provider: requestedProvider,
 									signal: searchAbort.signal,
+								openAIContext: ctx,
 								});
 								if (aborted || activeCurator !== handle) break;
 								handle.pushResult(qi, {

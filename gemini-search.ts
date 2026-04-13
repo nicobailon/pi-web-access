@@ -6,8 +6,10 @@ import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
+import { isBraveAvailable, searchWithBrave } from "./brave.js";
+import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.js";
 
-export type SearchProvider = "auto" | "perplexity" | "gemini" | "exa";
+export type SearchProvider = "auto" | "openai" | "brave" | "perplexity" | "gemini" | "exa";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -57,14 +59,14 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa"
-		? normalized
-		: "auto";
+	const valid: SearchProvider[] = ["auto", "openai", "brave", "perplexity", "gemini", "exa"];
+	return valid.includes(normalized as SearchProvider) ? (normalized as SearchProvider) : "auto";
 }
 
 export interface FullSearchOptions extends SearchOptions {
 	provider?: SearchProvider;
 	includeContent?: boolean;
+	openAIContext?: import("@mariozechner/pi-coding-agent").ExtensionContext;
 }
 
 function errorMessage(err: unknown): string {
@@ -109,6 +111,21 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	const config = getSearchConfig();
 	const provider = options.provider ?? config.searchProvider;
 
+	if (provider === "openai") {
+		if (!options.openAIContext) {
+			throw new Error(
+				"OpenAI web search requires an extension context for auth. This is a bug — report it.",
+			);
+		}
+		const result = await searchWithOpenAI(query, options.openAIContext, options);
+		return { ...result, provider: "openai" };
+	}
+
+	if (provider === "brave") {
+		const result = await searchWithBrave(query, options);
+		return { ...result, provider: "brave" };
+	}
+
 	if (provider === "perplexity") {
 		const result = await searchWithPerplexity(query, options);
 		return { ...result, provider: "perplexity" };
@@ -146,7 +163,21 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
+	// Auto mode: try providers in order of quality/cost
 	const fallbackErrors: string[] = [];
+
+	// OpenAI web_search (highest quality if auth is available — uses Codex subscription)
+	if (provider !== "openai" && options.openAIContext) {
+		try {
+			if (await isOpenAISearchAvailable(options.openAIContext)) {
+				const result = await searchWithOpenAI(query, options.openAIContext, options);
+				return { ...result, provider: "openai" };
+			}
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			fallbackErrors.push(`OpenAI: ${errorMessage(err)}`);
+		}
+	}
 
 	if (provider !== "exa" && isExaAvailable()) {
 		try {
@@ -155,6 +186,16 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		} catch (err) {
 			if (isAbortError(err)) throw err;
 			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
+		}
+	}
+
+	if (isBraveAvailable()) {
+		try {
+			const result = await searchWithBrave(query, options);
+			return { ...result, provider: "brave" };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			fallbackErrors.push(`Brave: ${errorMessage(err)}`);
 		}
 	}
 
@@ -182,9 +223,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 
 	throw new Error(
 		"No search provider available. Either:\n" +
-		"  1. Set perplexityApiKey in ~/.pi/web-search.json\n" +
-		"  2. Set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
-		"  3. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
+		"  1. Use /login to sign in with a Codex subscription for OpenAI web search\n" +
+		"  2. Set braveApiKey, perplexityApiKey, exaApiKey, or geminiApiKey in ~/.pi/web-search.json\n" +
+		"  3. Set BRAVE_API_KEY, EXA_API_KEY, or GEMINI_API_KEY env vars\n" +
 		"  4. Sign into gemini.google.com in a supported Chromium-based browser"
 	);
 }
