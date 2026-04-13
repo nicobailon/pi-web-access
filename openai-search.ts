@@ -23,7 +23,8 @@ export async function resolveOpenAIAuth(ctx: ExtensionContext): Promise<OpenAIAu
 		try {
 			const m = getModel(providerId, modelId);
 			if (m) {
-				const key = await ctx.modelRegistry.getApiKey(m);
+				const auth = await ctx.modelRegistry.getApiKeyAndHeaders(m);
+				const key = auth?.apiKey;
 				if (key) return { provider: providerId, apiKey: key, model: modelId };
 			}
 		} catch {
@@ -76,18 +77,37 @@ async function parseSSEResponse(response: Response): Promise<any> {
 			// Not valid JSON — try SSE
 		}
 	}
+
+	const outputItems: any[] = [];
+	let completedResponse: any | null = null;
+
 	for (const line of text.split("\n")) {
 		if (!line.startsWith("data: ")) continue;
 		const data = line.slice(6).trim();
 		if (!data || data === "[DONE]") continue;
 		try {
 			const parsed = JSON.parse(data);
-			if (parsed.type === "response.done" || parsed.type === "response.completed")
-				return parsed.response ?? parsed;
+			if (parsed.type === "response.output_item.done" && parsed.item) {
+				outputItems.push(parsed.item);
+			}
+			if (parsed.type === "response.done" || parsed.type === "response.completed") {
+				completedResponse = parsed.response ?? parsed;
+			}
 		} catch {
 			// Continue
 		}
 	}
+
+	if (completedResponse) {
+		const output = Array.isArray(completedResponse.output) ? completedResponse.output : [];
+		if (output.length > 0) return completedResponse;
+		return { ...completedResponse, output: outputItems };
+	}
+
+	if (outputItems.length > 0) {
+		return { output: outputItems };
+	}
+
 	throw new Error("Failed to parse OpenAI SSE response");
 }
 
