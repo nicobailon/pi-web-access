@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- `code_search` now uses Exa web search tuned for programming sources instead of the hosted MCP `get_code_context_exa` endpoint, which Exa no longer exposes by default on `https://mcp.exa.ai/mcp`. The tool still works without an API key via Exa MCP web search fallback and now labels its search mode more accurately in the UI.
+
 ## [0.10.6] - 2026-04-04
 
 ### Changed
@@ -22,7 +25,7 @@ All notable changes to this project will be documented in this file.
 - **Auto-open curator for all `web_search` runs (single + multi query).** Searches now open the curator window immediately and stream results live for review workflows; the old countdown/auto-condense fallback path was removed.
 - **Exa.ai search provider.** Neural/semantic search available alongside Perplexity and Gemini. 1,000 free requests/month. Set `EXA_API_KEY` env var or `exaApiKey` in `~/.pi/web-search.json`, or select explicitly with `provider: "exa"`. Includes built-in content extraction — when `includeContent` is true, full page text comes back with search results instead of requiring a separate background fetch. Monthly usage tracked in `~/.pi/exa-usage.json` with a warning at 80%.
 - **Exa MCP fallback.** When no Exa API key is configured, search routes through `mcp.exa.ai` with zero setup. Supports basic search and `includeContent` but not domain/recency filtering (falls through to Gemini for those).
-- **`code_search` tool.** Code/documentation search via Exa MCP (`get_code_context_exa`). No API key required. Returns code examples, docs, and API references from GitHub, Stack Overflow, and official documentation.
+- **`code_search` tool.** Initially shipped using Exa MCP `get_code_context_exa` for code/documentation search with no API key required. This was later replaced by Exa web search tuned for programming sources after Exa stopped exposing `get_code_context_exa` by default on the hosted MCP endpoint.
 - **Glimpse native curator window.** On macOS with Glimpse installed, the search curator opens in a native WKWebView window instead of a browser tab. Faster launch, closer integration. Falls back to browser automatically when Glimpse is unavailable.
 - **Curator provider UX rewrite.** Replaced the provider dropdown with provider buttons (hidden when unavailable), made provider re-search additive, added provider badges on all cards (including errors), and switched button states to coverage-based logic keyed by logical query slots so duplicate query text is handled correctly.
 - **Per-card provider re-search.** Completed result cards now show "Also try" chips for other available providers. Clicking one searches the same query with that provider and adds a new card below, keeping both results for comparison.
