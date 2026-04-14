@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { activityMonitor } from "./activity.js";
-import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.js";
+import { getApiKey, API_BASE, DEFAULT_MODEL, isGeminiApiAvailable } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
@@ -186,7 +186,10 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 			openai: openaiAuth !== null,
 			exa: isExaAvailable(),
 			perplexity: isPerplexityAvailable(),
-			gemini: isGeminiApiAvailable() || !!(await isGeminiWebAvailable()),
+			// Deliberately avoid probing Gemini Web while computing auto order.
+			// If API-backed Gemini is unavailable, we lazily try Gemini Web only
+			// after other providers have failed or no better provider exists.
+			gemini: isGeminiApiAvailable(),
 		},
 		{
 			recencyFilter: options.recencyFilter,
@@ -194,6 +197,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		},
 	);
 
+	let geminiTried = false;
 	for (const autoProvider of autoOrder) {
 		if (autoProvider === "openai") {
 			if (!openaiAuth) continue;
@@ -236,6 +240,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 
 		if (autoProvider === "gemini") {
+			geminiTried = true;
 			try {
 				const geminiResult = await searchWithGemini(query, options, false);
 				if (geminiResult) return { ...geminiResult, provider: "gemini" };
@@ -243,6 +248,16 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 				if (isAbortError(err)) throw err;
 				fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
 			}
+		}
+	}
+
+	if (!geminiTried) {
+		try {
+			const geminiResult = await searchWithGemini(query, options, false);
+			if (geminiResult) return { ...geminiResult, provider: "gemini" };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
 		}
 	}
 

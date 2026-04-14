@@ -37,7 +37,7 @@ import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.js";
 import { isExaAvailable } from "./exa.js";
 import { isGeminiApiAvailable } from "./gemini-api.js";
-import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
+import { getActiveGoogleEmail } from "./gemini-web.js";
 import { isOpenAIAvailable } from "./openai-search.js";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
@@ -152,11 +152,12 @@ function getCuratorTimeoutSeconds(): number {
 async function getProviderAvailability(
 	ctx?: Pick<ExtensionContext, "modelRegistry" | "model">,
 ): Promise<ProviderAvailability> {
-	const geminiWebAvail = await isGeminiWebAvailable();
 	return {
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
-		gemini: isGeminiApiAvailable() || !!geminiWebAvail,
+		// Deliberately avoid probing Gemini Web here. Browser cookie/keychain access
+		// should only happen when Gemini is actually needed as a search path.
+		gemini: isGeminiApiAvailable(),
 		openai: await isOpenAIAvailable({
 			modelRegistry: ctx?.modelRegistry,
 			currentModel: ctx?.model ?? null,
