@@ -99,7 +99,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
 
 ### code_search
 
-Search for code examples, documentation, and API references via Exa MCP. No API key required.
+Search for code examples, documentation, and API references via Exa search tuned for programming sources. Prefers official docs, GitHub, and Stack Overflow. No API key required — without a key it falls back to Exa MCP web search.
 
 ```typescript
 code_search({ query: "React useEffect cleanup pattern" })
@@ -327,7 +327,7 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Content f
 | `curator-server.ts` | Ephemeral HTTP server with SSE streaming and state machine |
 | `summary-review.ts` | Summary prompt construction, model-based draft generation, and deterministic fallback summary |
 | `exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
-| `code-search.ts` | Code/docs search via Exa MCP |
+| `code-search.ts` | Code/docs search via Exa search tuned for programming sources |
 | `extract.ts` | URL/file path routing, HTTP extraction, fallback orchestration |
 | `gemini-search.ts` | Search routing across Exa, Perplexity, Gemini API, Gemini Web |
 | `gemini-url-context.ts` | Gemini URL Context + Web extraction fallbacks |

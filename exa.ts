@@ -366,7 +366,7 @@ function buildMcpQuery(query: string, options: ExaSearchOptions): string {
 	return parts.join(" ");
 }
 
-async function searchWithExaMcp(query: string, options: ExaSearchOptions = {}): Promise<SearchResponse | null> {
+export async function searchWithExaMcp(query: string, options: ExaSearchOptions = {}): Promise<SearchResponse | null> {
 	const enrichedQuery = buildMcpQuery(query, options);
 	const activityId = activityMonitor.logStart({ type: "api", query: enrichedQuery });
 

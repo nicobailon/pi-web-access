@@ -1521,9 +1521,9 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "code_search",
 		label: "Code Search",
-		description: "Search for code examples, documentation, and API references. Returns relevant code snippets and docs from GitHub, Stack Overflow, and official documentation. Use for any programming question — API usage, library examples, debugging help.",
+		description: "Search for code examples, documentation, and API references. Uses Exa search tuned for programming sources and prefers official docs, GitHub, and Stack Overflow. Use for any programming question — API usage, library examples, debugging help.",
 		promptSnippet:
-			"Use for programming/API/library questions to retrieve concrete examples and docs before implementing or debugging code.",
+			"Use for programming/API/library questions to retrieve concrete examples and docs via Exa search tuned for code sources before implementing or debugging code.",
 		parameters: Type.Object({
 			query: Type.String({ description: "Programming question, API, library, or debugging topic to search for" }),
 			maxTokens: Type.Optional(Type.Integer({
@@ -1546,13 +1546,16 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderResult(result, { expanded }, theme) {
-			const details = result.details as { query?: string; maxTokens?: number; error?: string };
+			const details = result.details as { query?: string; maxTokens?: number; error?: string; searchMode?: string };
 			if (details?.error) {
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
-			const summary = theme.fg("success", "code context returned") +
-				theme.fg("muted", ` (${details?.maxTokens ?? 5000} tokens max)`);
+			const modeLabel = details?.searchMode === "exa-web-search-mcp"
+				? "Exa MCP web search"
+				: "Exa web search API";
+			const summary = theme.fg("success", "code search results returned") +
+				theme.fg("muted", ` (${details?.maxTokens ?? 5000} tokens max · ${modeLabel})`);
 			if (!expanded) return new Text(summary, 0, 0);
 
 			const textContent = result.content.find((c) => c.type === "text")?.text || "";
