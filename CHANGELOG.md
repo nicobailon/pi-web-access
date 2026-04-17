@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Reduced noisy PDF.js warning spam during PDF fetches by running PDF extraction with errors-only PDF.js verbosity.
+
 ## [0.10.6] - 2026-04-04
 
 ### Changed

@@ -5,7 +5,7 @@
  * Uses unpdf (pdfjs-dist wrapper) for text extraction.
  */
 
-import { getDocumentProxy } from "unpdf";
+import { getDocumentProxy, VerbosityLevel } from "unpdf";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
@@ -44,7 +44,7 @@ export async function extractPDFToMarkdown(
     ? Math.max(1, Math.floor(maxPages))
     : DEFAULT_MAX_PAGES;
 
-  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const pdf = await getDocumentProxy(new Uint8Array(buffer), { verbosity: VerbosityLevel.ERRORS });
   const metadata = await pdf.getMetadata();
   const metadataInfo = metadata.info && typeof metadata.info === "object"
     ? metadata.info as Record<string, unknown>
