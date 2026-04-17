@@ -23,10 +23,14 @@
     "url": "https://github.com/nicobailon/pi-web-access/issues"
   },
   "homepage": "https://github.com/nicobailon/pi-web-access#readme",
+  "scripts": {
+    "test": "tsx --test ./test/*.test.ts"
+  },
   "dependencies": {
     "@mozilla/readability": "^0.5.0",
     "linkedom": "^0.16.0",
     "p-limit": "^6.1.0",
+    "promise.try": "^2.0.1",
     "turndown": "^7.2.0",
     "unpdf": "^1.4.0"
   },
@@ -38,5 +42,8 @@
       "./skills"
     ],
     "video": "https://github.com/nicobailon/pi-web-access/raw/refs/heads/main/pi-web-fetch-demo.mp4"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0"
   }
 }

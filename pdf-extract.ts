@@ -1,11 +1,10 @@
 /**
  * PDF Content Extractor
- * 
+ *
  * Extracts text from PDF files and saves to markdown.
  * Uses unpdf (pdfjs-dist wrapper) for text extraction.
  */
 
-import { getDocumentProxy } from "unpdf";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
@@ -23,8 +22,52 @@ export interface PDFExtractOptions {
   filename?: string;
 }
 
+type PDFVerbosityLevel = {
+  ERRORS?: number;
+};
+
 const DEFAULT_MAX_PAGES = 100;
 const DEFAULT_OUTPUT_DIR = join(homedir(), "Downloads");
+
+type PromiseTryShim = {
+  shim: () => void;
+};
+
+let promiseTryReady: Promise<void> | null = null;
+let unpdfModulePromise: Promise<typeof import("unpdf")> | null = null;
+
+async function ensurePromiseTry(): Promise<void> {
+  if (typeof (Promise as PromiseConstructor & { try?: unknown }).try === "function") {
+    return;
+  }
+
+  promiseTryReady ??= import("promise.try").then((mod) => {
+    const promiseTry = (mod.default ?? mod) as PromiseTryShim;
+    if (typeof promiseTry.shim !== "function") {
+      throw new Error("promise.try shim package does not expose shim()");
+    }
+
+    promiseTry.shim();
+
+    if (typeof (Promise as PromiseConstructor & { try?: unknown }).try !== "function") {
+      throw new Error("promise.try shim failed to install Promise.try");
+    }
+  });
+
+  await promiseTryReady;
+}
+
+async function getUnpdf() {
+  await ensurePromiseTry();
+  unpdfModulePromise ??= import("unpdf");
+  return unpdfModulePromise;
+}
+
+export function getPDFDocumentInitOptions(verbosityLevel?: PDFVerbosityLevel) {
+  return {
+    verbosity: verbosityLevel?.ERRORS ?? 0,
+  };
+}
 
 /**
  * Extract text from a PDF buffer and save to markdown file
@@ -44,7 +87,8 @@ export async function extractPDFToMarkdown(
     ? Math.max(1, Math.floor(maxPages))
     : DEFAULT_MAX_PAGES;
 
-  const pdf = await getDocumentProxy(new Uint8Array(buffer));
+  const { getDocumentProxy, VerbosityLevel } = await getUnpdf();
+  const pdf = await getDocumentProxy(new Uint8Array(buffer), getPDFDocumentInitOptions(VerbosityLevel));
   const metadata = await pdf.getMetadata();
   const metadataInfo = metadata.info && typeof metadata.info === "object"
     ? metadata.info as Record<string, unknown>

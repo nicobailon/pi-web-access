@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Added a targeted `promise.try` compatibility shim in `pdf-extract.ts` so PDF extraction works on Pi runtimes that still lack native `Promise.try()` while leaving newer runtimes untouched.
+- Added regression coverage with a bundled sample PDF fixture, including an explicit repro for the broken `unpdf@1.6.0` path without the shim.
+- Reduced noisy PDF.js warning spam during PDF fetches by forcing the extraction path to run with errors-only PDF.js verbosity.
+
 ## [0.10.6] - 2026-04-04
 
 ### Changed
