@@ -22,10 +22,11 @@ const MODEL_HEADERS: Record<string, string> = {
 };
 
 const REQUIRED_COOKIES = ["__Secure-1PSID", "__Secure-1PSIDTS"];
-const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+const CONFIG_PATH = process.env.FEYNMAN_WEB_SEARCH_CONFIG ?? process.env.PI_WEB_SEARCH_CONFIG ?? join(homedir(), ".pi", "web-search.json");
 
 interface GeminiWebConfig {
 	chromeProfile?: string;
+	allowBrowserCookies?: boolean;
 }
 
 let cachedConfig: GeminiWebConfig | null = null;
@@ -46,9 +47,9 @@ function loadConfig(): GeminiWebConfig {
 	}
 
 	const rawText = readFileSync(CONFIG_PATH, "utf-8");
-	let raw: { chromeProfile?: unknown };
+	let raw: { chromeProfile?: unknown; allowBrowserCookies?: unknown };
 	try {
-		raw = JSON.parse(rawText) as { chromeProfile?: unknown };
+		raw = JSON.parse(rawText) as { chromeProfile?: unknown; allowBrowserCookies?: unknown };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
@@ -56,6 +57,7 @@ function loadConfig(): GeminiWebConfig {
 
 	cachedConfig = {
 		chromeProfile: normalizeChromeProfile(raw.chromeProfile),
+		allowBrowserCookies: raw.allowBrowserCookies === true,
 	};
 	return cachedConfig;
 }
@@ -70,7 +72,16 @@ function getChromeProfileFromConfig(): string | undefined {
 	return loadConfig().chromeProfile;
 }
 
+function isBrowserCookieAccessAllowed(): boolean {
+	if (process.env.FEYNMAN_ALLOW_BROWSER_COOKIES === "1" || process.env.PI_ALLOW_BROWSER_COOKIES === "1") {
+		return true;
+	}
+	return loadConfig().allowBrowserCookies === true;
+}
+
 export async function isGeminiWebAvailable(chromeProfile?: string): Promise<CookieMap | null> {
+	if (!isBrowserCookieAccessAllowed()) return null;
+
 	const result = await getGoogleCookies({
 		profile: normalizeChromeProfile(chromeProfile) ?? getChromeProfileFromConfig(),
 		requiredCookies: REQUIRED_COOKIES,
