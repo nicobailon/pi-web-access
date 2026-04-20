@@ -48,6 +48,12 @@ interface WebSearchConfig {
 		curate?: string;
 		activity?: string;
 	};
+	webSearch?: { 
+		enabled?: boolean;
+	};
+	codeSearch?: { 
+		enabled?: boolean;
+	};
 }
 
 interface ProviderAvailability {
@@ -1075,6 +1081,7 @@ export default function (pi: ExtensionAPI) {
 		widgetVisible = false;
 	});
 
+	if (loadConfig().webSearch?.enabled !== false) {
 	pi.registerTool({
 		name: "web_search",
 		label: "Web Search",
@@ -1517,7 +1524,9 @@ export default function (pi: ExtensionAPI) {
 			return new Text(lines.join("\n"), 0, 0);
 		},
 	});
+	}
 
+	if (loadConfig().codeSearch?.enabled !== false) {
 	pi.registerTool({
 		name: "code_search",
 		label: "Code Search",
@@ -1560,6 +1569,7 @@ export default function (pi: ExtensionAPI) {
 			return new Text(summary + "\n" + theme.fg("dim", preview), 0, 0);
 		},
 	});
+	}
 
 	pi.registerTool({
 		name: "fetch_content",
