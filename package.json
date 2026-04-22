@@ -19,6 +19,10 @@
     "type": "git",
     "url": "git+https://github.com/nicobailon/pi-web-access.git"
   },
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts",
+    "check": "npm test"
+  },
   "bugs": {
     "url": "https://github.com/nicobailon/pi-web-access/issues"
   },

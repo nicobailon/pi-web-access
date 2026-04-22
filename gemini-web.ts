@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, basename } from "node:path";
-import { type CookieMap, getGoogleCookies } from "./chrome-cookies.js";
+import type { CookieMap } from "./chrome-cookies.js";
 
 const GEMINI_APP_URL = "https://gemini.google.com/app";
 const GEMINI_STREAM_GENERATE_URL =
@@ -21,7 +21,8 @@ const MODEL_HEADERS: Record<string, string> = {
 	"gemini-2.5-flash": '[1,null,null,null,"9ec249fc9ad08861",null,null,0,[4]]',
 };
 
-const REQUIRED_COOKIES = ["__Secure-1PSID", "__Secure-1PSIDTS"];
+const GEMINI_WEB_DISABLED_MESSAGE =
+	"Gemini Web is disabled in this local pi-web-access fork to avoid browser cookie and macOS keychain prompts. Use GEMINI_API_KEY for Gemini-backed features instead.";
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
 interface GeminiWebConfig {
@@ -70,13 +71,8 @@ function getChromeProfileFromConfig(): string | undefined {
 	return loadConfig().chromeProfile;
 }
 
-export async function isGeminiWebAvailable(chromeProfile?: string): Promise<CookieMap | null> {
-	const result = await getGoogleCookies({
-		profile: normalizeChromeProfile(chromeProfile) ?? getChromeProfileFromConfig(),
-		requiredCookies: REQUIRED_COOKIES,
-	});
-	if (!result) return null;
-	return result.cookies;
+export async function isGeminiWebAvailable(_chromeProfile?: string): Promise<CookieMap | null> {
+	return null;
 }
 
 export async function getActiveGoogleEmail(cookies: CookieMap): Promise<string | null> {
@@ -109,30 +105,11 @@ export async function getActiveGoogleEmail(cookies: CookieMap): Promise<string |
 }
 
 export async function queryWithCookies(
-	prompt: string,
-	cookieMap: CookieMap,
-	options: GeminiWebOptions = {},
+	_prompt: string,
+	_cookieMap: CookieMap,
+	_options: GeminiWebOptions = {},
 ): Promise<string> {
-	const model = options.model && MODEL_HEADERS[options.model] ? options.model : "gemini-2.5-flash";
-	const timeoutMs = options.timeoutMs ?? 120000;
-
-	let fullPrompt = prompt;
-	if (options.youtubeUrl) {
-		fullPrompt = `${fullPrompt}\n\nYouTube video: ${options.youtubeUrl}`;
-	}
-
-	const result = await runGeminiWebOnce(fullPrompt, cookieMap, model, options.files, timeoutMs, options.signal);
-
-	if (isModelUnavailable(result.errorCode) && model !== "gemini-2.5-flash") {
-		const fallback = await runGeminiWebOnce(fullPrompt, cookieMap, "gemini-2.5-flash", options.files, timeoutMs, options.signal);
-		if (fallback.errorMessage) throw new Error(fallback.errorMessage);
-		if (!fallback.text) throw new Error("Gemini Web returned empty response (fallback model)");
-		return fallback.text;
-	}
-
-	if (result.errorMessage) throw new Error(result.errorMessage);
-	if (!result.text) throw new Error("Gemini Web returned empty response");
-	return result.text;
+	throw new Error(GEMINI_WEB_DISABLED_MESSAGE);
 }
 
 interface GeminiWebResult {

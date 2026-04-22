@@ -2,12 +2,15 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { activityMonitor } from "./activity.js";
-import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.js";
+import { getApiKey, API_BASE, DEFAULT_MODEL, isGeminiApiAvailable } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
+import { resolveOpenAISearchAuth, searchWithOpenAI, type SearchModelRegistry } from "./openai-search.js";
+import { getAutoProviderOrder } from "./search-provider-order.js";
+import type { Model } from "@mariozechner/pi-ai";
 
-export type SearchProvider = "auto" | "perplexity" | "gemini" | "exa";
+export type SearchProvider = "auto" | "perplexity" | "gemini" | "exa" | "openai";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -57,7 +60,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa"
+	return normalized === "auto" || normalized === "perplexity" || normalized === "gemini" || normalized === "exa" || normalized === "openai"
 		? normalized
 		: "auto";
 }
@@ -65,6 +68,9 @@ function normalizeSearchProvider(value: unknown): SearchProvider {
 export interface FullSearchOptions extends SearchOptions {
 	provider?: SearchProvider;
 	includeContent?: boolean;
+	freshness?: "cached" | "live";
+	modelRegistry?: SearchModelRegistry;
+	currentModel?: Model<any> | null;
 }
 
 function errorMessage(err: unknown): string {
@@ -118,9 +124,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		const result = await searchWithGemini(query, options, true);
 		if (result) return { ...result, provider: "gemini" };
 		throw new Error(
-			"Gemini search unavailable. Either:\n" +
-			"  1. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
-			"  2. Sign into gemini.google.com in a supported Chromium-based browser"
+			"Gemini search unavailable. Set GEMINI_API_KEY in ~/.pi/web-search.json. Gemini Web is disabled in this local fork."
 		);
 	}
 
@@ -146,34 +150,113 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
+	if (provider === "openai") {
+		const auth = options.modelRegistry
+			? await resolveOpenAISearchAuth({
+				modelRegistry: options.modelRegistry,
+				currentModel: options.currentModel,
+			})
+			: null;
+		if (!auth) {
+			throw new Error(
+				"OpenAI/Codex search unavailable. Configure Pi `openai-codex` login or an `openai` API key."
+			);
+		}
+		const result = await searchWithOpenAI(query, {
+			auth,
+			domainFilter: options.domainFilter,
+			freshness: options.freshness,
+			recencyFilter: options.recencyFilter,
+			signal: options.signal,
+		});
+		return { ...result, provider: "openai" };
+	}
+
 	const fallbackErrors: string[] = [];
+	const openaiAuth = options.modelRegistry
+		? await resolveOpenAISearchAuth({
+			modelRegistry: options.modelRegistry,
+			currentModel: options.currentModel,
+		})
+		: null;
+	const autoOrder = getAutoProviderOrder(
+		{
+			openai: openaiAuth !== null,
+			exa: isExaAvailable(),
+			perplexity: isPerplexityAvailable(),
+			// Deliberately avoid probing Gemini Web while computing auto order.
+			// If API-backed Gemini is unavailable, we lazily try Gemini Web only
+			// after other providers have failed or no better provider exists.
+			gemini: isGeminiApiAvailable(),
+		},
+		{
+			recencyFilter: options.recencyFilter,
+			domainFilter: options.domainFilter,
+		},
+	);
 
-	if (provider !== "exa" && isExaAvailable()) {
-		try {
-			const result = await searchWithExa(query, options);
-			if (result && "answer" in result) return { ...result, provider: "exa" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
+	let geminiTried = false;
+	for (const autoProvider of autoOrder) {
+		if (autoProvider === "openai") {
+			if (!openaiAuth) continue;
+			try {
+				const result = await searchWithOpenAI(query, {
+					auth: openaiAuth,
+					domainFilter: options.domainFilter,
+					freshness: options.freshness,
+					recencyFilter: options.recencyFilter,
+					signal: options.signal,
+				});
+				return { ...result, provider: "openai" };
+			} catch (err) {
+				if (isAbortError(err)) throw err;
+				fallbackErrors.push(`OpenAI: ${errorMessage(err)}`);
+				continue;
+			}
+		}
+
+		if (autoProvider === "exa") {
+			try {
+				const result = await searchWithExa(query, options);
+				if (result && "answer" in result) return { ...result, provider: "exa" };
+			} catch (err) {
+				if (isAbortError(err)) throw err;
+				fallbackErrors.push(`Exa: ${errorMessage(err)}`);
+			}
+			continue;
+		}
+
+		if (autoProvider === "perplexity") {
+			try {
+				const result = await searchWithPerplexity(query, options);
+				return { ...result, provider: "perplexity" };
+			} catch (err) {
+				if (isAbortError(err)) throw err;
+				fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
+			}
+			continue;
+		}
+
+		if (autoProvider === "gemini") {
+			geminiTried = true;
+			try {
+				const geminiResult = await searchWithGemini(query, options, false);
+				if (geminiResult) return { ...geminiResult, provider: "gemini" };
+			} catch (err) {
+				if (isAbortError(err)) throw err;
+				fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
+			}
 		}
 	}
 
-	if (isPerplexityAvailable()) {
+	if (!geminiTried) {
 		try {
-			const result = await searchWithPerplexity(query, options);
-			return { ...result, provider: "perplexity" };
+			const geminiResult = await searchWithGemini(query, options, false);
+			if (geminiResult) return { ...geminiResult, provider: "gemini" };
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
+			fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
 		}
-	}
-
-	try {
-		const geminiResult = await searchWithGemini(query, options, false);
-		if (geminiResult) return { ...geminiResult, provider: "gemini" };
-	} catch (err) {
-		if (isAbortError(err)) throw err;
-		fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
 	}
 
 	if (fallbackErrors.length > 0) {
@@ -181,11 +264,11 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	throw new Error(
-		"No search provider available. Either:\n" +
-		"  1. Set perplexityApiKey in ~/.pi/web-search.json\n" +
-		"  2. Set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
-		"  3. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
-		"  4. Sign into gemini.google.com in a supported Chromium-based browser"
+		"No auto search provider available. Either:\n" +
+		"  1. Use OpenAI/Codex-compatible auth with Pi `openai-codex` login or an `openai` API key\n" +
+		"  2. Use Exa MCP/network access or set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
+		"  3. Set perplexityApiKey in ~/.pi/web-search.json\n" +
+		"  4. Set GEMINI_API_KEY in ~/.pi/web-search.json"
 	);
 }
 

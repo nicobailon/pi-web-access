@@ -295,7 +295,7 @@ async function tryPerplexity(
 
 		const content =
 			`# Video Summary (via Perplexity)\n\n${answer}\n\n` +
-			`*Full video understanding requires Gemini access. Set GEMINI_API_KEY or sign into Google in Chrome.*`;
+			`*Full video understanding requires Gemini API access. Set GEMINI_API_KEY. Gemini Web is disabled in this local fork.*`;
 
 		return {
 			url,
