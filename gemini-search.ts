@@ -124,9 +124,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		const result = await searchWithGemini(query, options, true);
 		if (result) return { ...result, provider: "gemini" };
 		throw new Error(
-			"Gemini search unavailable. Either:\n" +
-			"  1. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
-			"  2. Sign into gemini.google.com in a supported Chromium-based browser"
+			"Gemini search unavailable. Set GEMINI_API_KEY in ~/.pi/web-search.json. Gemini Web is disabled in this local fork."
 		);
 	}
 
@@ -270,8 +268,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		"  1. Use OpenAI/Codex-compatible auth with Pi `openai-codex` login or an `openai` API key\n" +
 		"  2. Use Exa MCP/network access or set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
 		"  3. Set perplexityApiKey in ~/.pi/web-search.json\n" +
-		"  4. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
-		"  5. Sign into gemini.google.com in a supported Chromium-based browser"
+		"  4. Set GEMINI_API_KEY in ~/.pi/web-search.json"
 	);
 }
 

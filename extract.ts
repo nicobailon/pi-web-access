@@ -356,7 +356,7 @@ export async function extractContent(
 		try {
 			const result = await extractVideo(localVideo.info, signal, options);
 			if (signal?.aborted) return abortedResult(url);
-			return result ?? { url, title: "", content: "", error: "Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in Chrome (free, uses cookies)\n  2. Set GEMINI_API_KEY in ~/.pi/web-search.json" };
+			return result ?? { url, title: "", content: "", error: "Video analysis requires Gemini access. Set GEMINI_API_KEY in ~/.pi/web-search.json. Gemini Web is disabled in this local fork." };
 		} catch (err) {
 			if (isAbortError(err)) return abortedResult(url);
 			return { url, title: "", content: "", error: errorMessage(err) };
@@ -404,7 +404,7 @@ export async function extractContent(
 			url,
 			title: "",
 			content: "",
-			error: "Could not extract YouTube video content. Sign into Google in Chrome for automatic access, or set GEMINI_API_KEY.",
+			error: "Could not extract YouTube video content. Set GEMINI_API_KEY. Gemini Web is disabled in this local fork.",
 		};
 	}
 
@@ -439,7 +439,6 @@ export async function extractContent(
 		"",
 		"Fallback options:",
 		"  \u2022 Set GEMINI_API_KEY in ~/.pi/web-search.json",
-		"  \u2022 Sign into gemini.google.com in Chrome",
 		"  \u2022 Use web_search to find content about this topic",
 	].join("\n");
 	return { ...httpResult, error: guidance };

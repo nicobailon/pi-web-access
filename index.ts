@@ -1100,7 +1100,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using OpenAI/Codex native web search, Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: OpenAI/Codex native web search first when compatible, else Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API, else Gemini Web (needs a supported Chromium-based browser login). Use provider=openai for Pi-managed OpenAI/Codex auth. OpenAI also supports freshness=cached|live.`,
+			`Search the web using OpenAI/Codex native web search, Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: OpenAI/Codex native web search first when compatible, else Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API. Gemini Web is disabled in this local fork to avoid browser cookie and keychain prompts. Use provider=openai for Pi-managed OpenAI/Codex auth. OpenAI also supports freshness=cached|live.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
 		parameters: Type.Object({
@@ -2280,7 +2280,7 @@ export default function (pi: ExtensionAPI) {
 			if (!cookies) {
 				pi.sendMessage({
 					customType: "google-account",
-					content: [{ type: "text", text: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser." }],
+					content: [{ type: "text", text: "Gemini Web is disabled in this local pi-web-access fork. Use GEMINI_API_KEY for Gemini-backed features instead." }],
 					display: "tool",
 					details: { available: false },
 				}, { triggerTurn: true, deliverAs: "followUp" });
