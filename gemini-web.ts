@@ -245,10 +245,15 @@ async function fetchWithCookieRedirects(
 
 function extractEmailFromGeminiHtml(html: string): string | null {
 	const patterns = [
-		/"email"\s*:\s*"([^"]+)"/,
+		// Gemini bootstraps the active account in oPEP7c. Prefer it over generic
+		// feature/config entries that may contain other signed-in Google accounts.
+		/"oPEP7c"\s*:\s*"([^"]+)"/,
+		// The Google account menu aria-label is rendered for the active account.
+		/aria-label="Google Account:[^"]*?\(([^)]+)\)"/,
 		/"displayEmail"\s*:\s*"([^"]+)"/,
-		/"identifier"\s*:\s*"([^"]+)"/,
 		/"defaultEmail"\s*:\s*"([^"]+)"/,
+		/"email"\s*:\s*"([^"]+)"/,
+		/"identifier"\s*:\s*"([^"]+)"/,
 		/"gaiaIdentifier"\s*:\s*"([^"]+)"/,
 	];
 
