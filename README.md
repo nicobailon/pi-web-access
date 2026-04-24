@@ -263,6 +263,7 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
   "provider": "exa",
   "chromeProfile": "Profile 2",
   "searchModel": "gemini-2.5-flash",
+  "summaryModel": "anthropic/claude-haiku-4-5",
   "workflow": "summary-review",
   "curatorTimeoutSeconds": 20,
   "githubClone": {
@@ -287,7 +288,7 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
 }
 ```
 
-`EXA_API_KEY`, `GEMINI_API_KEY`, and `PERPLEXITY_API_KEY` env vars take precedence over config file values. `provider` sets the default search provider: `"exa"`, `"perplexity"`, or `"gemini"`. This is also updated automatically when you change the provider in the curator UI. `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft) or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`. `chromeProfile` overrides the Chromium profile directory used for Gemini Web cookie lookup. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
+`EXA_API_KEY`, `GEMINI_API_KEY`, and `PERPLEXITY_API_KEY` env vars take precedence over config file values. `provider` sets the default search provider: `"exa"`, `"perplexity"`, or `"gemini"`. This is also updated automatically when you change the provider in the curator UI. `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft) or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`. `chromeProfile` overrides the Chromium profile directory used for Gemini Web cookie lookup. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `summaryModel` sets the default model used for generating summary drafts in the curator UI (e.g. `"anthropic/claude-haiku-4-5"` or `"openai-codex/gpt-5.3-codex-spark"`). Only models available in your model registry are eligible; if the configured model is unavailable, the default falls back to the built-in preference list. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
 
 ### Shortcuts
 

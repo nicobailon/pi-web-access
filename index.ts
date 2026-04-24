@@ -44,6 +44,7 @@ interface WebSearchConfig {
 	provider?: string;
 	workflow?: string;
 	curatorTimeoutSeconds?: unknown;
+	summaryModel?: string;
 	shortcuts?: {
 		curate?: string;
 		activity?: string;
@@ -681,15 +682,23 @@ export default function (pi: ExtensionAPI) {
 			addModel(summaryContext.model.provider, summaryContext.model.id);
 		}
 
+		const config = loadConfig();
+		const configuredSummaryModel = typeof config.summaryModel === "string" ? config.summaryModel.trim() : "";
 		const preferredDefaults = [
 			"anthropic/claude-haiku-4-5",
 			"openai-codex/gpt-5.3-codex-spark",
 		];
+
 		let defaultSummaryModel: string | null = null;
-		for (const preferred of preferredDefaults) {
-			if (availableValues.has(preferred)) {
-				defaultSummaryModel = preferred;
-				break;
+		if (configuredSummaryModel.length > 0 && availableValues.has(configuredSummaryModel)) {
+			defaultSummaryModel = configuredSummaryModel;
+		}
+		if (!defaultSummaryModel) {
+			for (const preferred of preferredDefaults) {
+				if (availableValues.has(preferred)) {
+					defaultSummaryModel = preferred;
+					break;
+				}
 			}
 		}
 		if (!defaultSummaryModel && summaryModels.length > 0) {
