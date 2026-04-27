@@ -99,7 +99,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
 
 ### code_search
 
-Search for code examples, documentation, and API references via Exa MCP. No API key required.
+Search for code examples, documentation, and API references via Exa MCP. No API key required. Uses Exa MCP's default `web_search_exa` tool with code-focused queries.
 
 ```typescript
 code_search({ query: "React useEffect cleanup pattern" })

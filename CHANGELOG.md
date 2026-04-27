@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Updated `code_search` to use Exa MCP's default `web_search_exa` tool instead of the deprecated `get_code_context_exa` tool, fixing hosted Exa MCP `Tool get_code_context_exa not found` errors.
+
 ## [0.10.6] - 2026-04-04
 
 ### Changed

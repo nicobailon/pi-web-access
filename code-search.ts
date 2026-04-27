@@ -21,11 +21,12 @@ export async function executeCodeSearch(
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
+		const numResults = Math.max(1, Math.min(20, Math.ceil(maxTokens / 625)));
 		const text = await callExaMcp(
-			"get_code_context_exa",
+			"web_search_exa",
 			{
-				query,
-				tokensNum: maxTokens,
+				query: `code examples documentation API reference ${query}`,
+				numResults,
 			},
 			signal,
 		);
