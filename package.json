@@ -3,6 +3,9 @@
   "version": "0.10.6",
   "description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent",
   "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
   "keywords": [
     "pi-package",
     "pi",
@@ -28,7 +31,7 @@
     "linkedom": "^0.16.0",
     "p-limit": "^6.1.0",
     "turndown": "^7.2.0",
-    "unpdf": "^1.4.0"
+    "unpdf": "^1.6.2"
   },
   "pi": {
     "extensions": [
