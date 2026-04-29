@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Restored `code_search` after Exa removed the `get_code_context_exa` MCP tool by falling back to `web_search_exa` with a code/documentation-focused query.
+
 ## [0.10.6] - 2026-04-04
 
 ### Changed
