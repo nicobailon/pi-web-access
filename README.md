@@ -12,6 +12,8 @@
 
 https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
+**Localized quickstarts:** [日本語](./README.ja.md) · [简体中文](./README.zh-CN.md) · [Español](./README.es.md)
+
 ## Why Pi Web Access
 
 **Zero Config** — Works out of the box with Exa MCP (no API key needed). Or sign into Google in Chrome, Arc, Helium, or Chromium for Gemini Web. Add API keys for Exa, Perplexity, or Gemini API for more control.
