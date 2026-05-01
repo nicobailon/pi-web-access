@@ -197,6 +197,7 @@ let widgetVisible = false;
 let widgetUnsubscribe: (() => void) | null = null;
 let activeCurator: CuratorServerHandle | null = null;
 let glimpseWin: GlimpseWindow | null = null;
+let curatorLockActive = false;
 
 interface PendingCurate {
 	phase: "searching" | "curating";
@@ -1125,131 +1126,132 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (shouldCurate) {
-				closeCurator();
+				// Only one curator session at a time. If another tool call is already
+				// in the curator path, fall back to the non-curator (direct results) path
+				// to avoid racing on module-level mutable state (pendingCurate, activeCurator).
+				if (curatorLockActive) {
+					// fall through to non-curator path below
+				} else {
+					curatorLockActive = true;
+					closeCurator();
 
-				let resolvePromise: (value: unknown) => void = () => {};
-				const promise = new Promise<unknown>((resolve) => {
-					resolvePromise = resolve;
-				});
-				const includeContent = params.includeContent ?? false;
-				const searchResults = new Map<number, QueryResultData>();
-				const allInlineContent: ExtractedContent[] = [];
-				const searchAbort = new AbortController();
-				const searchSignal = signal
-					? AbortSignal.any([signal, searchAbort.signal])
-					: searchAbort.signal;
-				let cancelled = false;
-
-				const bootstrap = await loadCuratorBootstrap(params.provider);
-				const availableProviders = bootstrap.availableProviders;
-				const defaultProvider = bootstrap.defaultProvider;
-				const curatorTimeoutSeconds = bootstrap.timeoutSeconds;
-				const curatorWorkflow: CuratorWorkflow = "summary-review";
-
-				const summaryContext: SummaryGenerationContext = {
-					model: ctx.model,
-					modelRegistry: ctx.modelRegistry,
-				};
-				const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
-
-				const pc: PendingCurate = {
-					phase: "searching",
-					workflow: curatorWorkflow,
-					summaryContext,
-					searchResults,
-					allInlineContent,
-					queryList,
-					includeContent,
-					numResults: params.numResults,
-					recencyFilter: params.recencyFilter,
-					domainFilter: params.domainFilter,
-					availableProviders,
-					defaultProvider,
-					summaryModels: summaryModelChoices.summaryModels,
-					defaultSummaryModel: summaryModelChoices.defaultSummaryModel,
-					timeoutSeconds: curatorTimeoutSeconds,
-					onUpdate: onUpdate as PendingCurate["onUpdate"],
-					signal,
-					abortSearches: () => {
-						if (!searchAbort.signal.aborted) searchAbort.abort();
-					},
-					finish: () => {},
-					cancel: () => {},
-				};
-
-				const finish = (value: unknown) => {
-					if (cancelled) return;
-					cancelled = true;
-					pc.abortSearches();
-					signal?.removeEventListener("abort", onAbort);
-					pendingCurate = null;
-					resolvePromise(value);
-				};
-
-				const cancel = (reason: "user" | "stale" = "stale") => {
-					if (cancelled) return;
-					finish(buildCurationCancelledReturn(reason));
-				};
-
-				pc.finish = finish;
-				pc.cancel = cancel;
-
-				const onAbort = () => closeCurator();
-				pendingCurate = pc;
-				signal?.addEventListener("abort", onAbort, { once: true });
-				pc.browserPromise = openCuratorBrowser(pc, false);
-
-				for (let qi = 0; qi < queryList.length; qi++) {
-					if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
-					onUpdate?.({
-						content: [{ type: "text", text: `Searching ${qi + 1}/${queryList.length}: "${queryList[qi]}"...` }],
-						details: { phase: "searching", progress: qi / queryList.length, currentQuery: queryList[qi] },
-					});
-					const requestedProvider = pc.defaultProvider;
 					try {
-						const { answer, results, inlineContent, provider } = await search(queryList[qi], {
-							provider: requestedProvider,
+						let resolvePromise: (value: unknown) => void = () => {};
+						const promise = new Promise<unknown>((resolve) => {
+							resolvePromise = resolve;
+						});
+						const includeContent = params.includeContent ?? false;
+						const searchResults = new Map<number, QueryResultData>();
+						const allInlineContent: ExtractedContent[] = [];
+						const searchAbort = new AbortController();
+						const searchSignal = signal
+							? AbortSignal.any([signal, searchAbort.signal])
+							: searchAbort.signal;
+						let cancelled = false;
+						const bootstrap = await loadCuratorBootstrap(params.provider);
+						const availableProviders = bootstrap.availableProviders;
+						const defaultProvider = bootstrap.defaultProvider;
+						const curatorTimeoutSeconds = bootstrap.timeoutSeconds;
+						const curatorWorkflow: CuratorWorkflow = "summary-review";
+						const summaryContext: SummaryGenerationContext = {
+							model: ctx.model,
+							modelRegistry: ctx.modelRegistry,
+						};
+						const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
+						const pc: PendingCurate = {
+							phase: "searching",
+							workflow: curatorWorkflow,
+							summaryContext,
+							searchResults,
+							allInlineContent,
+							queryList,
+							includeContent,
 							numResults: params.numResults,
 							recencyFilter: params.recencyFilter,
 							domainFilter: params.domainFilter,
-							includeContent: params.includeContent,
-							signal: searchSignal,
-						});
-						if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
-						searchResults.set(qi, { query: queryList[qi], answer, results, error: null, provider });
-						if (inlineContent) allInlineContent.push(...inlineContent);
-						if (activeCurator) {
-							activeCurator.pushResult(qi, {
-								answer,
-								results: results.map(r => ({ title: r.title, url: r.url, domain: extractDomain(r.url) })),
-								provider,
+							availableProviders,
+							defaultProvider,
+							summaryModels: summaryModelChoices.summaryModels,
+							defaultSummaryModel: summaryModelChoices.defaultSummaryModel,
+							timeoutSeconds: curatorTimeoutSeconds,
+							onUpdate: onUpdate as PendingCurate["onUpdate"],
+							signal,
+							abortSearches: () => {
+								if (!searchAbort.signal.aborted) searchAbort.abort();
+							},
+							finish: () => {},
+							cancel: () => {},
+						};
+						const finish = (value: unknown) => {
+							if (cancelled) return;
+							cancelled = true;
+							pc.abortSearches();
+							signal?.removeEventListener("abort", onAbort);
+							pendingCurate = null;
+							resolvePromise(value);
+						};
+						const cancel = (reason: "user" | "stale" = "stale") => {
+							if (cancelled) return;
+							finish(buildCurationCancelledReturn(reason));
+						};
+						pc.finish = finish;
+						pc.cancel = cancel;
+						const onAbort = () => closeCurator();
+						pendingCurate = pc;
+						signal?.addEventListener("abort", onAbort, { once: true });
+						pc.browserPromise = openCuratorBrowser(pc, false);
+						for (let qi = 0; qi < queryList.length; qi++) {
+							if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
+							onUpdate?.({
+								content: [{ type: "text", text: `Searching ${qi + 1}/${queryList.length}: "${queryList[qi]}"...` }],
+								details: { phase: "searching", progress: qi / queryList.length, currentQuery: queryList[qi] },
+							});
+							const requestedProvider = pc.defaultProvider;
+							try {
+								const { answer, results, inlineContent, provider } = await search(queryList[qi], {
+									provider: requestedProvider,
+									numResults: params.numResults,
+									recencyFilter: params.recencyFilter,
+									domainFilter: params.domainFilter,
+									includeContent: params.includeContent,
+									signal: searchSignal,
+								});
+								if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
+								searchResults.set(qi, { query: queryList[qi], answer, results, error: null, provider });
+								if (inlineContent) allInlineContent.push(...inlineContent);
+								if (activeCurator) {
+									activeCurator.pushResult(qi, {
+										answer,
+										results: results.map(r => ({ title: r.title, url: r.url, domain: extractDomain(r.url) })),
+										provider,
+									});
+								}
+							} catch (err) {
+								if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
+								const message = err instanceof Error ? err.message : String(err);
+								searchResults.set(qi, { query: queryList[qi], answer: "", results: [], error: message, provider: requestedProvider });
+								if (activeCurator) {
+									activeCurator.pushError(qi, message, requestedProvider);
+								}
+							}
+						}
+						if (signal?.aborted || cancelled || searchAbort.signal.aborted) {
+							cancel();
+							return promise.finally(() => { curatorLockActive = false; });
+						}
+						await pc.browserPromise;
+						if (activeCurator && !cancelled) {
+							activeCurator.searchesDone();
+							pc.onUpdate?.({
+								content: [{ type: "text", text: "All searches complete — waiting for summary approval in browser..." }],
+								details: { phase: "curating", progress: 1 },
 							});
 						}
-					} catch (err) {
-						if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
-						const message = err instanceof Error ? err.message : String(err);
-						searchResults.set(qi, { query: queryList[qi], answer: "", results: [], error: message, provider: requestedProvider });
-						if (activeCurator) {
-							activeCurator.pushError(qi, message, requestedProvider);
-						}
+						return promise.finally(() => { curatorLockActive = false; });
+					} finally {
+						curatorLockActive = false;
 					}
 				}
-
-				if (signal?.aborted || cancelled || searchAbort.signal.aborted) {
-					cancel();
-					return promise;
-				}
-
-				await pc.browserPromise;
-				if (activeCurator && !cancelled) {
-					activeCurator.searchesDone();
-					pc.onUpdate?.({
-						content: [{ type: "text", text: "All searches complete — waiting for summary approval in browser..." }],
-						details: { phase: "curating", progress: 1 },
-					});
-				}
-
-				return promise;
 			}
 
 			const searchResults: QueryResultData[] = [];
