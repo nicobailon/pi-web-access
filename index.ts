@@ -37,6 +37,7 @@ import { isPerplexityAvailable } from "./perplexity.js";
 import { isExaAvailable } from "./exa.js";
 import { isGeminiApiAvailable } from "./gemini-api.js";
 import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
+import { initI18n, t } from "./i18n.js";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
@@ -464,6 +465,7 @@ function handleSessionChange(ctx: ExtensionContext): void {
 }
 
 export default function (pi: ExtensionAPI) {
+	initI18n(pi);
 	const initConfig = loadConfigForExtensionInit();
 	const curateKey = initConfig.shortcuts?.curate || DEFAULT_SHORTCUTS.curate;
 	const activityKey = initConfig.shortcuts?.activity || DEFAULT_SHORTCUTS.activity;
@@ -999,7 +1001,7 @@ export default function (pi: ExtensionAPI) {
 			if (searchesComplete) handle.searchesDone();
 
 			pc.onUpdate?.({
-				content: [{ type: "text", text: searchesComplete ? "Waiting for summary approval in browser..." : "Searches streaming to browser..." }],
+				content: [{ type: "text", text: searchesComplete ? t("result.waitingApproval", "Waiting for summary approval in browser...") : t("result.curatorStreaming", "Searches streaming to browser...") }],
 				details: { phase: "curating", progress: searchesComplete ? 1 : 0.5 },
 			});
 
@@ -1032,20 +1034,20 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.registerShortcut(curateKey, {
-		description: "Review search results",
+		description: t("cmd.curator.review", "Review search results"),
 		handler: async (ctx) => {
 			if (!pendingCurate) return;
 
 			if (pendingCurate.phase === "searching") {
 				pendingCurate.browserPromise = openCuratorBrowser(pendingCurate, false);
-				ctx.ui.notify("Opening curator — remaining searches will stream in", "info");
+				ctx.ui.notify(t("notify.curator.opening", "Opening curator — remaining searches will stream in"), "info");
 				return;
 			}
 		},
 	});
 
 	pi.registerShortcut(activityKey, {
-		description: "Toggle web search activity",
+		description: t("cmd.activity.toggle", "Toggle web search activity"),
 		handler: async (ctx) => {
 			widgetVisible = !widgetVisible;
 			if (widgetVisible) {
@@ -1112,7 +1114,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (queryList.length === 0) {
 				return {
-					content: [{ type: "text", text: "Error: No query provided. Use 'query' or 'queries' parameter." }],
+					content: [{ type: "text", text: t("result.noQuery", "Error: No query provided. Use 'query' or 'queries' parameter.") }],
 					details: { error: "No query provided" },
 				};
 			}
@@ -1202,7 +1204,7 @@ export default function (pi: ExtensionAPI) {
 				for (let qi = 0; qi < queryList.length; qi++) {
 					if (signal?.aborted || cancelled || searchAbort.signal.aborted) break;
 					onUpdate?.({
-						content: [{ type: "text", text: `Searching ${qi + 1}/${queryList.length}: "${queryList[qi]}"...` }],
+						content: [{ type: "text", text: t("result.searching", `Searching ${qi + 1}/${queryList.length}: "${queryList[qi]}"...`, { index: qi + 1, total: queryList.length, query: queryList[qi] }) }],
 						details: { phase: "searching", progress: qi / queryList.length, currentQuery: queryList[qi] },
 					});
 					const requestedProvider = pc.defaultProvider;
@@ -1244,7 +1246,7 @@ export default function (pi: ExtensionAPI) {
 				if (activeCurator && !cancelled) {
 					activeCurator.searchesDone();
 					pc.onUpdate?.({
-						content: [{ type: "text", text: "All searches complete — waiting for summary approval in browser..." }],
+						content: [{ type: "text", text: t("result.searchesComplete", "All searches complete — waiting for summary approval in browser...") }],
 						details: { phase: "curating", progress: 1 },
 					});
 				}
@@ -1261,7 +1263,7 @@ export default function (pi: ExtensionAPI) {
 				const query = queryList[i];
 
 				onUpdate?.({
-					content: [{ type: "text", text: `Searching ${i + 1}/${queryList.length}: "${query}"...` }],
+					content: [{ type: "text", text: t("result.searching", `Searching ${i + 1}/${queryList.length}: "${query}"...`, { index: i + 1, total: queryList.length, query }) }],
 					details: { phase: "search", progress: i / queryList.length, currentQuery: query },
 				});
 
@@ -1593,13 +1595,13 @@ export default function (pi: ExtensionAPI) {
 			const urlList = params.urls ?? (params.url ? [params.url] : []);
 			if (urlList.length === 0) {
 				return {
-					content: [{ type: "text", text: "Error: No URL provided." }],
+					content: [{ type: "text", text: t("result.noUrl", "Error: No URL provided.") }],
 					details: { error: "No URL provided" },
 				};
 			}
 
 			onUpdate?.({
-				content: [{ type: "text", text: `Fetching ${urlList.length} URL(s)...` }],
+				content: [{ type: "text", text: t("result.fetching", `Fetching ${urlList.length} URL(s)...`, { count: urlList.length }) }],
 				details: { phase: "fetch", progress: 0 },
 			});
 
@@ -1965,7 +1967,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("websearch", {
-		description: "Open web search curator",
+		description: t("cmd.curator.open", "Open web search curator"),
 		handler: async (args, ctx) => {
 			closeCurator();
 			const sessionToken = randomUUID();
@@ -1980,7 +1982,7 @@ export default function (pi: ExtensionAPI) {
 				bootstrap = await loadCuratorBootstrap(undefined);
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
-				ctx.ui.notify(`Failed to load web search config: ${message}`, "error");
+				ctx.ui.notify(t("notify.curator.failedConfig", `Failed to load web search config: ${message}`, { message }), "error");
 				return;
 			}
 			const availableProviders = bootstrap.availableProviders;
@@ -1993,7 +1995,7 @@ export default function (pi: ExtensionAPI) {
 			};
 			const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
 
-			ctx.ui.notify("Opening web search curator...", "info");
+			ctx.ui.notify(t("notify.curator.openingSearch", "Opening web search curator..."), "info");
 
 			const collected = new Map<number, QueryResultData>();
 			const searchAbort = new AbortController();
@@ -2185,13 +2187,13 @@ export default function (pi: ExtensionAPI) {
 			} catch (err) {
 				closeCurator();
 				const message = err instanceof Error ? err.message : String(err);
-				ctx.ui.notify(`Failed to open curator: ${message}`, "error");
+				ctx.ui.notify(t("notify.curator.failedOpen", `Failed to open curator: ${message}`, { message }), "error");
 			}
 		},
 	});
 
 	pi.registerCommand("curator", {
-		description: "Toggle or configure the search curator workflow",
+		description: t("cmd.curator.config", "Toggle or configure the search curator workflow"),
 		handler: async (args, ctx) => {
 			const arg = args.trim().toLowerCase();
 
@@ -2206,7 +2208,7 @@ export default function (pi: ExtensionAPI) {
 			} else if (arg === "none" || arg === "summary-review") {
 				newWorkflow = arg;
 			} else {
-				ctx.ui.notify(`Unknown option: ${arg}. Use on, off, or summary-review.`, "error");
+				ctx.ui.notify(t("notify.config.unknownOption", `Unknown option: ${arg}. Use on, off, or summary-review.`, { option: arg }), "error");
 				return;
 			}
 
@@ -2214,7 +2216,7 @@ export default function (pi: ExtensionAPI) {
 				saveConfig({ workflow: newWorkflow });
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
-				ctx.ui.notify(`Failed to save config: ${message}`, "error");
+				ctx.ui.notify(t("notify.config.failedSave", `Failed to save config: ${message}`, { message }), "error");
 				return;
 			}
 
@@ -2231,13 +2233,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("google-account", {
-		description: "Show the active Google account for Gemini Web",
+		description: t("cmd.gemini.account", "Show the active Google account for Gemini Web"),
 		handler: async () => {
 			const cookies = await isGeminiWebAvailable();
 			if (!cookies) {
 				pi.sendMessage({
 					customType: "google-account",
-					content: [{ type: "text", text: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser." }],
+					content: [{ type: "text", text: t("result.geminiUnavailable", "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser.") }],
 					display: "tool",
 					details: { available: false },
 				}, { triggerTurn: true, deliverAs: "followUp" });
@@ -2259,12 +2261,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("search", {
-		description: "Browse stored web search results",
+		description: t("cmd.storage.browse", "Browse stored web search results"),
 		handler: async (_args, ctx) => {
 			const results = getAllResults();
 
 			if (results.length === 0) {
-				ctx.ui.notify("No stored search results", "info");
+				ctx.ui.notify(t("notify.storage.empty", "No stored search results"), "info");
 				return;
 			}
 
@@ -2295,7 +2297,7 @@ export default function (pi: ExtensionAPI) {
 
 			if (action === "Delete") {
 				deleteResult(selected.id);
-				ctx.ui.notify(`Deleted ${selected.id.slice(0, 6)}`, "info");
+				ctx.ui.notify(t("notify.storage.deleted", `Deleted ${selected.id.slice(0, 6)}`, { id: selected.id.slice(0, 6) }), "info");
 			} else if (action === "View details") {
 				let info = `ID: ${selected.id}\nType: ${selected.type}\nAge: ${Math.floor((Date.now() - selected.timestamp) / 60000)}m\n\n`;
 				if (selected.type === "search" && selected.queries) {
