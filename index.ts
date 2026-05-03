@@ -1013,7 +1013,7 @@ export default function (pi: ExtensionAPI) {
 				details: { phase: "curating", progress: searchesComplete ? 1 : 0.5 },
 			});
 
-			const open = platform() === "darwin" ? await getGlimpseOpen() : null;
+			const open = (platform() === "darwin" || platform() === "linux") ? await getGlimpseOpen() : null;
 			if (open) {
 				try {
 					const win = openInGlimpse(open, handle.url, "Search Curator");
@@ -2142,7 +2142,7 @@ export default function (pi: ExtensionAPI) {
 
 				commandHandle = handle;
 				activeCurator = handle;
-				const open = platform() === "darwin" ? await getGlimpseOpen() : null;
+				const open = (platform() === "darwin" || platform() === "linux") ? await getGlimpseOpen() : null;
 				if (open) {
 					try {
 						const win = openInGlimpse(open, handle.url, "Search Curator");
