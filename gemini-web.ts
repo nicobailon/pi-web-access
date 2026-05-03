@@ -361,12 +361,25 @@ function isModelUnavailable(errorCode: number | undefined): boolean {
 	return errorCode === 1052;
 }
 
+function extractCandidateText(candidate: unknown): string {
+	const textRaw = getNestedValue(candidate, [1, 0]);
+	let text = typeof textRaw === "string" ? textRaw : "";
+
+	if (/^http:\/\/googleusercontent\.com\/card_content\/\d+/.test(text)) {
+		const alt = getNestedValue(candidate, [22, 0]);
+		if (typeof alt === "string" && alt.length > 0) text = alt;
+	}
+
+	return text;
+}
+
 function parseStreamGenerateResponse(rawText: string): GeminiWebResult {
 	const responseJson = JSON.parse(trimJsonEnvelope(rawText));
 	const errorCode = extractErrorCode(responseJson);
 
 	const parts = Array.isArray(responseJson) ? responseJson : [];
-	let body: unknown = null;
+	let firstCandidateSeen: unknown = undefined;
+	let latestNonEmptyText = "";
 
 	for (let i = 0; i < parts.length; i++) {
 		const partBody = getNestedValue(parts[i], [2]);
@@ -374,23 +387,20 @@ function parseStreamGenerateResponse(rawText: string): GeminiWebResult {
 		try {
 			const parsed = JSON.parse(partBody);
 			const candidateList = getNestedValue(parsed, [4]);
-			if (Array.isArray(candidateList) && candidateList.length > 0) {
-				body = parsed;
-				break;
-			}
+			if (!Array.isArray(candidateList) || candidateList.length === 0) continue;
+
+			const firstCandidate = (candidateList as unknown[])[0];
+			if (firstCandidateSeen === undefined) firstCandidateSeen = firstCandidate;
+
+			const text = extractCandidateText(firstCandidate);
+			if (text.length > 0) latestNonEmptyText = text;
 		} catch {
 		}
 	}
 
-	const candidateList = getNestedValue(body, [4]);
-	const firstCandidate = Array.isArray(candidateList) ? (candidateList as unknown[])[0] : undefined;
-	const textRaw = getNestedValue(firstCandidate, [1, 0]) as string | undefined;
-
-	let text = textRaw ?? "";
-	if (/^http:\/\/googleusercontent\.com\/card_content\/\d+/.test(text)) {
-		const alt = getNestedValue(firstCandidate, [22, 0]) as string | undefined;
-		if (alt) text = alt;
-	}
+	const text = latestNonEmptyText.length > 0
+		? latestNonEmptyText
+		: extractCandidateText(firstCandidateSeen);
 
 	return { text, errorCode };
 }
