@@ -95,7 +95,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
 | `provider` | `auto` (default), `exa`, `perplexity`, or `gemini` |
 | `includeContent` | Fetch full page content from sources in background |
-| `workflow` | `none` (skip curator) or `summary-review` (auto-generate summary draft after search completion, default) |
+| `workflow` | `none` (raw results), `auto-summary` (headless same-model summary), or `summary-review` (browser curator with auto summary draft, default) |
 
 ### code_search
 
@@ -226,10 +226,11 @@ Toggle or configure the curator workflow at runtime.
 /curator                    # toggle on/off
 /curator on                 # enable curator (summary-review)
 /curator off                # disable curator (raw results only)
+/curator auto-summary       # disable curator and auto-return same-model summaries
 /curator summary-review     # explicit workflow
 ```
 
-Persists to `~/.pi/web-search.json` and takes effect on the next `web_search` call. When disabled, `web_search` returns raw results without opening the curator window.
+Persists to `~/.pi/web-search.json` and takes effect on the next `web_search` call. `none` returns raw results without opening the curator window; `auto-summary` also skips the window but returns a same-model summary inline.
 
 ### /search
 
@@ -289,7 +290,7 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
 }
 ```
 
-`EXA_API_KEY`, `GEMINI_API_KEY`, and `PERPLEXITY_API_KEY` env vars take precedence over config file values. `provider` sets the default search provider: `"exa"`, `"perplexity"`, or `"gemini"`. This is also updated automatically when you change the provider in the curator UI. `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft) or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`. `chromeProfile` overrides the Chromium profile directory used for Gemini Web cookie lookup. `allowBrowserCookies` enables Chromium cookie extraction for Gemini Web; it defaults to `false` to avoid surprise macOS Keychain prompts. You can also set `PI_ALLOW_BROWSER_COOKIES=1`. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `summaryModel` sets the default model used for generating summary drafts in the curator UI (e.g. `"anthropic/claude-haiku-4-5"` or `"openai-codex/gpt-5.3-codex-spark"`). Only models available in your model registry are eligible; if the configured model is unavailable, the default falls back to the built-in preference list. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
+`EXA_API_KEY`, `GEMINI_API_KEY`, and `PERPLEXITY_API_KEY` env vars take precedence over config file values. `provider` sets the default search provider: `"exa"`, `"perplexity"`, or `"gemini"`. This is also updated automatically when you change the provider in the curator UI. `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft), `"auto-summary"` (headless same-model summary, no curator), or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`. `chromeProfile` overrides the Chromium profile directory used for Gemini Web cookie lookup. `allowBrowserCookies` enables Chromium cookie extraction for Gemini Web; it defaults to `false` to avoid surprise macOS Keychain prompts. You can also set `PI_ALLOW_BROWSER_COOKIES=1`. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `summaryModel` sets the default model used for generating summary drafts in the curator UI (e.g. `"anthropic/claude-haiku-4-5"` or `"openai-codex/gpt-5.3-codex-spark"`). Only models available in your model registry are eligible; if the configured model is unavailable, the default falls back to the built-in preference list. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
 
 ### Shortcuts
 
