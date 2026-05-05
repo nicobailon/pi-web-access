@@ -5,7 +5,6 @@ import { StringEnum, complete, getModel, type Model } from "@mariozechner/pi-ai"
 import { fetchAllContent, type ExtractedContent } from "./extract.js";
 import { clearCloneCache } from "./github-extract.js";
 import { search, type SearchProvider, type ResolvedSearchProvider } from "./gemini-search.js";
-import { executeCodeSearch } from "./code-search.js";
 import type { SearchResult } from "./perplexity.js";
 import { formatSeconds } from "./utils.js";
 import {
@@ -1525,49 +1524,6 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			return new Text(lines.join("\n"), 0, 0);
-		},
-	});
-
-	pi.registerTool({
-		name: "code_search",
-		label: "Code Search",
-		description: "Search for code examples, documentation, and API references. Returns relevant code snippets and docs from GitHub, Stack Overflow, and official documentation. Use for any programming question — API usage, library examples, debugging help.",
-		promptSnippet:
-			"Use for programming/API/library questions to retrieve concrete examples and docs before implementing or debugging code.",
-		parameters: Type.Object({
-			query: Type.String({ description: "Programming question, API, library, or debugging topic to search for" }),
-			maxTokens: Type.Optional(Type.Integer({
-				minimum: 1000,
-				maximum: 50000,
-				description: "Maximum tokens of code/documentation context to return (default: 5000)",
-			})),
-		}),
-
-		async execute(toolCallId, params, signal) {
-			return executeCodeSearch(toolCallId, params, signal);
-		},
-
-		renderCall(args, theme) {
-			const { query } = args as { query?: string };
-			const display = !query
-				? "(no query)"
-				: query.length > 70 ? query.slice(0, 67) + "..." : query;
-			return new Text(theme.fg("toolTitle", theme.bold("code_search ")) + theme.fg("accent", display), 0, 0);
-		},
-
-		renderResult(result, { expanded }, theme) {
-			const details = result.details as { query?: string; maxTokens?: number; error?: string };
-			if (details?.error) {
-				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
-			}
-
-			const summary = theme.fg("success", "code context returned") +
-				theme.fg("muted", ` (${details?.maxTokens ?? 5000} tokens max)`);
-			if (!expanded) return new Text(summary, 0, 0);
-
-			const textContent = result.content.find((c) => c.type === "text")?.text || "";
-			const preview = textContent.length > 500 ? textContent.slice(0, 500) + "..." : textContent;
-			return new Text(summary + "\n" + theme.fg("dim", preview), 0, 0);
 		},
 	});
 
