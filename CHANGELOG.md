@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Removed
+- Removed `code_search` tool. The upstream Exa MCP `get_code_context_exa` tool is deprecated and not enabled by default, making every invocation degenerate to a `web_search_exa` fallback. Exa recommends using `web_search_exa` for code queries. Use `web_search` instead.
+
 ## [0.10.7] - 2026-05-02
 
 ### Added
