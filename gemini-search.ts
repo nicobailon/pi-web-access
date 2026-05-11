@@ -8,7 +8,7 @@ import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type Se
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
 import { resolveOpenAISearchAuth, searchWithOpenAI, type SearchModelRegistry } from "./openai-search.js";
 import { getAutoProviderOrder } from "./search-provider-order.js";
-import type { Model } from "@mariozechner/pi-ai";
+import type { Model } from "@earendil-works/pi-ai";
 
 export type SearchProvider = "auto" | "perplexity" | "gemini" | "exa" | "openai";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;
