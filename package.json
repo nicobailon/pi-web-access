@@ -27,9 +27,9 @@
   },
   "homepage": "https://github.com/nicobailon/pi-web-access#readme",
   "dependencies": {
-    "@mozilla/readability": "^0.5.0",
-    "linkedom": "^0.16.0",
-    "p-limit": "^6.1.0",
+    "@mozilla/readability": "^0.6.0",
+    "linkedom": "^0.18.12",
+    "p-limit": "^7.3.0",
     "turndown": "^7.2.0",
     "unpdf": "^1.6.2"
   },
@@ -41,5 +41,16 @@
       "./skills"
     ],
     "video": "https://github.com/nicobailon/pi-web-access/raw/refs/heads/main/pi-web-fetch-demo.mp4"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@earendil-works/pi-ai": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@earendil-works/pi-tui": "^0.74.0",
+    "@earendil-works/pi-ai": "^0.74.0",
+    "@types/node": "^25.7.0"
   }
 }
