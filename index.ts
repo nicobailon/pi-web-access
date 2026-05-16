@@ -129,8 +129,8 @@ function normalizeCuratorTimeoutSeconds(value: unknown): number | undefined {
 
 function resolveWorkflow(input: unknown, hasUI: boolean): WebSearchWorkflow {
 	if (!hasUI) return "none";
-	if (typeof input === "string" && input.trim().toLowerCase() === "none") return "none";
-	return "summary-review";
+	if (typeof input === "string" && input.trim().toLowerCase() === "summary-review") return "summary-review";
+	return "none";
 }
 
 function normalizeQueryList(queryList: unknown[]): string[] {
@@ -784,6 +784,7 @@ export default function (pi: ExtensionAPI) {
 			content: [{ type: "text", text: output.trim() }],
 			details: {
 				queries: opts.queryList,
+				providers: opts.results.map(r => r.provider || null),
 				queryCount: opts.queryList.length,
 				successfulQueries: sc,
 				totalResults: tr,
@@ -1089,24 +1090,24 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login).`,
+			`Search the web. Returns an AI-synthesized answer with source citations. Use queries (plural) with 2-4 varied angles for comprehensive research.`,
 		promptSnippet:
-			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
+			"Use for web research. Prefer {queries:[...]} with 2-4 varied angles for broader coverage.",
 		parameters: Type.Object({
-			query: Type.Optional(Type.String({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched in sequence, each returning its own synthesized answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
-			numResults: Type.Optional(Type.Number({ description: "Results per query (default: 5, max: 20)" })),
-			includeContent: Type.Optional(Type.Boolean({ description: "Fetch full page content (async)" })),
+			query: Type.Optional(Type.String({ description: "Single search query." })),
+			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries, each returning its own answer. Use 2-4 varied angles for research." })),
+			numResults: Type.Optional(Type.Number({ description: "Results per query (default: 5, max: 20)." })),
+			includeContent: Type.Optional(Type.Boolean({ description: "Fetch full page content from results (async)." })),
 			recencyFilter: Type.Optional(
-				StringEnum(["day", "week", "month", "year"], { description: "Filter by recency" }),
+				StringEnum(["day", "week", "month", "year"], { description: "Filter results by recency." }),
 			),
-			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
+			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit or exclude domains (prefix with - to exclude)." })),
 			provider: Type.Optional(
-				StringEnum(["auto", "perplexity", "gemini", "exa"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "perplexity", "gemini", "exa"], { description: "Search provider (default: auto)." }),
 			),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review"], {
-					description: "Search workflow mode: none = no curator, summary-review = open curator with auto summary draft (default)",
+					description: "Workflow: none = return results directly; summary-review = open browser curator for curation (default: none).",
 				}),
 			),
 		}),
@@ -1531,15 +1532,15 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "code_search",
 		label: "Code Search",
-		description: "Search for code examples, documentation, and API references. Returns relevant code snippets and docs from GitHub, Stack Overflow, and official documentation. Use for any programming question — API usage, library examples, debugging help.",
+		description: "Search for code examples, documentation, and API references.",
 		promptSnippet:
-			"Use for programming/API/library questions to retrieve concrete examples and docs before implementing or debugging code.",
+			"Use for programming questions to find code examples and documentation.",
 		parameters: Type.Object({
-			query: Type.String({ description: "Programming question, API, library, or debugging topic to search for" }),
+			query: Type.String({ description: "Programming question, API, library, or debugging topic." }),
 			maxTokens: Type.Optional(Type.Integer({
 				minimum: 1000,
 				maximum: 50000,
-				description: "Maximum tokens of code/documentation context to return (default: 5000)",
+				description: "Maximum tokens of context to return (default: 5000, max: 50000).",
 			})),
 		}),
 
@@ -1574,28 +1575,28 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "fetch_content",
 		label: "Fetch Content",
-		description: "Fetch URL(s) and extract readable content as markdown. Supports YouTube video transcripts (with thumbnail), GitHub repository contents, and local video files (with frame thumbnail). Video frames can be extracted via timestamp/range or sampled across the entire video with frames alone. Falls back to Gemini for pages that block bots or fail Readability extraction. For YouTube and video files: ALWAYS pass the user's specific question via the prompt parameter — this directs the AI to focus on that aspect of the video, producing much better results than a generic extraction. Content is always stored and can be retrieved with get_search_content.",
+		description: "Fetch URL(s) and extract readable content as markdown. Supports YouTube videos (transcripts, frames), GitHub repos (cloned locally), PDFs, local video files, and web pages. Content is stored and retrievable via get_search_content.",
 		promptSnippet:
-			"Use to extract readable content from URL(s), YouTube, GitHub repos, or local videos. For video questions, pass the user's exact question in prompt.",
+			"Use to extract content from URLs, YouTube videos, GitHub repos, PDFs, and local video files.",
 		parameters: Type.Object({
-			url: Type.Optional(Type.String({ description: "Single URL to fetch" })),
-			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
+			url: Type.Optional(Type.String({ description: "Single URL to fetch." })),
+			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (fetched in parallel)." })),
 			forceClone: Type.Optional(Type.Boolean({
-				description: "Force cloning large GitHub repositories that exceed the size threshold",
+				description: "Force clone large GitHub repos that would normally return an API-only view.",
 			})),
 			prompt: Type.Optional(Type.String({
-				description: "Question or instruction for video analysis (YouTube and video files). Pass the user's specific question here — e.g. 'describe the book shown at the advice for beginners section'. Without this, a generic transcript extraction is used which may miss what the user is asking about.",
+				description: "Question or instruction for video analysis (YouTube and local videos).",
 			})),
 			timestamp: Type.Optional(Type.String({
-				description: "Extract video frame(s) at a timestamp or time range. Single: '1:23:45', '23:45', or '85' (seconds). Range: '23:41-25:00' extracts evenly-spaced frames across that span (default 6). Use frames with ranges to control density; single+frames uses a fixed 5s interval. YouTube requires yt-dlp + ffmpeg; local videos require ffmpeg. Use a range when you know the approximate area but not the exact moment — you'll get a contact sheet to visually identify the right frame.",
+				description: "Extract frame(s) at a timestamp or range (e.g. '23:41' or '23:41-25:00').",
 			})),
 			frames: Type.Optional(Type.Integer({
 				minimum: 1,
 				maximum: 12,
-				description: "Number of frames to extract. Use with timestamp range for custom density, with single timestamp to get N frames at 5s intervals, or alone to sample across the entire video. Requires yt-dlp + ffmpeg for YouTube, ffmpeg for local video.",
+				description: "Number of frames to extract. Use with timestamp for density control, or alone to sample the whole video.",
 			})),
 			model: Type.Optional(Type.String({
-				description: "Override the Gemini model for video/YouTube analysis (e.g. 'gemini-2.5-flash', 'gemini-3-flash-preview'). Defaults to config or gemini-3-flash-preview.",
+				description: "Override the model used for video analysis.",
 			})),
 		}),
 
@@ -1640,7 +1641,7 @@ export default function (pi: ExtensionAPI) {
 				if (result.error) {
 					return {
 						content: [{ type: "text", text: `Error: ${result.error}` }],
-						details: { urls: urlList, urlCount: 1, successful: 0, error: result.error, responseId, prompt: params.prompt, timestamp: params.timestamp, frames: params.frames },
+						details: { urls: urlList, urlCount: 1, successful: 0, error: result.error, responseId, extractionMethod: result.extractionMethod || null, prompt: params.prompt, timestamp: params.timestamp, frames: params.frames },
 					};
 				}
 
@@ -1677,6 +1678,7 @@ export default function (pi: ExtensionAPI) {
 						title: result.title,
 						responseId,
 						truncated,
+						extractionMethod: result.extractionMethod || null,
 						hasImage: imageCount > 0,
 						imageCount,
 						prompt: params.prompt,
@@ -1700,7 +1702,7 @@ export default function (pi: ExtensionAPI) {
 
 			return {
 				content: [{ type: "text", text: output }],
-				details: { urls: urlList, urlCount: urlList.length, successful, totalChars, responseId },
+				details: { urls: urlList, urlCount: urlList.length, successful, totalChars, responseId, extractionMethods: fetchResults.map(r => r.extractionMethod || null) },
 			};
 		},
 
@@ -1819,9 +1821,9 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "get_search_content",
 		label: "Get Search Content",
-		description: "Retrieve full content from a previous web_search or fetch_content call.",
+		description: "Retrieve stored content from a previous web_search or fetch_content call.",
 		promptSnippet:
-			"Use after web_search/fetch_content when full stored content is needed via responseId plus query/url selectors.",
+			"Use to retrieve stored content via responseId and query or url selectors.",
 		parameters: Type.Object({
 			responseId: Type.String({ description: "The responseId from web_search or fetch_content" }),
 			query: Type.Optional(Type.String({ description: "Get content for this query (web_search)" })),

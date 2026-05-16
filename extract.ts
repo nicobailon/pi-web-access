@@ -49,11 +49,26 @@ export interface VideoFrame {
 export type FrameData = { data: string; mimeType: string };
 export type FrameResult = FrameData | { error: string };
 
+export type ExtractionMethod =
+	| "readability"
+	| "text"
+	| "rsc"
+	| "pdf"
+	| "jina"
+	| "gemini-url-context"
+	| "gemini-web"
+	| "github-clone"
+	| "github-api"
+	| "gemini-video"
+	| "gemini-youtube"
+	| "frames";
+
 export interface ExtractedContent {
 	url: string;
 	title: string;
 	content: string;
 	error: string | null;
+	extractionMethod?: ExtractionMethod;
 	thumbnail?: { data: string; mimeType: string };
 	frames?: VideoFrame[];
 	duration?: number;
@@ -220,33 +235,33 @@ export async function extractContent(
 		if (ytInfo.isYouTube && ytInfo.videoId) {
 			const streamInfo = await getYouTubeStreamInfo(ytInfo.videoId);
 			if ("error" in streamInfo) {
-				return { url, title: "Frames", content: streamInfo.error, error: streamInfo.error };
+				return { url, title: "Frames", content: streamInfo.error, error: streamInfo.error, extractionMethod: "frames" };
 			}
 			if (streamInfo.duration === null) {
 				const error = "Cannot determine video duration. Use a timestamp range instead.";
-				return { url, title: "Frames", content: error, error };
+				return { url, title: "Frames", content: error, error, extractionMethod: "frames" };
 			}
 			const dur = Math.floor(streamInfo.duration);
 			const timestamps = computeRangeTimestamps(0, dur, frameCount);
 			const result = await extractYouTubeFrames(ytInfo.videoId, timestamps, streamInfo);
 			const label = `${formatSeconds(0)}-${formatSeconds(dur)}`;
-			return buildFrameResult(url, label, timestamps.length, result.frames, result.error, streamInfo.duration);
+			return { ...buildFrameResult(url, label, timestamps.length, result.frames, result.error, streamInfo.duration), extractionMethod: "frames" };
 		}
 
 		const localVideo = safeVideoInfo(url);
 		if (localVideo.error) {
-			return { url, title: "", content: "", error: localVideo.error };
+			return { url, title: "", content: "", error: localVideo.error, extractionMethod: "frames" };
 		}
 		if (localVideo.info) {
 			const durationResult = await getLocalVideoDuration(localVideo.info.absolutePath);
 			if (typeof durationResult !== "number") {
-				return { url, title: "Frames", content: durationResult.error, error: durationResult.error };
+				return { url, title: "Frames", content: durationResult.error, error: durationResult.error, extractionMethod: "frames" };
 			}
 			const dur = Math.floor(durationResult);
 			const timestamps = computeRangeTimestamps(0, dur, frameCount);
 			const result = await extractLocalFrames(localVideo.info.absolutePath, timestamps);
 			const label = `${formatSeconds(0)}-${formatSeconds(dur)}`;
-			return buildFrameResult(url, label, timestamps.length, result.frames, result.error, durationResult);
+			return { ...buildFrameResult(url, label, timestamps.length, result.frames, result.error, durationResult), extractionMethod: "frames" };
 		}
 
 		return { url, title: "", content: "", error: "Frame extraction only works with YouTube and local video files" };
@@ -356,10 +371,16 @@ export async function extractContent(
 		try {
 			const result = await extractVideo(localVideo.info, signal, options);
 			if (signal?.aborted) return abortedResult(url);
-			return result ?? { url, title: "", content: "", error: "Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in Chrome (free, uses cookies)\n  2. Set GEMINI_API_KEY in ~/.pi/web-search.json" };
+			const output = result ?? {
+				url,
+				title: "",
+				content: "",
+				error: "Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in Chrome (free, uses cookies)\n  2. Set GEMINI_API_KEY in ~/.pi/web-search.json",
+			};
+			return { ...output, extractionMethod: "gemini-video" };
 		} catch (err) {
 			if (isAbortError(err)) return abortedResult(url);
-			return { url, title: "", content: "", error: errorMessage(err) };
+			return { url, title: "", content: "", error: errorMessage(err), extractionMethod: "gemini-video" };
 		}
 	}
 
@@ -371,13 +392,13 @@ export async function extractContent(
 
 	try {
 		const ghResult = await extractGitHub(url, signal, options?.forceClone);
-		if (ghResult) return ghResult;
+		if (ghResult) return { ...ghResult, extractionMethod: ghResult.extractionMethod ?? "github-clone" };
 		if (signal?.aborted) return abortedResult(url);
 	} catch (err) {
 		const message = errorMessage(err);
 		if (isAbortError(err)) return abortedResult(url);
 		if (isConfigParseError(err)) {
-			return { url, title: "", content: "", error: message };
+			return { url, title: "", content: "", error: message, extractionMethod: "github-clone" };
 		}
 	}
 
@@ -386,18 +407,18 @@ export async function extractContent(
 	try {
 		youtubeEnabled = isYouTubeEnabled();
 	} catch (err) {
-		return { url, title: "", content: "", error: errorMessage(err) };
+		return { url, title: "", content: "", error: errorMessage(err), extractionMethod: "gemini-youtube" };
 	}
 	if (ytInfo.isYouTube && youtubeEnabled) {
 		try {
 			const ytResult = await extractYouTube(url, signal, options?.prompt, options?.model);
-			if (ytResult) return ytResult;
+			if (ytResult) return { ...ytResult, extractionMethod: ytResult.extractionMethod ?? "gemini-youtube" };
 			if (signal?.aborted) return abortedResult(url);
 		} catch (err) {
 			const message = errorMessage(err);
 			if (isAbortError(err)) return abortedResult(url);
 			if (isConfigParseError(err)) {
-				return { url, title: "", content: "", error: message };
+				return { url, title: "", content: "", error: message, extractionMethod: "gemini-youtube" };
 			}
 		}
 		return {
@@ -405,6 +426,7 @@ export async function extractContent(
 			title: "",
 			content: "",
 			error: "Could not extract YouTube video content. Sign into Google in Chrome for automatic access, or set GEMINI_API_KEY.",
+			extractionMethod: "gemini-youtube",
 		};
 	}
 
@@ -417,13 +439,19 @@ export async function extractContent(
 	if (NON_RECOVERABLE_ERRORS.some(prefix => httpResult.error!.startsWith(prefix))) return httpResult;
 
 	const jinaResult = await extractWithJinaReader(url, signal);
-	if (jinaResult) return jinaResult;
+	if (jinaResult) return { ...jinaResult, extractionMethod: "jina" };
 	if (signal?.aborted) return abortedResult(url);
 
 	let geminiResult: ExtractedContent | null = null;
+	let geminiMethod: ExtractionMethod = "gemini-web";
 	try {
-		geminiResult = await extractWithUrlContext(url, signal)
-			?? await extractWithGeminiWeb(url, signal);
+		const urlContext = await extractWithUrlContext(url, signal);
+		if (urlContext) {
+			geminiResult = urlContext;
+			geminiMethod = "gemini-url-context";
+		} else {
+			geminiResult = await extractWithGeminiWeb(url, signal);
+		}
 	} catch (err) {
 		if (isAbortError(err)) return abortedResult(url);
 		if (isConfigParseError(err)) {
@@ -431,7 +459,7 @@ export async function extractContent(
 		}
 	}
 
-	if (geminiResult) return geminiResult;
+	if (geminiResult) return { ...geminiResult, extractionMethod: geminiResult.extractionMethod ?? geminiMethod };
 	if (signal?.aborted) return abortedResult(url);
 
 	const guidance = [
@@ -534,11 +562,12 @@ async function extractViaHttp(
 					title: result.title,
 					content: `PDF extracted and saved to: ${result.outputPath}\n\nPages: ${result.pages}\nCharacters: ${result.chars}`,
 					error: null,
+					extractionMethod: "pdf",
 				};
 			} catch (err) {
 				const message = err instanceof Error ? err.message : String(err);
 				activityMonitor.logError(activityId, message);
-				return { url, title: "", content: "", error: `PDF extraction failed: ${message}` };
+				return { url, title: "", content: "", error: `PDF extraction failed: ${message}`, extractionMethod: "pdf" };
 			}
 		}
 
@@ -562,7 +591,7 @@ async function extractViaHttp(
 		if (!isHTML) {
 			activityMonitor.logComplete(activityId, response.status);
 			const title = extractTextTitle(text, url);
-			return { url, title, content: text, error: null };
+			return { url, title, content: text, error: null, extractionMethod: "text" };
 		}
 
 		const { document } = parseHTML(text);
@@ -573,7 +602,7 @@ async function extractViaHttp(
 			const rscResult = extractRSCContent(text);
 			if (rscResult) {
 				activityMonitor.logComplete(activityId, response.status);
-				return { url, title: rscResult.title, content: rscResult.content, error: null };
+				return { url, title: rscResult.title, content: rscResult.content, error: null, extractionMethod: "rsc" };
 			}
 
 			activityMonitor.logComplete(activityId, response.status);
@@ -603,10 +632,11 @@ async function extractViaHttp(
 				error: isLikelyJSRendered(text)
 					? "Page appears to be JavaScript-rendered (content loads dynamically)"
 					: "Extracted content appears incomplete",
+				extractionMethod: "readability",
 			};
 		}
 
-		return { url, title: article.title || "", content: markdown, error: null };
+		return { url, title: article.title || "", content: markdown, error: null, extractionMethod: "readability" };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		if (message.toLowerCase().includes("abort")) {
