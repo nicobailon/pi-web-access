@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { activityMonitor } from "./activity.js";
-import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.js";
+import { getApiKey, isGeminiApiAvailable, API_BASE, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
@@ -146,9 +146,11 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
+	// Auto provider: prefer providers with API keys, then MCP/cookie fallbacks
 	const fallbackErrors: string[] = [];
 
-	if (provider !== "exa" && isExaAvailable()) {
+	// 1. Providers with API keys (budget-conscious)
+	if (hasExaApiKey()) {
 		try {
 			const result = await searchWithExa(query, options);
 			if (result && "answer" in result) return { ...result, provider: "exa" };
@@ -168,12 +170,35 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	try {
-		const geminiResult = await searchWithGemini(query, options, false);
-		if (geminiResult) return { ...geminiResult, provider: "gemini" };
-	} catch (err) {
-		if (isAbortError(err)) throw err;
-		fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
+	if (isGeminiApiAvailable()) {
+		try {
+			const geminiResult = await searchWithGemini(query, options, false);
+			if (geminiResult) return { ...geminiResult, provider: "gemini" };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
+		}
+	}
+
+	// 2. MCP/cookie fallbacks (no per-user budget)
+	if (!hasExaApiKey() && isExaAvailable()) {
+		try {
+			const result = await searchWithExa(query, options);
+			if (result && "answer" in result) return { ...result, provider: "exa" };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
+		}
+	}
+
+	if (!isGeminiApiAvailable()) {
+		try {
+			const geminiResult = await searchWithGemini(query, options, false);
+			if (geminiResult) return { ...geminiResult, provider: "gemini" };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
+		}
 	}
 
 	if (fallbackErrors.length > 0) {
@@ -224,7 +249,13 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 			?.map(p => p.text).filter(Boolean).join("\n") ?? "";
 
 		const metadata = data.candidates?.[0]?.groundingMetadata;
-		const results = await resolveGroundingChunks(metadata?.groundingChunks, options.signal);
+		const chunks = metadata?.groundingChunks ?? [];
+		let results = await resolveGroundingChunks(chunks, options.signal);
+
+		// Fallback: extract URLs from answer text if grounding chunks are empty
+		if (results.length === 0 && answer) {
+			results = extractSourceUrls(answer);
+		}
 
 		if (!answer && results.length === 0) return null;
 		return { answer, results };

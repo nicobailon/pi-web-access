@@ -1348,6 +1348,7 @@ export default function (pi: ExtensionAPI) {
 				queryCount?: number;
 				successfulQueries?: number;
 				totalResults?: number;
+				providers?: (string | null)[];
 				error?: string;
 				fetchId?: string;
 				fetchUrls?: string[];
@@ -1393,7 +1394,9 @@ export default function (pi: ExtensionAPI) {
 
 			let statusLine: string;
 			const queryInfo = details?.queryCount === 1 ? "" : `${details?.successfulQueries}/${details?.queryCount} queries, `;
-			statusLine = theme.fg("success", `${queryInfo}${details?.totalResults ?? 0} sources`);
+			const providers = details?.providers?.filter(Boolean) as string[] | undefined;
+			const providerLabel = providers && providers.length > 0 ? ` · ${providers.join(", ")}` : "";
+			statusLine = theme.fg("success", `${queryInfo}${details?.totalResults ?? 0} sources`) + theme.fg("muted", providerLabel);
 			if (details?.curated && details?.curatedFrom) {
 				statusLine += theme.fg("muted", ` (${details.queryCount}/${details.curatedFrom} queries curated)`);
 			}
