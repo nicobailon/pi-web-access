@@ -58,7 +58,7 @@ export interface GeminiApiOptions {
 export async function queryGeminiApiWithVideo(
 	prompt: string,
 	videoUri: string,
-	options: GeminiApiOptions = {},
+	options: GeminiApiOptions = {}
 ): Promise<string> {
 	const apiKey = getApiKey();
 	if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
@@ -73,10 +73,7 @@ export async function queryGeminiApiWithVideo(
 	const body = {
 		contents: [
 			{
-				parts: [
-					{ fileData },
-					{ text: prompt },
-				],
+				parts: [{ fileData }, { text: prompt }],
 			},
 		],
 	};

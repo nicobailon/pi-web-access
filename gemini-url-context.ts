@@ -14,10 +14,7 @@ function shouldRethrow(err: unknown): boolean {
 	return message.startsWith("Failed to parse ");
 }
 
-export async function extractWithUrlContext(
-	url: string,
-	signal?: AbortSignal,
-): Promise<ExtractedContent | null> {
+export async function extractWithUrlContext(url: string, signal?: AbortSignal): Promise<ExtractedContent | null> {
 	const apiKey = getApiKey();
 	if (!apiKey) return null;
 
@@ -34,10 +31,7 @@ export async function extractWithUrlContext(
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
-			signal: AbortSignal.any([
-				AbortSignal.timeout(60000),
-				...(signal ? [signal] : []),
-			]),
+			signal: AbortSignal.any([AbortSignal.timeout(60000), ...(signal ? [signal] : [])]),
 		});
 
 		if (!res.ok) {
@@ -45,7 +39,7 @@ export async function extractWithUrlContext(
 			return null;
 		}
 
-		const data = await res.json() as UrlContextResponse;
+		const data = (await res.json()) as UrlContextResponse;
 		activityMonitor.logComplete(activityId, res.status);
 
 		const metadata = data.candidates?.[0]?.url_context_metadata;
@@ -56,8 +50,11 @@ export async function extractWithUrlContext(
 			}
 		}
 
-		const content = data.candidates?.[0]?.content?.parts
-			?.map(p => p.text).filter(Boolean).join("\n") ?? "";
+		const content =
+			data.candidates?.[0]?.content?.parts
+				?.map((p) => p.text)
+				.filter(Boolean)
+				.join("\n") ?? "";
 
 		if (!content || content.length < 50) return null;
 
@@ -75,10 +72,7 @@ export async function extractWithUrlContext(
 	}
 }
 
-export async function extractWithGeminiWeb(
-	url: string,
-	signal?: AbortSignal,
-): Promise<ExtractedContent | null> {
+export async function extractWithGeminiWeb(url: string, signal?: AbortSignal): Promise<ExtractedContent | null> {
 	const cookies = await isGeminiWebAvailable();
 	if (!cookies) return null;
 

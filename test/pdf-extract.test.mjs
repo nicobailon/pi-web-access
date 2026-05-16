@@ -5,23 +5,23 @@ import { test } from "node:test";
 const extractorUrl = new URL("../pdf-extract.ts", import.meta.url).href;
 
 test("extractPDFToMarkdown works on Node 22 without native Promise.try", () => {
-  const child = spawnSync(process.execPath, ["--input-type=module"], {
-    input: buildChildScript(extractorUrl),
-    encoding: "utf8",
-    maxBuffer: 2 * 1024 * 1024,
-  });
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: buildChildScript(extractorUrl),
+		encoding: "utf8",
+		maxBuffer: 2 * 1024 * 1024,
+	});
 
-  assert.equal(
-    child.status,
-    0,
-    "PDF extraction failed in a child process. stderr summary:\n" + errorSummary(child.stderr),
-  );
+	assert.equal(
+		child.status,
+		0,
+		"PDF extraction failed in a child process. stderr summary:\n" + errorSummary(child.stderr)
+	);
 
-  assert.match(child.stdout, /Hello PDF/);
+	assert.match(child.stdout, /Hello PDF/);
 });
 
 function buildChildScript(moduleUrl) {
-  return `
+	return `
     import { mkdtemp, readFile } from "node:fs/promises";
     import { tmpdir } from "node:os";
     import { join } from "node:path";
@@ -85,11 +85,11 @@ function buildChildScript(moduleUrl) {
 }
 
 function errorSummary(value, size = 1200) {
-  const marker = "TypeError: Promise.try is not a function";
-  const index = value.indexOf(marker);
-  if (index >= 0) {
-    return value.slice(index, index + size);
-  }
+	const marker = "TypeError: Promise.try is not a function";
+	const index = value.indexOf(marker);
+	if (index >= 0) {
+		return value.slice(index, index + size);
+	}
 
-  return value.length > size ? value.slice(-size) : value;
+	return value.length > size ? value.slice(-size) : value;
 }

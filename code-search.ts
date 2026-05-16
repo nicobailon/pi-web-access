@@ -14,7 +14,10 @@ function isMissingMcpToolError(message: string): boolean {
 
 function buildFallbackQuery(query: string): string {
 	const normalized = query.toLowerCase();
-	const hasCodeTerms = /\b(api|code|docs?|documentation|example|github|implementation|library|source|stackoverflow|stack overflow)\b/.test(normalized);
+	const hasCodeTerms =
+		/\b(api|code|docs?|documentation|example|github|implementation|library|source|stackoverflow|stack overflow)\b/.test(
+			normalized
+		);
 	return hasCodeTerms ? query : `${query} code examples documentation GitHub Stack Overflow official docs`;
 }
 
@@ -38,7 +41,7 @@ async function executeFallbackSearch(query: string, maxTokens: number, signal?: 
 			type: "auto",
 			contextMaxCharacters: Math.min(50000, Math.max(1000, maxTokens * 4)),
 		},
-		signal,
+		signal
 	);
 	return trimApproxTokens(text, maxTokens);
 }
@@ -46,16 +49,25 @@ async function executeFallbackSearch(query: string, maxTokens: number, signal?: 
 export async function executeCodeSearch(
 	_toolCallId: string,
 	params: { query: string; maxTokens?: number },
-	signal?: AbortSignal,
+	signal?: AbortSignal
 ): Promise<{
 	content: Array<{ type: "text"; text: string }>;
-	details: { query: string; maxTokens: number; error?: string; mode?: "code-context" | "web-search-fallback" };
+	details: {
+		query: string;
+		maxTokens: number;
+		error?: string;
+		mode?: "code-context" | "web-search-fallback";
+	};
 }> {
 	const query = params.query.trim();
 	if (!query) {
 		return {
 			content: [{ type: "text", text: "Error: No query provided." }],
-			details: { query: "", maxTokens: params.maxTokens ?? DEFAULT_MAX_TOKENS, error: "No query provided" },
+			details: {
+				query: "",
+				maxTokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
+				error: "No query provided",
+			},
 		};
 	}
 
@@ -76,7 +88,7 @@ export async function executeCodeSearch(
 						query,
 						tokensNum: maxTokens,
 					},
-					signal,
+					signal
 				);
 				mode = "code-context";
 			} catch (err) {

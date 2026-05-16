@@ -68,9 +68,9 @@ function getApiKey(): string {
 	if (!key) {
 		throw new Error(
 			"Perplexity API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "perplexityApiKey": "your-key" }\n` +
-			"  2. Set PERPLEXITY_API_KEY environment variable\n" +
-			"Get a key at https://perplexity.ai/settings/api"
+				`  1. Create ${CONFIG_PATH} with { "perplexityApiKey": "your-key" }\n` +
+				"  2. Set PERPLEXITY_API_KEY environment variable\n" +
+				"Get a key at https://perplexity.ai/settings/api"
 		);
 	}
 	return key;

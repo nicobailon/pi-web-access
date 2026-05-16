@@ -14,11 +14,7 @@ interface BrowserConfig {
 	secretToolApp?: string;
 }
 
-const GOOGLE_ORIGINS = [
-	"https://gemini.google.com",
-	"https://accounts.google.com",
-	"https://www.google.com",
-];
+const GOOGLE_ORIGINS = ["https://gemini.google.com", "https://accounts.google.com", "https://www.google.com"];
 
 const ALL_COOKIE_NAMES = new Set([
 	"__Secure-1PSID",
@@ -67,15 +63,13 @@ const LINUX_BROWSER_CONFIGS: BrowserConfig[] = [
 	{ name: "Chrome", baseDir: ".config/google-chrome", secretToolApp: "chrome" },
 ];
 
-export async function getGoogleCookies(
-	options?: { profile?: string; requiredCookies?: string[] },
-): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
+export async function getGoogleCookies(options?: {
+	profile?: string;
+	requiredCookies?: string[];
+}): Promise<{ cookies: CookieMap; warnings: string[] } | null> {
 	const currentPlatform = platform();
-	const configs = currentPlatform === "darwin"
-		? MACOS_BROWSER_CONFIGS
-		: currentPlatform === "linux"
-			? LINUX_BROWSER_CONFIGS
-			: [];
+	const configs =
+		currentPlatform === "darwin" ? MACOS_BROWSER_CONFIGS : currentPlatform === "linux" ? LINUX_BROWSER_CONFIGS : [];
 	if (configs.length === 0) return null;
 
 	const warnings: string[] = [];
@@ -173,7 +167,7 @@ function removePkcs7Padding(buf: Buffer): Buffer {
 
 function readBrowserPassword(
 	config: BrowserConfig,
-	currentPlatform: ReturnType<typeof platform>,
+	currentPlatform: ReturnType<typeof platform>
 ): Promise<string | null> {
 	if (currentPlatform === "darwin") {
 		if (!config.keychainAccount || !config.keychainService) return Promise.resolve(null);
@@ -192,9 +186,12 @@ function readKeychainPassword(account: string, service: string): Promise<string 
 			["find-generic-password", "-w", "-a", account, "-s", service],
 			{ timeout: 5000 },
 			(err, stdout) => {
-				if (err) { resolve(null); return; }
+				if (err) {
+					resolve(null);
+					return;
+				}
 				resolve(stdout.trim() || null);
-			},
+			}
 		);
 	});
 }
@@ -203,19 +200,14 @@ function readLinuxPassword(secretToolApp: string | undefined): Promise<string> {
 	if (!secretToolApp) return Promise.resolve("peanuts");
 
 	return new Promise((resolve) => {
-		execFile(
-			"secret-tool",
-			["lookup", "application", secretToolApp],
-			{ timeout: 5000 },
-			(err, stdout) => {
-				if (err) {
-					// KDE Wallet users fall through to peanuts intentionally.
-					resolve("peanuts");
-					return;
-				}
-				resolve(stdout.trim() || "peanuts");
-			},
-		);
+		execFile("secret-tool", ["lookup", "application", secretToolApp], { timeout: 5000 }, (err, stdout) => {
+			if (err) {
+				// KDE Wallet users fall through to peanuts intentionally.
+				resolve("peanuts");
+				return;
+			}
+			resolve(stdout.trim() || "peanuts");
+		});
 	});
 }
 
@@ -225,7 +217,7 @@ async function importSqlite(): Promise<typeof import("node:sqlite") | null> {
 	if (sqliteModule) return sqliteModule;
 	const orig = process.emitWarning.bind(process);
 	process.emitWarning = ((warning: string | Error, ...args: unknown[]) => {
-		const msg = typeof warning === "string" ? warning : warning?.message ?? "";
+		const msg = typeof warning === "string" ? warning : (warning?.message ?? "");
 		if (msg.includes("SQLite is an experimental feature")) return;
 		return (orig as Function)(warning, ...args);
 	}) as typeof process.emitWarning;
@@ -266,10 +258,7 @@ async function readMetaVersion(dbPath: string): Promise<number> {
 	}
 }
 
-async function queryCookieRows(
-	dbPath: string,
-	hosts: string[],
-): Promise<Array<Record<string, unknown>> | null> {
+async function queryCookieRows(dbPath: string, hosts: string[]): Promise<Array<Record<string, unknown>> | null> {
 	const sqlite = await importSqlite();
 	if (!sqlite) return null;
 
@@ -290,7 +279,7 @@ async function queryCookieRows(
 	try {
 		return db
 			.prepare(
-				`SELECT name, value, host_key, encrypted_value FROM cookies WHERE (${where}) ORDER BY expires_utc DESC`,
+				`SELECT name, value, host_key, encrypted_value FROM cookies WHERE (${where}) ORDER BY expires_utc DESC`
 			)
 			.all() as Array<Record<string, unknown>>;
 	} catch {
@@ -317,6 +306,5 @@ function copySidecar(srcDb: string, targetDb: string, suffix: string): void {
 	if (!existsSync(sidecar)) return;
 	try {
 		copyFileSync(sidecar, `${targetDb}${suffix}`);
-	} catch {
-	}
+	} catch {}
 }

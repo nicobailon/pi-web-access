@@ -27,7 +27,12 @@ export class ActivityMonitor {
 	private entries: ActivityEntry[] = [];
 	private readonly maxEntries = 10;
 	private listeners = new Set<() => void>();
-	private rateLimitInfo: RateLimitInfo = { used: 0, max: 10, oldestTimestamp: null, windowMs: 60000 };
+	private rateLimitInfo: RateLimitInfo = {
+		used: 0,
+		max: 10,
+		oldestTimestamp: null,
+		windowMs: 60000,
+	};
 	private nextId = 1;
 
 	logStart(partial: Omit<ActivityEntry, "id" | "startTime" | "status">): string {
@@ -92,8 +97,7 @@ export class ActivityMonitor {
 		for (const cb of this.listeners) {
 			try {
 				cb();
-			} catch {
-			}
+			} catch {}
 		}
 	}
 }
