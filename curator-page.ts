@@ -10,7 +10,7 @@ function safeInlineJSON(data: unknown): string {
 function buildProviderButtons(
 	available: { perplexity: boolean; exa: boolean; gemini: boolean },
 	selected: string,
-	hasInitialQueries: boolean,
+	hasInitialQueries: boolean
 ): string {
 	const providers = [
 		{ value: "perplexity", label: "Perplexity", available: available.perplexity },
@@ -19,11 +19,13 @@ function buildProviderButtons(
 	];
 
 	return providers
-		.filter(p => p.available)
+		.filter((p) => p.available)
 		.map((p) => {
 			const isDefault = p.value === selected;
 			const state = isDefault && hasInitialQueries ? "loading" : "idle";
-			const classes = ["provider-btn", state, isDefault ? "is-default" : ""].filter(Boolean).join(" ");
+			const classes = ["provider-btn", state, isDefault ? "is-default" : ""]
+				.filter(Boolean)
+				.join(" ");
 			const disabled = state === "loading" ? " disabled" : "";
 			return `<button type="button" class="${classes}" data-provider="${p.value}" data-state="${state}"${disabled}>${p.label}</button>`;
 		})
@@ -37,10 +39,22 @@ export function generateCuratorPage(
 	availableProviders: { perplexity: boolean; exa: boolean; gemini: boolean },
 	defaultProvider: string,
 	summaryModels: Array<{ value: string; label: string }>,
-	defaultSummaryModel: string | null,
+	defaultSummaryModel: string | null
 ): string {
-	const providerButtonsHtml = buildProviderButtons(availableProviders, defaultProvider, queries.length > 0);
-	const inlineData = safeInlineJSON({ queries, sessionToken, timeout, defaultProvider, summaryModels, defaultSummaryModel, availableProviders });
+	const providerButtonsHtml = buildProviderButtons(
+		availableProviders,
+		defaultProvider,
+		queries.length > 0
+	);
+	const inlineData = safeInlineJSON({
+		queries,
+		sessionToken,
+		timeout,
+		defaultProvider,
+		summaryModels,
+		defaultSummaryModel,
+		availableProviders,
+	});
 
 	return `<!DOCTYPE html>
 <html lang="en">

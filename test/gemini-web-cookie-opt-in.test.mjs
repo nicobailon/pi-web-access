@@ -28,7 +28,11 @@ test("browser cookie access is disabled unless explicitly allowed", async () => 
 	assert.equal(child.stdout.trim(), "false");
 
 	await mkdir(join(home, ".pi"), { recursive: true });
-	await writeFile(join(home, ".pi", "web-search.json"), JSON.stringify({ allowBrowserCookies: true }) + "\n", "utf8");
+	await writeFile(
+		join(home, ".pi", "web-search.json"),
+		JSON.stringify({ allowBrowserCookies: true }) + "\n",
+		"utf8"
+	);
 
 	child = runCookieAccessCheck(home);
 	assert.equal(child.status, 0, child.stderr);

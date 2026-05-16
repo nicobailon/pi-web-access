@@ -64,13 +64,14 @@ function normalizeApiKey(value: unknown): string | null {
 
 function getApiKey(): string {
 	const config = loadConfig();
-	const key = normalizeApiKey(process.env.PERPLEXITY_API_KEY) ?? normalizeApiKey(config.perplexityApiKey);
+	const key =
+		normalizeApiKey(process.env.PERPLEXITY_API_KEY) ?? normalizeApiKey(config.perplexityApiKey);
 	if (!key) {
 		throw new Error(
 			"Perplexity API key not found. Either:\n" +
-			`  1. Create ${CONFIG_PATH} with { "perplexityApiKey": "your-key" }\n` +
-			"  2. Set PERPLEXITY_API_KEY environment variable\n" +
-			"Get a key at https://perplexity.ai/settings/api"
+				`  1. Create ${CONFIG_PATH} with { "perplexityApiKey": "your-key" }\n` +
+				"  2. Set PERPLEXITY_API_KEY environment variable\n" +
+				"Get a key at https://perplexity.ai/settings/api"
 		);
 	}
 	return key;
@@ -101,10 +102,15 @@ function validateDomainFilter(domains: string[]): string[] {
 
 export function isPerplexityAvailable(): boolean {
 	const config = loadConfig();
-	return !!(normalizeApiKey(process.env.PERPLEXITY_API_KEY) ?? normalizeApiKey(config.perplexityApiKey));
+	return !!(
+		normalizeApiKey(process.env.PERPLEXITY_API_KEY) ?? normalizeApiKey(config.perplexityApiKey)
+	);
 }
 
-export async function searchWithPerplexity(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
+export async function searchWithPerplexity(
+	query: string,
+	options: SearchOptions = {}
+): Promise<SearchResponse> {
 	checkRateLimit();
 
 	const activityId = activityMonitor.logStart({ type: "api", query });
@@ -173,7 +179,8 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 		throw new Error(`Perplexity API returned invalid JSON: ${message}`);
 	}
 
-	const answer = (data.choices as Array<{ message?: { content?: string } }>)?.[0]?.message?.content || "";
+	const answer =
+		(data.choices as Array<{ message?: { content?: string } }>)?.[0]?.message?.content || "";
 	const citations = Array.isArray(data.citations) ? data.citations : [];
 
 	const results: SearchResult[] = [];

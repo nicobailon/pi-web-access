@@ -27,7 +27,9 @@ export function isTimeoutError(err: unknown): boolean {
 	const name = (err as { name?: string }).name;
 	const code = (err as { code?: string }).code;
 	const message = (err as { message?: string }).message ?? "";
-	return name === "AbortError" || code === "ETIMEDOUT" || message.toLowerCase().includes("timed out");
+	return (
+		name === "AbortError" || code === "ETIMEDOUT" || message.toLowerCase().includes("timed out")
+	);
 }
 
 export function trimErrorText(text: string): string {

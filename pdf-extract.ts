@@ -1,6 +1,6 @@
 /**
  * PDF Content Extractor
- * 
+ *
  * Extracts text from PDF files and saves to markdown.
  * Uses unpdf (pdfjs-dist wrapper) for text extraction.
  */
@@ -11,16 +11,16 @@ import { join, basename } from "node:path";
 import { homedir } from "node:os";
 
 export interface PDFExtractResult {
-  title: string;
-  pages: number;
-  chars: number;
-  outputPath: string;
+	title: string;
+	pages: number;
+	chars: number;
+	outputPath: string;
 }
 
 export interface PDFExtractOptions {
-  maxPages?: number;
-  outputDir?: string;
-  filename?: string;
+	maxPages?: number;
+	outputDir?: string;
+	filename?: string;
 }
 
 const DEFAULT_MAX_PAGES = 100;
@@ -30,163 +30,162 @@ const DEFAULT_OUTPUT_DIR = join(homedir(), "Downloads");
  * Extract text from a PDF buffer and save to markdown file
  */
 export async function extractPDFToMarkdown(
-  buffer: ArrayBuffer,
-  url: string,
-  options: PDFExtractOptions = {}
+	buffer: ArrayBuffer,
+	url: string,
+	options: PDFExtractOptions = {}
 ): Promise<PDFExtractResult> {
-  const {
-    maxPages = DEFAULT_MAX_PAGES,
-    outputDir = DEFAULT_OUTPUT_DIR,
-    filename,
-  } = options;
+	const { maxPages = DEFAULT_MAX_PAGES, outputDir = DEFAULT_OUTPUT_DIR, filename } = options;
 
-  const safeMaxPages = Number.isFinite(maxPages)
-    ? Math.max(1, Math.floor(maxPages))
-    : DEFAULT_MAX_PAGES;
+	const safeMaxPages = Number.isFinite(maxPages)
+		? Math.max(1, Math.floor(maxPages))
+		: DEFAULT_MAX_PAGES;
 
-  const pdf = await getDocumentProxy(new Uint8Array(buffer));
-  const metadata = await pdf.getMetadata();
-  const metadataInfo = metadata.info && typeof metadata.info === "object"
-    ? metadata.info as Record<string, unknown>
-    : null;
+	const pdf = await getDocumentProxy(new Uint8Array(buffer));
+	const metadata = await pdf.getMetadata();
+	const metadataInfo =
+		metadata.info && typeof metadata.info === "object"
+			? (metadata.info as Record<string, unknown>)
+			: null;
 
-  // Extract title from metadata or URL
-  const metaTitle = typeof metadataInfo?.Title === "string" ? metadataInfo.Title : undefined;
-  const metaAuthor = typeof metadataInfo?.Author === "string" ? metadataInfo.Author : undefined;
-  const urlTitle = extractTitleFromURL(url);
-  const title = metaTitle?.trim() || urlTitle;
+	// Extract title from metadata or URL
+	const metaTitle = typeof metadataInfo?.Title === "string" ? metadataInfo.Title : undefined;
+	const metaAuthor = typeof metadataInfo?.Author === "string" ? metadataInfo.Author : undefined;
+	const urlTitle = extractTitleFromURL(url);
+	const title = metaTitle?.trim() || urlTitle;
 
-  // Determine pages to extract
-  const pagesToExtract = Math.min(pdf.numPages, safeMaxPages);
-  const truncated = pdf.numPages > safeMaxPages;
+	// Determine pages to extract
+	const pagesToExtract = Math.min(pdf.numPages, safeMaxPages);
+	const truncated = pdf.numPages > safeMaxPages;
 
-  // Extract text page by page for better structure
-  const pages: { pageNum: number; text: string }[] = [];
-  for (let i = 1; i <= pagesToExtract; i++) {
-    const page = await pdf.getPage(i);
-    const textContent = await page.getTextContent();
-    const pageText = textContent.items
-      .map((item: unknown) => {
-        const textItem = item as { str?: string };
-        return textItem.str || "";
-      })
-      .join(" ")
-      .replace(/\s+/g, " ")
-      .trim();
-    
-    if (pageText) {
-      pages.push({ pageNum: i, text: pageText });
-    }
-  }
+	// Extract text page by page for better structure
+	const pages: { pageNum: number; text: string }[] = [];
+	for (let i = 1; i <= pagesToExtract; i++) {
+		const page = await pdf.getPage(i);
+		const textContent = await page.getTextContent();
+		const pageText = textContent.items
+			.map((item: unknown) => {
+				const textItem = item as { str?: string };
+				return textItem.str || "";
+			})
+			.join(" ")
+			.replace(/\s+/g, " ")
+			.trim();
 
-  // Build markdown content
-  const lines: string[] = [];
-  
-  // Header with metadata
-  lines.push(`# ${title}`);
-  lines.push("");
-  lines.push(`> Source: ${url}`);
-  lines.push(`> Pages: ${pdf.numPages}${truncated ? ` (extracted first ${pagesToExtract})` : ""}`);
-  if (metaAuthor) {
-    lines.push(`> Author: ${metaAuthor}`);
-  }
-  lines.push("");
-  lines.push("---");
-  lines.push("");
+		if (pageText) {
+			pages.push({ pageNum: i, text: pageText });
+		}
+	}
 
-  // Content with page markers
-  for (let i = 0; i < pages.length; i++) {
-    if (i > 0) {
-      lines.push("");
-      lines.push(`<!-- Page ${pages[i].pageNum} -->`);
-      lines.push("");
-    }
-    lines.push(pages[i].text);
-  }
+	// Build markdown content
+	const lines: string[] = [];
 
-  if (truncated) {
-    lines.push("");
-    lines.push("---");
-    lines.push("");
-    lines.push(`*[Truncated: Only first ${pagesToExtract} of ${pdf.numPages} pages extracted]*`);
-  }
+	// Header with metadata
+	lines.push(`# ${title}`);
+	lines.push("");
+	lines.push(`> Source: ${url}`);
+	lines.push(
+		`> Pages: ${pdf.numPages}${truncated ? ` (extracted first ${pagesToExtract})` : ""}`
+	);
+	if (metaAuthor) {
+		lines.push(`> Author: ${metaAuthor}`);
+	}
+	lines.push("");
+	lines.push("---");
+	lines.push("");
 
-  const content = lines.join("\n");
+	// Content with page markers
+	for (let i = 0; i < pages.length; i++) {
+		if (i > 0) {
+			lines.push("");
+			lines.push(`<!-- Page ${pages[i].pageNum} -->`);
+			lines.push("");
+		}
+		lines.push(pages[i].text);
+	}
 
-  // Generate output filename
-  const outputFilename = filename || sanitizeFilename(title) + ".md";
-  const outputPath = join(outputDir, outputFilename);
+	if (truncated) {
+		lines.push("");
+		lines.push("---");
+		lines.push("");
+		lines.push(
+			`*[Truncated: Only first ${pagesToExtract} of ${pdf.numPages} pages extracted]*`
+		);
+	}
 
-  // Ensure output directory exists
-  await mkdir(outputDir, { recursive: true });
+	const content = lines.join("\n");
 
-  // Write file
-  await writeFile(outputPath, content, "utf-8");
+	// Generate output filename
+	const outputFilename = filename || sanitizeFilename(title) + ".md";
+	const outputPath = join(outputDir, outputFilename);
 
-  return {
-    title,
-    pages: pdf.numPages,
-    chars: content.length,
-    outputPath,
-  };
+	// Ensure output directory exists
+	await mkdir(outputDir, { recursive: true });
+
+	// Write file
+	await writeFile(outputPath, content, "utf-8");
+
+	return {
+		title,
+		pages: pdf.numPages,
+		chars: content.length,
+		outputPath,
+	};
 }
 
 /**
  * Extract a reasonable title from URL
  */
 function extractTitleFromURL(url: string): string {
-  try {
-    const urlObj = new URL(url);
-    const pathname = urlObj.pathname;
-    
-    // Get filename without extension
-    let filename = basename(pathname, ".pdf");
-    
-    // Handle arxiv URLs: /pdf/1706.03762 → "arxiv-1706.03762"
-    if (urlObj.hostname.includes("arxiv.org")) {
-      const match = pathname.match(/\/(?:pdf|abs)\/(\d+\.\d+)/);
-      if (match) {
-        filename = `arxiv-${match[1]}`;
-      }
-    }
-    
-    // Clean up filename
-    filename = filename
-      .replace(/[_-]+/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    
-    return filename || "document";
-  } catch {
-    return "document";
-  }
+	try {
+		const urlObj = new URL(url);
+		const pathname = urlObj.pathname;
+
+		// Get filename without extension
+		let filename = basename(pathname, ".pdf");
+
+		// Handle arxiv URLs: /pdf/1706.03762 → "arxiv-1706.03762"
+		if (urlObj.hostname.includes("arxiv.org")) {
+			const match = pathname.match(/\/(?:pdf|abs)\/(\d+\.\d+)/);
+			if (match) {
+				filename = `arxiv-${match[1]}`;
+			}
+		}
+
+		// Clean up filename
+		filename = filename.replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+
+		return filename || "document";
+	} catch {
+		return "document";
+	}
 }
 
 /**
  * Sanitize string for use as filename
  */
 function sanitizeFilename(name: string): string {
-  return name
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-    .slice(0, 100)
-    .replace(/^-|-$/g, "")
-    || "document";
+	return (
+		name
+			.toLowerCase()
+			.replace(/[^a-z0-9\s-]/g, "")
+			.replace(/\s+/g, "-")
+			.replace(/-+/g, "-")
+			.slice(0, 100)
+			.replace(/^-|-$/g, "") || "document"
+	);
 }
 
 /**
  * Check if URL or content-type indicates a PDF
  */
 export function isPDF(url: string, contentType?: string): boolean {
-  if (contentType?.includes("application/pdf")) {
-    return true;
-  }
-  try {
-    const urlObj = new URL(url);
-    return urlObj.pathname.toLowerCase().endsWith(".pdf");
-  } catch {
-    return false;
-  }
+	if (contentType?.includes("application/pdf")) {
+		return true;
+	}
+	try {
+		const urlObj = new URL(url);
+		return urlObj.pathname.toLowerCase().endsWith(".pdf");
+	} catch {
+		return false;
+	}
 }

@@ -1,45 +1,50 @@
 {
-  "name": "pi-web-access",
-  "version": "0.10.7",
-  "description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent",
-  "type": "module",
-  "scripts": {
-    "test": "node --test"
-  },
-  "keywords": [
-    "pi-package",
-    "pi",
-    "pi-coding-agent",
-    "extension",
-    "web-search",
-    "perplexity",
-    "fetch",
-    "scraping"
-  ],
-  "author": "Nico Bailon",
-  "license": "MIT",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/nicobailon/pi-web-access.git"
-  },
-  "bugs": {
-    "url": "https://github.com/nicobailon/pi-web-access/issues"
-  },
-  "homepage": "https://github.com/nicobailon/pi-web-access#readme",
-  "dependencies": {
-    "@mozilla/readability": "^0.5.0",
-    "linkedom": "^0.16.0",
-    "p-limit": "^6.1.0",
-    "turndown": "^7.2.0",
-    "unpdf": "^1.6.2"
-  },
-  "pi": {
-    "extensions": [
-      "./index.ts"
-    ],
-    "skills": [
-      "./skills"
-    ],
-    "video": "https://github.com/nicobailon/pi-web-access/raw/refs/heads/main/pi-web-fetch-demo.mp4"
-  }
+	"name": "pi-web-access",
+	"version": "0.10.7",
+	"description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent",
+	"type": "module",
+	"scripts": {
+		"format": "prettier --write '*.ts' '*.json' 'test/**/*.mjs'",
+		"format:check": "prettier --check '*.ts' '*.json' 'test/**/*.mjs'",
+		"test": "node --test"
+	},
+	"keywords": [
+		"pi-package",
+		"pi",
+		"pi-coding-agent",
+		"extension",
+		"web-search",
+		"perplexity",
+		"fetch",
+		"scraping"
+	],
+	"author": "Nico Bailon",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/nicobailon/pi-web-access.git"
+	},
+	"bugs": {
+		"url": "https://github.com/nicobailon/pi-web-access/issues"
+	},
+	"homepage": "https://github.com/nicobailon/pi-web-access#readme",
+	"dependencies": {
+		"@mozilla/readability": "^0.5.0",
+		"linkedom": "^0.16.0",
+		"p-limit": "^6.1.0",
+		"turndown": "^7.2.0",
+		"unpdf": "^1.6.2"
+	},
+	"pi": {
+		"extensions": [
+			"./index.ts"
+		],
+		"skills": [
+			"./skills"
+		],
+		"video": "https://github.com/nicobailon/pi-web-access/raw/refs/heads/main/pi-web-fetch-demo.mp4"
+	},
+	"devDependencies": {
+		"prettier": "^3.8.3"
+	}
 }
