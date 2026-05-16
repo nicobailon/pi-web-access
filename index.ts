@@ -750,7 +750,8 @@ export default function (pi: ExtensionAPI) {
 						: `## Query: "${query}"\n\n`;
 				}
 				if (error) output += `Error: ${error}\n\n`;
-				else if (results.length === 0) output += "No results found.\n\n";
+				else if (results.length === 0) output += answer ? `${answer}\n\n---\n
+**Sources:** None found.\n` : "No results found.\n\n";
 				else output += formatSearchSummary(results, answer) + "\n\n";
 			}
 		}
