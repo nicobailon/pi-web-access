@@ -8,7 +8,7 @@ import { extractPDFToMarkdown, isPDF } from "./pdf-extract.js";
 import { extractGitHub } from "./github-extract.js";
 import { isYouTubeURL, isYouTubeEnabled, extractYouTube, extractYouTubeFrame, extractYouTubeFrames, getYouTubeStreamInfo } from "./youtube-extract.js";
 import { extractWithFirecrawl } from "./firecrawl-fetch.js";
-import { stealthNavigate } from "./browser-stealth.js";
+import { extractViaBrowserStealth } from "./browser-stealth.js";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./video-extract.js";
 import { formatSeconds } from "./utils.js";
 
@@ -435,17 +435,7 @@ export async function extractContent(
 	if (signal?.aborted) return abortedResult(url);
 
 	// Try browser stealth as final fallback for JS-rendered or protected content
-	let stealthResult: ExtractedContent | null = null;
-	try {
-		const stealthOutput = await stealthNavigate(url, { signal, timeoutMs: 60000 });
-		if (stealthOutput.content && stealthOutput.content.length >= 50) {
-			stealthResult = { url, title: stealthOutput.title || "", content: stealthOutput.content, error: null };
-		}
-	} catch (err) {
-		if (!isAbortError(err)) {
-			// Browser stealth is optional, don't fail on it
-		}
-	}
+	const stealthResult = await extractViaBrowserStealth(url, signal, { timeoutMs: 60000 });
 
 	if (stealthResult) return stealthResult;
 	if (signal?.aborted) return abortedResult(url);

@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f
 
 **Video Understanding** — Point it at a YouTube video or local screen recording and ask questions about what's on screen. Full transcripts, visual descriptions, and frame extraction at exact timestamps.
 
-**Smart Fallbacks** — Every capability has a fallback chain. Search tries Exa, then Perplexity, then Firecrawl, then Gemini API. YouTube tries agent-browser-stealth when enabled, then API, then Perplexity. Blocked pages retry through Jina Reader and Firecrawl extraction. Something always works.
+**Smart Fallbacks** — Every capability has a fallback chain. Search tries Exa, then Perplexity, then Firecrawl, then agent-browser-stealth. YouTube tries agent-browser-stealth when enabled, then API, then Perplexity. Blocked pages retry through Jina Reader and Firecrawl extraction. Something always works.
 
 **GitHub Cloning** — GitHub URLs are cloned locally instead of scraped. The agent gets real file contents and a local path to explore, not rendered HTML.
 
@@ -39,7 +39,7 @@ Works immediately with no API keys — Exa MCP provides zero-config search. For 
 }
 ```
 
-In `auto` mode (default), `web_search` tries Exa first (direct API if keyed, MCP if not), then Perplexity, then Firecrawl (if keyed), then Gemini API.
+In `auto` mode (default), `web_search` tries Exa first (direct API if keyed, MCP if not), then Perplexity, then Firecrawl (if keyed), then agent-browser-stealth.
 
 Optional dependencies for video frame extraction:
 
@@ -48,7 +48,7 @@ brew install ffmpeg   # frame extraction, video thumbnails, local video duration
 brew install yt-dlp   # YouTube stream URLs for frame extraction
 ```
 
-Without these, video content analysis (transcripts, visual descriptions via Gemini) still works. The binaries are only needed for extracting individual frames as images.
+Without these, video content analysis (transcripts, visual descriptions via Gemini API) still works. The binaries are only needed for extracting individual frames as images.
 
 Requires Pi v0.37.3+.
 
@@ -75,7 +75,7 @@ fetch_content({ url: "/path/to/recording.mp4", prompt: "What error appears on sc
 
 ### web_search
 
-Search the web via Exa, Perplexity AI, or Gemini. Returns a synthesized answer with source citations.
+Search the web via Exa, Perplexity AI, or Firecrawl. Returns a synthesized answer with source citations.
 
 ```typescript
 web_search({ query: "rust async programming" })
@@ -94,7 +94,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
 | `numResults` | Results per query (default: 5, max: 20) |
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
-| `provider` | `auto` (default), `exa`, `perplexity`, `firecrawl`, or `gemini` |
+| `provider` | `auto` (default), `exa`, `perplexity`, or `firecrawl` |
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator) or `summary-review` (auto-generate summary draft after search completion, default) |
 
@@ -292,7 +292,9 @@ All config lives in `~/.pi/web-search.json`. Every field is optional.
 }
 ```
 
-`EXA_API_KEY`, `FIRECRAWL_API_KEY`, `GEMINI_API_KEY`, and `PERPLEXITY_API_KEY` env vars take precedence over config file values. `provider` sets the default search provider: `"exa"`, `"perplexity"`, `"firecrawl"`, or `"gemini"`. This is also updated automatically when you change the provider in the curator UI. `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft) or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`. `chromeProfile` overrides the Chromium profile directory used for browser-stealth cookie lookup. `allowBrowserCookies` enables browser cookie extraction; it defaults to `false` to avoid surprise macOS Keychain prompts. You can also set `PI_ALLOW_BROWSER_COOKIES=1`. `browserStealthEnabled` enables agent-browser-stealth for undetectable browser access. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `summaryModel` sets the default model used for generating summary drafts in the curator UI (e.g. `"anthropic/claude-haiku-4-5"` or `"openai-codex/gpt-5.3-codex-spark"`). Only models available in your model registry are eligible; if the configured model is unavailable, the default falls back to the built-in preference list. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
+`EXA_API_KEY`, `FIRECRAWL_API_KEY`, `GEMINI_API_KEY`, and `PERPLEXITY_API_KEY` env vars take precedence over config file values. `provider` sets the default search provider: `"exa"`, `"perplexity"`, `"firecrawl"`, or `"gemini"`. This is also updated automatically when you change the provider in the curator UI. `workflow` sets the default curator mode: `"summary-review"` (default, opens curator with auto-generated summary draft) or `"none"` (raw results, no curator). Overridden per-call via the `workflow` parameter on `web_search`, or toggled at runtime with `/curator`
+
+Note: `chromeProfile` and `allowBrowserCookies` are deprecated. Use `browserStealthEnabled` and `stealthLaunchMode` instead. `browserStealthEnabled` enables agent-browser-stealth for undetectable browser access. `searchModel` overrides the Gemini API model used by `web_search` without changing URL, YouTube, or video extraction defaults. `summaryModel` sets the default model used for generating summary drafts in the curator UI (e.g. `"anthropic/claude-haiku-4-5"` or `"openai-codex/gpt-5.3-codex-spark"`). Only models available in your model registry are eligible; if the configured model is unavailable, the default falls back to the built-in preference list. `curatorTimeoutSeconds` controls the initial curator idle timeout (default `20`, max `600`); users can still adjust the timer in the curator UI.
 
 ### Shortcuts
 
@@ -334,7 +336,7 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Content f
 | `exa.ts` | Exa.ai search provider — direct API and MCP proxy, budget tracking |
 | `code-search.ts` | Code/docs search via Exa MCP |
 | `extract.ts` | URL/file path routing, HTTP extraction, fallback orchestration |
-| `firecrawl-search.ts` | Search routing across Exa, Perplexity, Firecrawl, Gemini API |
+| `firecrawl-search.ts` | Search routing across Exa, Perplexity, and Firecrawl |
 | `firecrawl-fetch.ts` | Firecrawl URL content extraction |
 | `browser-stealth.ts` | agent-browser-stealth CLI wrapper for undetectable browser access |
 | `browser-config.ts` | Browser stealth profile and cookie opt-in config |

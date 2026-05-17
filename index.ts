@@ -36,9 +36,8 @@ import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.js";
 import { isExaAvailable } from "./exa.js";
 import { isGeminiApiAvailable } from "./gemini-api.js";
-import { stealthNavigate, stealthCookieExtract } from "./browser-stealth.js";
-import { isBrowserCookieAccessAllowed, getChromeProfile, isBrowserStealthEnabled } from "./browser-config.ts";
-import { getFirecrawlApiKey } from "./firecrawl-config.js";
+import { isBrowserStealthAvailable } from "./browser-config.js";
+import { isFirecrawlAvailable } from "./firecrawl-config.js";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
@@ -57,7 +56,6 @@ interface ProviderAvailability {
 	perplexity: boolean;
 	exa: boolean;
 	firecrawl: boolean;
-	gemini: boolean;
 }
 
 type WebSearchWorkflow = "none" | "summary-review";
@@ -103,7 +101,7 @@ const DEFAULT_CURATOR_TIMEOUT_SECONDS = 20;
 const MAX_CURATOR_TIMEOUT_SECONDS = 600;
 
 function isFirecrawlSearchAvailable(): boolean {
-	return getFirecrawlApiKey() !== null;
+	return isFirecrawlAvailable();
 }
 
 function loadConfigForExtensionInit(): WebSearchConfig {
@@ -120,7 +118,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "firecrawl" || normalized === "gemini") {
+	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "firecrawl") {
 		return normalized;
 	}
 	return "auto";
@@ -158,8 +156,7 @@ async function getProviderAvailability(): Promise<ProviderAvailability> {
 	return {
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
-		firecrawl: isFirecrawlSearchAvailable(),
-		gemini: isGeminiApiAvailable(),
+		firecrawl: isFirecrawlAvailable(),
 	};
 }
 
@@ -182,27 +179,21 @@ function resolveProvider(
 		if (available.exa) return "exa";
 		if (available.perplexity) return "perplexity";
 		if (available.firecrawl) return "firecrawl";
-		if (available.gemini) return "gemini";
 		return "exa";
 	}
 	if (provider === "exa" && !available.exa) {
 		if (available.perplexity) return "perplexity";
 		if (available.firecrawl) return "firecrawl";
-		return available.gemini ? "gemini" : "exa";
+		return "exa";
 	}
 	if (provider === "perplexity" && !available.perplexity) {
 		if (available.exa) return "exa";
 		if (available.firecrawl) return "firecrawl";
-		return available.gemini ? "gemini" : "perplexity";
+		return "perplexity";
 	}
 	if (provider === "firecrawl" && !available.firecrawl) {
 		if (available.exa) return "exa";
 		return available.perplexity ? "perplexity" : "firecrawl";
-	}
-	if (provider === "gemini" && !available.gemini) {
-		if (available.exa) return "exa";
-		if (available.firecrawl) return "firecrawl";
-		return available.perplexity ? "perplexity" : "gemini";
 	}
 	return provider;
 }
@@ -1103,7 +1094,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using Exa, Perplexity AI, or Firecrawl. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key), else Perplexity (needs key), else Firecrawl (needs key), else Gemini API (needs key).`,
+			`Search the web using Exa, Perplexity AI, or Firecrawl. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key), else Perplexity (needs key), else Firecrawl (needs key), .`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
 		parameters: Type.Object({
@@ -1116,7 +1107,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "perplexity", "firecrawl", "exa", "gemini"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "perplexity", "firecrawl", "exa"], { description: "Search provider (default: auto)" }),
 			),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review"], {
@@ -2257,27 +2248,26 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("browser-status", {
 		description: "Check browser stealth and cookie access status",
 		handler: async () => {
-			if (!isBrowserCookieAccessAllowed()) {
+			if (!isBrowserStealthAvailable()) {
 				pi.sendMessage({
 					customType: "browser-status",
-					content: [{ type: "text", text: "Browser cookie access is disabled. Set allowBrowserCookies: true in ~/.pi/web-search.json to enable it." }],
+					content: [{ type: "text", text: "Browser stealth is disabled. Set browserStealthEnabled: true in ~/.pi/web-search.json to enable it." }],
 					display: "tool",
-					details: { available: false, cookieAccessAllowed: false },
+					details: { available: false, stealthEnabled: false },
 				}, { triggerTurn: true, deliverAs: "followUp" });
 				return;
 			}
 
-			const chromeProfile = getChromeProfile();
-			const stealthEnabled = isBrowserStealthEnabled();
-			const text = stealthEnabled
-				? `Browser stealth is enabled${chromeProfile ? ` (profile: ${chromeProfile})` : "."}`
-				: "Browser stealth is disabled.";
+			const launchMode = getStealthLaunchMode();
+			const text = launchMode
+				? "Browser stealth is enabled (launch mode — uses standalone Chrome)."
+				: "Browser stealth is enabled (connects to your running Chrome).";
 
 			pi.sendMessage({
 				customType: "browser-status",
 				content: [{ type: "text", text }],
 				display: "tool",
-				details: { available: stealthEnabled, chromeProfile: chromeProfile ?? null },
+				details: { available: true, stealthEnabled: true, launchMode },
 			}, { triggerTurn: true, deliverAs: "followUp" });
 		},
 	});

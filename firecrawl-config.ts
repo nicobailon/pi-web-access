@@ -2,64 +2,62 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-export const FIRECRAWL_API_BASE = "https://api.firecrawl.dev/v1";
-
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+const DEFAULT_BASE_URL = "https://api.firecrawl.dev";
+const DEFAULT_TIMEOUT_MS = 30000;
 
-interface FirecrawlConfig {
+export interface FirecrawlConfig {
+	apiKey: string | null;
+	baseUrl: string;
+	timeoutMs: number;
+}
+
+interface FirecrawlConfigRaw {
 	firecrawlApiKey?: unknown;
 	firecrawlBaseUrl?: unknown;
+	firecrawlTimeoutMs?: unknown;
 }
 
 let cachedConfig: FirecrawlConfig | null = null;
 
-function loadConfig(): FirecrawlConfig {
-	if (cachedConfig) return cachedConfig;
+function loadConfig(): FirecrawlConfigRaw {
 	if (!existsSync(CONFIG_PATH)) {
-		cachedConfig = {};
-		return cachedConfig;
+		return {};
 	}
 
-	const raw = readFileSync(CONFIG_PATH, "utf-8");
+	const rawText = readFileSync(CONFIG_PATH, "utf-8");
 	try {
-		cachedConfig = JSON.parse(raw) as FirecrawlConfig;
-		return cachedConfig;
+		return JSON.parse(rawText) as FirecrawlConfigRaw;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
 }
 
-function normalizeApiKey(value: unknown): string | null {
-	if (typeof value !== "string") return null;
-	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : null;
-}
+export function getFirecrawlConfig(): FirecrawlConfig | null {
+	if (cachedConfig) return cachedConfig;
 
-export function getFirecrawlApiKey(): string | null {
-	return normalizeApiKey(process.env.FIRECRAWL_API_KEY) ?? normalizeApiKey(loadConfig().firecrawlApiKey);
-}
+	const envKey = process.env.FIRECRAWL_API_KEY?.trim() ?? null;
+	const config = loadConfig();
+	const configKey = typeof config.firecrawlApiKey === "string"
+		? config.firecrawlApiKey.trim()
+		: null;
+	const apiKey = envKey || configKey || null;
 
-export function getFirecrawlBaseUrl(): string {
-	const custom = normalizeApiKey(loadConfig().firecrawlBaseUrl);
-	if (custom) return custom.replace(/\/+$/, "");
-	return FIRECRAWL_API_BASE.replace("/v1", "");
+	if (!apiKey) return null;
+
+	const baseUrl = typeof config.firecrawlBaseUrl === "string" && config.firecrawlBaseUrl.trim().length > 0
+		? config.firecrawlBaseUrl.trim()
+		: DEFAULT_BASE_URL;
+
+	const timeoutMs = typeof config.firecrawlTimeoutMs === "number" && Number.isFinite(config.firecrawlTimeoutMs) && config.firecrawlTimeoutMs > 0
+		? config.firecrawlTimeoutMs
+		: DEFAULT_TIMEOUT_MS;
+
+	cachedConfig = { apiKey, baseUrl, timeoutMs };
+	return cachedConfig;
 }
 
 export function isFirecrawlAvailable(): boolean {
-	return getFirecrawlApiKey() !== null;
-}
-
-export interface FirecrawlConfigValue {
-	apiKey: string;
-	baseUrl: string;
-}
-
-export function getFirecrawlConfig(): FirecrawlConfigValue | null {
-	const apiKey = getFirecrawlApiKey();
-	if (!apiKey) return null;
-	return {
-		apiKey,
-		baseUrl: getFirecrawlBaseUrl(),
-	};
+	return getFirecrawlConfig() !== null;
 }
