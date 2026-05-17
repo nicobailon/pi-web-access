@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { StringEnum, complete, getModel, type Model } from "@mariozechner/pi-ai";
 import { fetchAllContent, type ExtractedContent } from "./extract.js";
 import { clearCloneCache } from "./github-extract.js";
-import { search, type SearchProvider, type ResolvedSearchProvider } from "./gemini-search.js";
+import { search, type SearchProvider, type ResolvedSearchProvider } from "./firecrawl-search.js";
 import { executeCodeSearch } from "./code-search.js";
 import type { SearchResult } from "./perplexity.js";
 import { formatSeconds } from "./utils.js";
@@ -36,8 +36,9 @@ import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.js";
 import { isExaAvailable } from "./exa.js";
 import { isGeminiApiAvailable } from "./gemini-api.js";
-import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
-import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
+import { stealthNavigate, stealthCookieExtract } from "./browser-stealth.js";
+import { isBrowserCookieAccessAllowed, getChromeProfile, isBrowserStealthEnabled } from "./browser-config.ts";
+import { getFirecrawlApiKey } from "./firecrawl-config.js";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
@@ -55,6 +56,7 @@ interface WebSearchConfig {
 interface ProviderAvailability {
 	perplexity: boolean;
 	exa: boolean;
+	firecrawl: boolean;
 	gemini: boolean;
 }
 
@@ -100,6 +102,10 @@ const DEFAULT_SHORTCUTS = { curate: "ctrl+shift+s", activity: "ctrl+shift+w" };
 const DEFAULT_CURATOR_TIMEOUT_SECONDS = 20;
 const MAX_CURATOR_TIMEOUT_SECONDS = 600;
 
+function isFirecrawlSearchAvailable(): boolean {
+	return getFirecrawlApiKey() !== null;
+}
+
 function loadConfigForExtensionInit(): WebSearchConfig {
 	try {
 		return loadConfig();
@@ -114,7 +120,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "gemini") {
+	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "firecrawl" || normalized === "gemini") {
 		return normalized;
 	}
 	return "auto";
@@ -149,11 +155,11 @@ function getCuratorTimeoutSeconds(): number {
 }
 
 async function getProviderAvailability(): Promise<ProviderAvailability> {
-	const geminiWebAvail = await isGeminiWebAvailable();
 	return {
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
-		gemini: isGeminiApiAvailable() || !!geminiWebAvail,
+		firecrawl: isFirecrawlSearchAvailable(),
+		gemini: isGeminiApiAvailable(),
 	};
 }
 
@@ -175,19 +181,27 @@ function resolveProvider(
 	if (provider === "auto") {
 		if (available.exa) return "exa";
 		if (available.perplexity) return "perplexity";
+		if (available.firecrawl) return "firecrawl";
 		if (available.gemini) return "gemini";
 		return "exa";
 	}
 	if (provider === "exa" && !available.exa) {
 		if (available.perplexity) return "perplexity";
+		if (available.firecrawl) return "firecrawl";
 		return available.gemini ? "gemini" : "exa";
 	}
 	if (provider === "perplexity" && !available.perplexity) {
 		if (available.exa) return "exa";
+		if (available.firecrawl) return "firecrawl";
 		return available.gemini ? "gemini" : "perplexity";
+	}
+	if (provider === "firecrawl" && !available.firecrawl) {
+		if (available.exa) return "exa";
+		return available.perplexity ? "perplexity" : "firecrawl";
 	}
 	if (provider === "gemini" && !available.gemini) {
 		if (available.exa) return "exa";
+		if (available.firecrawl) return "firecrawl";
 		return available.perplexity ? "perplexity" : "gemini";
 	}
 	return provider;
@@ -1089,7 +1103,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using Perplexity AI, Exa, or Gemini. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key, MCP fallback without), else Perplexity (needs key), else Gemini API (needs key), else Gemini Web (needs a supported Chromium-based browser login).`,
+			`Search the web using Exa, Perplexity AI, or Firecrawl. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: Exa (direct API with key), else Perplexity (needs key), else Firecrawl (needs key), else Gemini API (needs key).`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
 		parameters: Type.Object({
@@ -1102,7 +1116,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "perplexity", "gemini", "exa"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "perplexity", "firecrawl", "exa", "gemini"], { description: "Search provider (default: auto)" }),
 			),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review"], {
@@ -1574,7 +1588,7 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "fetch_content",
 		label: "Fetch Content",
-		description: "Fetch URL(s) and extract readable content as markdown. Supports YouTube video transcripts (with thumbnail), GitHub repository contents, and local video files (with frame thumbnail). Video frames can be extracted via timestamp/range or sampled across the entire video with frames alone. Falls back to Gemini for pages that block bots or fail Readability extraction. For YouTube and video files: ALWAYS pass the user's specific question via the prompt parameter — this directs the AI to focus on that aspect of the video, producing much better results than a generic extraction. Content is always stored and can be retrieved with get_search_content.",
+		description: "Fetch URL(s) and extract readable content as markdown. Supports YouTube video transcripts (with thumbnail), GitHub repository contents, and local video files (with frame thumbnail). Video frames can be extracted via timestamp/range or sampled across the entire video with frames alone. Falls back to Firecrawl for pages that block bots or fail Readability extraction, then agent-browser-stealth for JS-rendered content. For YouTube and video files: ALWAYS pass the user's specific question via the prompt parameter — this directs the AI to focus on that aspect of the video, producing much better results than a generic extraction. Content is always stored and can be retrieved with get_search_content.",
 		promptSnippet:
 			"Use to extract readable content from URL(s), YouTube, GitHub repos, or local videos. For video questions, pass the user's exact question in prompt.",
 		parameters: Type.Object({
@@ -2240,40 +2254,30 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("google-account", {
-		description: "Show the active Google account for Gemini Web",
+	pi.registerCommand("browser-status", {
+		description: "Check browser stealth and cookie access status",
 		handler: async () => {
 			if (!isBrowserCookieAccessAllowed()) {
 				pi.sendMessage({
-					customType: "google-account",
-					content: [{ type: "text", text: "Gemini Web browser cookie access is disabled. Set allowBrowserCookies: true in ~/.pi/web-search.json to enable it." }],
+					customType: "browser-status",
+					content: [{ type: "text", text: "Browser cookie access is disabled. Set allowBrowserCookies: true in ~/.pi/web-search.json to enable it." }],
 					display: "tool",
 					details: { available: false, cookieAccessAllowed: false },
 				}, { triggerTurn: true, deliverAs: "followUp" });
 				return;
 			}
 
-			const cookies = await isGeminiWebAvailable();
-			if (!cookies) {
-				pi.sendMessage({
-					customType: "google-account",
-					content: [{ type: "text", text: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser." }],
-					display: "tool",
-					details: { available: false, cookieAccessAllowed: true },
-				}, { triggerTurn: true, deliverAs: "followUp" });
-				return;
-			}
-
-			const email = await getActiveGoogleEmail(cookies);
-			const text = email
-				? `Active Google account: ${email}`
-				: "Gemini Web is available, but the active Google account could not be determined.";
+			const chromeProfile = getChromeProfile();
+			const stealthEnabled = isBrowserStealthEnabled();
+			const text = stealthEnabled
+				? `Browser stealth is enabled${chromeProfile ? ` (profile: ${chromeProfile})` : "."}`
+				: "Browser stealth is disabled.";
 
 			pi.sendMessage({
-				customType: "google-account",
+				customType: "browser-status",
 				content: [{ type: "text", text }],
 				display: "tool",
-				details: { available: true, email: email ?? null },
+				details: { available: stealthEnabled, chromeProfile: chromeProfile ?? null },
 			}, { triggerTurn: true, deliverAs: "followUp" });
 		},
 	});

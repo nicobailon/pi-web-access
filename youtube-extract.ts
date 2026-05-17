@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { activityMonitor } from "./activity.js";
-import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
+import { stealthNavigate } from "./browser-stealth.js";
 import { isGeminiApiAvailable, queryGeminiApiWithVideo } from "./gemini-api.js";
 import { searchWithPerplexity } from "./perplexity.js";
 import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.js";
@@ -103,7 +103,7 @@ export async function extractYouTube(
 
 	const activityId = activityMonitor.logStart({ type: "fetch", url: `youtube.com/${videoId ?? "video"}` });
 
-	const result = await tryGeminiWeb(canonicalUrl, effectivePrompt, effectiveModel, signal)
+	const result = await tryBrowserStealth(canonicalUrl, effectivePrompt, signal)
 		?? await tryGeminiApi(canonicalUrl, effectivePrompt, effectiveModel, signal)
 		?? await tryPerplexity(url, effectivePrompt, signal);
 
@@ -214,29 +214,21 @@ export async function fetchYouTubeThumbnail(videoId: string): Promise<{ data: st
 	}
 }
 
-async function tryGeminiWeb(
+async function tryBrowserStealth(
 	url: string,
 	prompt: string,
-	model: string,
 	signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
 	try {
-		const cookies = await isGeminiWebAvailable();
-		if (!cookies) return null;
-
 		if (signal?.aborted) return null;
 
-		const text = await queryWithCookies(prompt, cookies, {
-			youtubeUrl: url,
-			model,
-			signal,
-			timeoutMs: 120000,
-		});
+		const output = await stealthNavigate(url, { signal, timeoutMs: 120000 });
+		if (!output.content || output.content.length < 50) return null;
 
 		return {
 			url,
-			title: extractHeadingTitle(text) ?? "YouTube Video",
-			content: text,
+			title: output.title ?? "YouTube Video",
+			content: output.content,
 			error: null,
 		};
 	} catch (err) {

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const moduleUrl = new URL("../gemini-web-config.ts", import.meta.url).href;
+const moduleUrl = new URL("../browser-config.ts", import.meta.url).href;
 
 function runCookieAccessCheck(home, extraEnv = {}) {
 	const env = { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv };
