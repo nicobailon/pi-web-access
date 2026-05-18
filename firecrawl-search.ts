@@ -151,8 +151,10 @@ async function searchWithFirecrawl(
 		const results: SearchResult[] = [];
 		const seen = new Set<string>();
 
-		if (data.data.links?.length) {
-			for (const link of data.data.links) {
+		// Firecrawl returns data as a list of links directly
+		const links = Array.isArray(data.data) ? data.data : (data.data?.links ?? []);
+		if (links.length) {
+			for (const link of links) {
 				if (seen.has(link.url)) continue;
 				seen.add(link.url);
 
