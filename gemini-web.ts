@@ -366,7 +366,7 @@ function parseStreamGenerateResponse(rawText: string): GeminiWebResult {
 	const errorCode = extractErrorCode(responseJson);
 
 	const parts = Array.isArray(responseJson) ? responseJson : [];
-	let body: unknown = null;
+	let text = "";
 
 	for (let i = 0; i < parts.length; i++) {
 		const partBody = getNestedValue(parts[i], [2]);
@@ -374,22 +374,15 @@ function parseStreamGenerateResponse(rawText: string): GeminiWebResult {
 		try {
 			const parsed = JSON.parse(partBody);
 			const candidateList = getNestedValue(parsed, [4]);
-			if (Array.isArray(candidateList) && candidateList.length > 0) {
-				body = parsed;
-				break;
+			const firstCandidate = Array.isArray(candidateList) ? (candidateList as unknown[])[0] : undefined;
+			let candidateText = getNestedValue(firstCandidate, [1, 0]) as string | undefined;
+			if (candidateText && /^http:\/\/googleusercontent\.com\/card_content\/\d+/.test(candidateText)) {
+				const alt = getNestedValue(firstCandidate, [22, 0]) as string | undefined;
+				if (alt) candidateText = alt;
 			}
+			if (candidateText) text = candidateText;
 		} catch {
 		}
-	}
-
-	const candidateList = getNestedValue(body, [4]);
-	const firstCandidate = Array.isArray(candidateList) ? (candidateList as unknown[])[0] : undefined;
-	const textRaw = getNestedValue(firstCandidate, [1, 0]) as string | undefined;
-
-	let text = textRaw ?? "";
-	if (/^http:\/\/googleusercontent\.com\/card_content\/\d+/.test(text)) {
-		const alt = getNestedValue(firstCandidate, [22, 0]) as string | undefined;
-		if (alt) text = alt;
 	}
 
 	return { text, errorCode };
