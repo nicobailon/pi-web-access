@@ -241,7 +241,7 @@ export async function rerankWithFallback(
 			url: r.url,
 			title: r.title,
 			snippet: r.snippet,
-			score: cosineSimilarity(r.embedding!, queryEmbedding),
+			score: cosineSimilarityEmbeddings(r.embedding!, queryEmbedding),
 			reason: "Cosine similarity fallback",
 		}))
 		.sort((a, b) => b.score - a.score);
@@ -254,7 +254,7 @@ export async function rerankWithFallback(
  * @param b - Second embedding
  * @returns Cosine similarity score (-1 to 1)
  */
-function cosineSimilarity(a: number[], b: number[]): number {
+function cosineSimilarityEmbeddings(a: number[], b: number[]): number {
 	if (a.length !== b.length) return 0;
 
 	let dotProduct = 0;
