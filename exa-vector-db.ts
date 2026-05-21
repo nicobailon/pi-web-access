@@ -6,14 +6,13 @@
  * Binary quantization: 1024 float32 (4096 bytes) → 1024 bits (128 bytes) = 32x savings
  */
 
-import { Database } from "better-sqlite3";
+import Database from "better-sqlite3";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, mkdirSync } from "node:fs";
 import {
 	quantize,
 	dequantize,
-	cosineSimilarity,
 	binaryCosineSimilarity,
 	type QuantizationResult,
 } from "./binary-quantizer.js";
@@ -95,20 +94,6 @@ function decodeEmbeddingBinary(binary: Uint8Array | string): number[] {
 	}
 	const result = dequantize(bin, { dimensions: EMBEDDING_DIMENSIONS });
 	return Array.from(result);
-}
-
-/**
- * Cosine similarity between two vectors
- */
-function cosineSimilarity(a: number[], b: number[]): number {
-	if (a.length !== b.length) return 0;
-	let dotProduct = 0, normA = 0, normB = 0;
-	for (let i = 0; i < a.length; i++) {
-		dotProduct += a[i] * b[i];
-		normA += a[i] * a[i];
-		normB += b[i] * b[i];
-	}
-	return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB) || 1);
 }
 
 /**

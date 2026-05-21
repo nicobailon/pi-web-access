@@ -5,7 +5,7 @@
  *       binary quantization for memory efficiency, Gemma 4 for reranking
  */
 
-import { searchWithFirecrawl, semanticRerank } from "./firecrawl-search.js";
+import { search, semanticRerank } from "./firecrawl-search.js";
 import { searchWithSearXNG } from "./searxng-search.js";
 import { searchWithLightPanda } from "./lightpanda-search.js";
 import { generateEmbedding, queryLocalLlm } from "./local-llm-api.js";
@@ -19,8 +19,8 @@ import {
 } from "./exa-vector-db.js";
 import { extractContent, type ExtractedContent } from "./extract.js";
 import { generateSummaryDraft, type SummaryGenerationContext } from "./summary-review.js";
-import { extractVideoContent, type VideoContent } from "./video-extract.js";
-import { extractYouTubeContent, type YouTubeContent } from "./youtube-extract.js";
+import { extractVideo, type VideoContent } from "./video-extract.js";
+import { extractYouTube, type YouTubeContent } from "./youtube-extract.js";
 import { rerankWithGemma4, rerankWithFallback, type RerankResult } from "./reranker.js";
 import { benchmark, benchmarkReranking } from "./binary-quantizer.js";
 
@@ -73,7 +73,7 @@ export async function exaPipeline(
 	console.log("[Exa Pipeline] Step 1: Multi-source search...");
 	const [searxngResults, firecrawlResults] = await Promise.all([
 		searchWithSearXNG(query, { numResults: numResults / 2 }).catch(() => ({ results: [] })),
-		searchWithFirecrawl(query, { numResults: numResults / 2 }).catch(() => ({ results: [] })),
+		search(query, { numResults: numResults / 2, provider: "firecrawl" as const }).catch(() => ({ results: [] })),
 	]);
 
 	// Combine and deduplicate results
@@ -95,15 +95,15 @@ export async function exaPipeline(
 			// Check if it's a video URL
 			if (r.url.includes("youtube.com") || r.url.includes("youtu.be")) {
 				try {
-					const videoContent = await extractYouTubeContent(r.url);
-					return { ...r, content: videoContent.summary || videoContent.transcript || r.snippet || "" };
+					const videoResult = await extractYouTube(r.url);
+					return { ...r, content: videoResult.summary || videoResult.transcript || r.snippet || "" };
 				} catch {
 					return { ...r, content: r.snippet || "" };
 				}
 			} else if (r.url.includes(".mp4") || r.url.includes(".webm") || r.url.includes(".avi")) {
 				try {
-					const videoContent = await extractVideoContent(r.url);
-					return { ...r, content: videoContent.summary || videoContent.frames?.[0]?.description || r.snippet || "" };
+					const videoResult = await extractVideo(r.url);
+					return { ...r, content: videoResult.summary || videoResult.frames?.[0]?.description || r.snippet || "" };
 				} catch {
 					return { ...r, content: r.snippet || "" };
 				}
