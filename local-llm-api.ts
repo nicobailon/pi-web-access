@@ -1,6 +1,6 @@
 /**
  * Local LLM API - uses Qwen3.6 on port 8080
- * Supports text, image, and video understanding (Gemma 4 E2B multimodal)
+ * Supports text, image, and video understanding (Qwen3.6 multimodal)
  */
 
 const LLM_BASE = "http://localhost:8082/v1";

@@ -214,7 +214,7 @@ Requirements:
 - Focus on stock price outlook and trends for 2026`;
 
 			const summary = await queryLocalLlm(prompt, {
-				model: "gemma-4-E2B-it-UD-Q4_K_XL",
+				model: "qwen3.6-35B-A3B-UD-Q4_K_XL",
 				timeoutMs: 120000,
 				maxTokens: 2048,
 			});
@@ -226,7 +226,7 @@ Requirements:
 			console.log(`  Preview: ${summary.slice(0, 100)}...`);
 
 			logSummary({
-				model: "gemma-4-E2B-it-UD-Q4_K_XL",
+				model: "qwen3.6-35B-A3B-UD-Q4_K_XL",
 				durationMs: duration,
 				inputTokens: Math.ceil(searchData.results.length * 500 / 4),
 				outputTokens,
@@ -240,7 +240,7 @@ Requirements:
 			console.log(`  ✗ Error: ${message}`);
 
 			logSummary({
-				model: "gemma-4-E2B-it-UD-Q4_K_XL",
+				model: "qwen3.6-35B-A3B-UD-Q4_K_XL",
 				durationMs: duration,
 				inputTokens: 0,
 				outputTokens: 0,

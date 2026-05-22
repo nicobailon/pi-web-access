@@ -12,7 +12,7 @@ import {
     type QuantizationResult 
 } from './binary-quantizer.js';
 import { generateEmbedding, queryLocalLlm } from './local-llm-api.js';
-import { rerankWithGemma4, rerankWithFallback } from './reranker.js';
+import { rerankWithBge, rerankWithBge } from './reranker-bge.js';
 import { addDocument, searchSimilar, getDocumentCount, clearDocuments } from './exa-vector-db.js';
 
 interface BenchmarkResult {
@@ -198,9 +198,9 @@ async function main() {
     // LLM reranking benchmark
     console.log('   LLM Reranking Benchmark:');
     const rerankResults = await runBenchmark(
-        'rerankWithGemma4',
+        'rerankWithBge',
         async () => {
-            const results = await rerankWithGemma4(
+            const results = await rerankWithBge(
                 'test query',
                 TEST_DOCS.slice(0, 10).map((doc, i) => ({
                     url: `https://example.com/${i}`,

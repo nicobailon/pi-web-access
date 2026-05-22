@@ -40,7 +40,7 @@ for (const log of scrapeLogs) {
 }
 
 // 3. Analyze summary quality
-console.log("\n## 3. Summary Quality (Gemma 4)");
+console.log("\n## 3. Summary Quality (Qwen3.6)");
 const summaryLogs = logs.filter(l => l.type === "summary");
 for (const log of summaryLogs) {
   const s = log as any;
@@ -78,7 +78,7 @@ if (metrics.avgScrapeDuration > 1000) {
   console.log("- Scrape duration moderate (>1s) - Lightpanda is working, consider parallel scraping");
 }
 if (metrics.avgSummaryDuration > 30000) {
-  console.log("- Summary duration high (>30s) - Gemma 4 is slow, consider:");
+  console.log("- Summary duration high (>30s) - Qwen3.6 is slow, consider:");
   console.log("  * Using a smaller model variant");
   console.log("  * Reducing maxTokens");
   console.log("  * Implementing response streaming");
@@ -102,5 +102,5 @@ console.log("\n### Code Changes Needed:");
 console.log("1. Add parallel scraping for multiple URLs (concurrent Lightpanda requests)");
 console.log("2. Improve Lightpanda heading extraction (check --strip-mode flags)");
 console.log("3. Add retry logic for failed scrapes (Forbes, etc.)");
-console.log("4. Optimize Gemma 4 prompt for better source/caveat inclusion");
+console.log("4. Optimize Qwen3.6 prompt for better source/caveat inclusion");
 console.log("5. Implement response streaming for faster perceived latency");
