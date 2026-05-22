@@ -1,7 +1,7 @@
 /**
  * BGE Reranker - Fast ONNX-based reranking
  * Uses BAAI/bge-reranker-large for semantic reranking
- * Performance: 100+ pairs/sec (vs ~10/sec with Gemma-4-E2B)
+ * Performance: 100+ pairs/sec (vs ~10/sec with LLM-based)
  */
 
 import * as ort from 'onnxruntime-node';
