@@ -1,14 +1,14 @@
 /**
- * Exa.ai-style Semantic Search Pipeline (v2)
+ * Exa.ai-style Semantic Search Pipeline (v3)
  * Full pipeline: Crawl → Embed → Binary Quantize → Store → Search → Rerank → Summarize
  * Uses: LightPanda + SearXNG + Firecrawl for fetching, BGE-M3 for embeddings,
- *       binary quantization for memory efficiency, Gemma 4 for reranking
+ *       BGE-large for reranking, Qwen3.6 for summarization
  */
 
 import { search, semanticRerank } from "./firecrawl-search.js";
 import { searchWithSearXNG } from "./searxng-search.js";
 import { searchWithLightPanda } from "./lightpanda-search.js";
-import { generateEmbedding, queryLocalLlm } from "./local-llm-api.js";
+import { generateEmbedding, generateBatchedEmbeddings } from "./local-llm-api.js";
 import {
 	addDocument,
 	searchSimilar,
@@ -21,7 +21,7 @@ import { extractContent, type ExtractedContent } from "./extract.js";
 import { generateSummaryDraft, type SummaryGenerationContext } from "./summary-review.js";
 import { extractVideo, type VideoContent } from "./video-extract.js";
 import { extractYouTube, type YouTubeContent } from "./youtube-extract.js";
-import { rerankWithGemma4, rerankWithFallback, type RerankResult } from "./reranker.js";
+import { rerankWithBge, type RerankResult } from "./reranker-bge.js";
 import { benchmark, benchmarkReranking } from "./binary-quantizer.js";
 
 export interface ExaPipelineOptions {
@@ -31,9 +31,9 @@ export interface ExaPipelineOptions {
 	enableReranking?: boolean;
 	enableSummaries?: boolean;
 	enableIndexing?: boolean;
-	/** Use LLM reranking instead of cosine similarity (default: true) */
+	/** Use BGE reranking instead of cosine similarity (default: true) */
 	enableLLMReranking?: boolean;
-	/** Batch size for LLM reranking (default: 10) */
+	/** Batch size for BGE reranking (default: 50) */
 	rerankBatchSize?: number;
 }
 
@@ -88,7 +88,7 @@ export async function exaPipeline(
 		};
 	}
 
-	// Step 2: Extract content with multimodal support (Gemma 4)
+	// Step 2: Extract content with multimodal support (Qwen3.6)
 	console.log("[Exa Pipeline] Step 2: Extracting content with multimodal...");
 	const enrichedResults = await Promise.all(
 		uniqueResults.map(async (r) => {
@@ -161,9 +161,9 @@ export async function exaPipeline(
 		}));
 	}
 
-	// Step 6: Rerank (Exa.ai-style with Gemma 4)
+	// Step 6: Rerank (BGE-large reranker)
 	if (enableRerank && ranked.length > 0) {
-		console.log("[Exa Pipeline] Step 6: Reranking with Gemma-4-E2B...");
+		console.log("[Exa Pipeline] Step 6: Reranking with BGE-large...");
 		
 		// Convert to reranker format
 		const rerankResults = ranked.map((r) => ({
@@ -172,10 +172,10 @@ export async function exaPipeline(
 			snippet: r.content.slice(0, 500),
 		}));
 		
-		// Use LLM reranking if enabled, otherwise fallback to cosine similarity
+		// Use BGE reranking if enabled, otherwise fallback to cosine similarity
 		let reranked: RerankResult[];
 		if (enableLLMRerank) {
-			reranked = await rerankWithGemma4(query, rerankResults, { batchSize: rerankBatchSize });
+			reranked = await rerankWithBge(query, rerankResults, { batchSize: rerankBatchSize });
 		} else {
 			reranked = await rerankWithFallback(query, ranked as any, queryEmbedding, { batchSize: rerankBatchSize });
 		}

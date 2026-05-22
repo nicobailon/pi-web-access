@@ -6,6 +6,7 @@ import { getFirecrawlConfig, isFirecrawlAvailable } from "./firecrawl-config.js"
 import { isBrowserStealthAvailable } from "./browser-config.js";
 import { extractViaBrowserStealth } from "./browser-stealth.js";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
+import { generateEmbedding, cosineSimilarity } from "./local-llm-api.js";
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
 
 export type SearchProvider = "auto" | "perplexity" | "firecrawl" | "exa";
@@ -90,7 +91,7 @@ async function searchWithFirecrawl(
 	query: string,
 	options: SearchOptions = {},
 ): Promise<SearchResponse | null> {
-	const config = getFirecrawlConfig();
+	const config = await getFirecrawlConfig();
 	if (!config) return null;
 
 	const activityId = activityMonitor.logStart({ type: "api", query });
@@ -123,7 +124,7 @@ async function searchWithFirecrawl(
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				Authorization: `Bearer ${config.apiKey}`,
+				...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
 			},
 			body: JSON.stringify(body),
 			signal,
@@ -302,4 +303,63 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		"  3. Set FIRECRAWL_API_KEY in ~/.pi/web-search.json\n" +
 		"  4. Enable browserStealthEnabled in ~/.pi/web-search.json"
 	);
+}
+
+// === Exa.ai-style semantic search ===
+
+export interface SemanticSearchOptions extends SearchOptions {
+	enableSemanticReranking?: boolean;
+	enableEmbeddings?: boolean;
+}
+
+/**
+ * Semantic reranking using local Gemma 4 E2B embeddings
+ * Exa.ai-style: embed query + documents, compute cosine similarity, rank
+ */
+export async function semanticRerank(
+	query: string,
+	documents: SearchResult[],
+): Promise<Array<SearchResult & { score: number }>> {
+	try {
+		const queryEmbedding = await generateEmbedding(`Represent this query for searching documents: ${query}`, {
+			inputType: "search_query",
+		});
+
+		const results = await Promise.all(
+			documents.map(async (doc) => {
+				const docEmbedding = await generateEmbedding(`Represent this document for searching: ${doc.title} ${doc.snippet || ""}`);
+				const score = cosineSimilarity(queryEmbedding, docEmbedding);
+				return { ...doc, score };
+			}),
+		);
+
+		return results.sort((a, b) => b.score - a.score);
+	} catch {
+		// Fallback: return original order if embeddings fail
+		return documents.map((d, i) => ({ ...d, score: 1 - i / documents.length }));
+	}
+}
+
+/**
+ * Exa.ai-style semantic search: search + embed + rerank
+ */
+export async function semanticSearch(
+	query: string,
+	options: SemanticSearchOptions = {},
+): Promise<Array<SearchResult & { score: number }>> {
+	const numResults = options.numResults ?? 20;
+	const enableRerank = options.enableSemanticReranking ?? true;
+
+	// Step 1: Get search results from firecrawl
+	const firecrawlResult = await searchWithFirecrawl(query, { numResults });
+	if (!firecrawlResult || !firecrawlResult.results?.length) {
+		return [];
+	}
+
+	// Step 2: Semantic reranking (Exa.ai-style)
+	if (enableRerank) {
+		return semanticRerank(query, firecrawlResult.results);
+	}
+
+	return firecrawlResult.results.map((r, i) => ({ ...r, score: 1 - i / numResults }));
 }

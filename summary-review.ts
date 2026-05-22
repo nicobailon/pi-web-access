@@ -3,6 +3,7 @@ import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { QueryResultData } from "./storage.js";
 
 const PREFERRED_SUMMARY_MODELS = [
+	{ provider: "llama-server", id: "qwen3.6-35b" },
 	{ provider: "anthropic", id: "claude-haiku-4-5" },
 	{ provider: "openai-codex", id: "gpt-5.3-codex-spark" },
 ] as const;
@@ -210,6 +211,52 @@ async function resolveSummaryModel(
 	throw new Error(`No API key available for summary models: ${PREFERRED_SUMMARY_MODELS.map(c => `${c.provider}/${c.id}`).join(", ")}`);
 }
 
+// Model cache: dynamically loads and caches models for ~3 minutes to save resources
+interface ModelCacheEntry {
+	model: Model;
+	apiKey: string;
+	headers?: Record<string, string>;
+	expiresAt: number;
+}
+
+const modelCache = new Map<string, ModelCacheEntry>();
+const MODEL_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes
+
+/**
+ * Get or resolve a model from cache. If cached and not expired, returns cached entry.
+ * Otherwise resolves dynamically and caches for MODEL_CACHE_TTL_MS.
+ */
+export async function getCachedModel(
+	ctx: SummaryGenerationContext,
+	modelOverride?: string,
+): Promise<{ model: Model; apiKey: string; headers?: Record<string, string> }> {
+	const cacheKey = modelOverride ?? PREFERRED_SUMMARY_MODELS.map(c => `${c.provider}/${c.id}`).join(",");
+
+	const cached = modelCache.get(cacheKey);
+	if (cached && cached.expiresAt > Date.now()) {
+		return cached;
+	}
+
+	// Resolve dynamically
+	const resolved = await resolveSummaryModel(ctx, modelOverride);
+
+	// Cache with TTL
+	modelCache.set(cacheKey, {
+		...resolved,
+		expiresAt: Date.now() + MODEL_CACHE_TTL_MS,
+	});
+
+	// Clean up expired entries periodically
+	if (modelCache.size > 50) {
+		const now = Date.now();
+		for (const [key, entry] of modelCache) {
+			if (entry.expiresAt <= now) modelCache.delete(key);
+		}
+	}
+
+	return resolved;
+}
+
 function getTextFromContentPart(part: unknown): string {
 	if (!part || typeof part !== "object") return "";
 	const value = part as Record<string, unknown>;
@@ -236,7 +283,7 @@ export async function generateSummaryDraft(
 	}
 
 	const startedAt = Date.now();
-	const { model, apiKey, headers } = await resolveSummaryModel(ctx, modelOverride);
+	const { model, apiKey, headers } = await getCachedModel(ctx, modelOverride);
 	const prompt = buildSummaryPrompt(results, feedback);
 
 	const userMessage: Message = {

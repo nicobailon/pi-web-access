@@ -35,9 +35,10 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.js";
 import { isExaAvailable } from "./exa.js";
-import { isGeminiApiAvailable } from "./gemini-api.js";
+// Gemini API disabled - using local model instead
 import { isBrowserStealthAvailable } from "./browser-config.js";
 import { isFirecrawlAvailable } from "./firecrawl-config.js";
+import { exaPipeline, type ExaPipelineOptions, type ExaPipelineResult } from "./exa-pipeline.js";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 
@@ -2334,6 +2335,47 @@ export default function (pi: ExtensionAPI) {
 					}
 				}
 				ctx.ui.notify(info, "info");
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "exa_pipeline",
+		label: "Exa.ai Semantic Search",
+		description: "Full Exa.ai-style semantic search pipeline: crawl → embed → store → search → rerank → summarize",
+		promptSnippet:
+			"Use for Exa.ai-style semantic search with BGE-M3 embeddings and Gemma 4 summaries.",
+		parameters: Type.Object({
+			query: Type.String({ description: "Search query" }),
+			numResults: Type.Optional(Type.Number({ description: "Number of results (default: 20)" })),
+			enableVectorSearch: Type.Optional(Type.Boolean({ description: "Enable vector search (default: true)" })),
+			enableReranking: Type.Optional(Type.Boolean({ description: "Enable semantic reranking (default: true)" })),
+			enableSummaries: Type.Optional(Type.Boolean({ description: "Enable summaries (default: true)" })),
+			enableIndexing: Type.Optional(Type.Boolean({ description: "Enable indexing (default: true)" })),
+		}),
+
+		async execute(_toolCallId, params) {
+			const options: ExaPipelineOptions = {
+				query: params.query,
+				numResults: params.numResults ?? 20,
+				enableVectorSearch: params.enableVectorSearch ?? true,
+				enableReranking: params.enableReranking ?? true,
+				enableSummaries: params.enableSummaries ?? true,
+				enableIndexing: params.enableIndexing ?? true,
+			};
+
+			try {
+				const results = await exaPipeline(params.query, options);
+				return {
+					content: [{ type: "text", text: JSON.stringify(results, null, 2) }],
+					details: { results: results.results.length, vectorCount: results.vectorCount, time: results.processingTime },
+				};
+			} catch (error) {
+				const message = error instanceof Error ? error.message : String(error);
+				return {
+					content: [{ type: "text", text: `Error: ${message}` }],
+					details: { error: message },
+				};
 			}
 		},
 	});

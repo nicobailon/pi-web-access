@@ -1,0 +1,134 @@
+name: gemma-summarize-speed
+description: "Optimize Gemma 4 E2B UD-Q4 summarization speed while maintaining accuracy and intelligence for pi-web-access search results"
+
+goal: >
+  Reduce the latency of LLM-generated web search summaries using the local
+  Gemma 4 E2B UD-Q4 model (port 8082) without sacrificing factual accuracy,
+  completeness, or readability. The summaries are used as the final answer
+  shown to users after a web search completes.
+
+# ── Primary metric ──────────────────────────────────────────────────────
+metric:
+  primary:
+    name: judge_quality_score
+    type: judge
+    direction: maximize
+    target: 4.2
+
+  # Degenerate gates — cheap, fast, skip judge if any fail
+  degenerate_gates:
+    - metric: summary_length_chars
+      operator: ">="
+      threshold: 100          # reject summaries shorter than 100 chars
+    - metric: summary_length_chars
+      operator: "<="
+      threshold: 3000         # reject summaries longer than 3000 chars
+    - metric: has_sources_section
+      operator: "=="
+      threshold: true         # must include a Sources section
+    - metric: no_hallucination_flag
+      operator: "=="
+      threshold: false        # reject if hallucination detected
+
+  # Diagnostic metrics (logged, not gated)
+  diagnostics:
+    - latency_ms
+    - tokens_generated
+    - tps                  # tokens per second
+    - prompt_tokens
+    - total_tokens
+
+# ── Judge evaluation ────────────────────────────────────────────────────
+judge:
+  # Stratified sampling — check quality across different input types
+  stratification:
+    - bucket: "single_source"       # 1 search result (simplest case)
+      count: 5
+    - bucket: "few_sources"         # 2-4 results (typical)
+      count: 5
+    - bucket: "many_sources"        # 5+ results (stress test)
+      count: 5
+    - bucket: "conflicting"         # results with contradictory info
+      count: 3
+    - bucket: "weak_evidence"       # thin/no answer text, only links
+      count: 3
+  singleton_sample: 0               # no singleton evaluation needed here
+
+  rubric: |
+    Rate this search summary 1-5:
+
+    - **5 (Excellent)**: Accurate, complete, well-structured. Captures all key
+      findings from sources. Notes caveats/uncertainty appropriately. Concise
+      but comprehensive. Sources section present and correct.
+    - **4 (Good)**: Mostly accurate and complete. Minor omissions or slightly
+      verbose. Sources section present. No hallucinations.
+    - **3 (Acceptable)**: Covers main points but misses some details. May be
+      slightly inaccurate on minor points. Sources present but may be incomplete.
+    - **2 (Poor)**: Significant omissions, some inaccuracies, or hallucinations.
+      Sources section missing or wrong. Reads like a guess.
+    - **1 (Broken)**: Mostly hallucinated, completely wrong, or garbled.
+
+    Also report:
+    - hallucination (boolean): true if any claim is not supported by sources
+    - key_facts_covered (integer): how many distinct facts from sources are captured
+    - total_facts (integer): total distinct facts present in sources
+
+  scoring:
+    primary: judge_quality_score   # average of the 1-5 rating
+    secondary: [fact_coverage_ratio, hallucination_rate]
+
+  batch_size: 5
+  sample_seed: 42
+
+# ── Measurement ─────────────────────────────────────────────────────────
+measurement:
+  command: >
+    node -e "
+      const { queryLocalLlm } = require('./local-llm-api');
+      const fs = require('fs');
+      (async () => {
+        const samples = JSON.parse(fs.readFileSync('/dev/stdin','utf8'));
+        const results = [];
+        for (const s of samples) {
+          const t0 = Date.now();
+          const resp = await queryLocalLlm(s.prompt, { maxTokens: s.maxTokens, timeoutMs: 30000 });
+          const ms = Date.now() - t0;
+          const chars = resp.length;
+          const tokens = Math.ceil(chars / 4);
+          results.push(JSON.stringify({
+            latency_ms: ms,
+            tokens_generated: tokens,
+            tps: Math.round((tokens / (ms/1000))*10)/10,
+            summary_length_chars: chars,
+            has_sources_section: /sources?\s*:/i.test(resp),
+            no_hallucination_flag: false,
+            summary_text: resp
+          }));
+        }
+        console.log(JSON.stringify(results));
+      })()
+  working_directory: /home/john/pi-web-access
+
+# ── What can be changed ─────────────────────────────────────────────────
+scope:
+  mutable:
+    - local-llm-api.ts            # model params, maxTokens, timeout
+    - summary-review.ts           # prompt text, system instructions
+  immutable:
+    - firecrawl-config.ts
+    - firecrawl-fetch.ts
+    - firecrawl-search.ts
+    - extract.ts
+    - storage.ts
+    - node_modules/
+
+# ── Execution ───────────────────────────────────────────────────────────
+execution:
+  mode: serial                    # start serial for safety
+  max_concurrent: 1
+
+# ── Stopping ────────────────────────────────────────────────────────────
+stopping:
+  max_iterations: 8
+  max_hours: 2
+  plateau_iterations: 3

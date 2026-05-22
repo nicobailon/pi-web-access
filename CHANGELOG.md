@@ -4,6 +4,113 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **Exa.ai-style Semantic Search Pipeline** (`exa-pipeline.ts`)
+  - Full pipeline: Multi-source search → Content extraction → BGE-M3 embeddings → Vector DB → Semantic reranking → Gemma 4 summaries
+  - `exaPipeline()` function with configurable options (enableVectorSearch, enableReranking, enableSummaries, enableIndexing)
+  - `exa_pipeline` tool registered in `index.ts` for Pi agent integration
+
+- **BGE-M3 ONNX Embeddings** (`local-llm-api.ts`)
+  - 1024-dimensional embeddings using BAAI/bge-m3 ONNX model
+  - ~21 embeddings/sec on CPU with sentencepiece tokenizer
+  - L2 normalized embeddings for cosine similarity
+  - Caching for ONNX session (loaded once, reused)
+
+- **SQLite Vector Database** (`exa-vector-db.ts`)
+  - Stores documents with BGE-M3 embeddings
+  - Cosine similarity search with `searchSimilar()`
+  - Binary quantization for memory efficiency (32x savings)
+  - WAL mode for concurrent access
+  - Located at `~/.pi/exa-vector-db.sqlite`
+
+- **Semantic Reranking** (`firecrawl-search.ts`)
+  - `semanticRerank()` function for Exa.ai-style reranking
+  - Embeds query + documents, computes cosine similarity, ranks results
+  - Fallback to original order if embeddings fail
+
+- **SearXNG Search Integration** (`searxng-search.ts`)
+  - Privacy-respecting metasearch via SearXNG (port 8081)
+  - Aggregates Google, Bing, DuckDuckGo, Brave, Wikipedia
+  - Returns structured JSON with URLs, titles, snippets
+
+- **LightPanda Search Integration** (`lightpanda-search.ts`)
+  - Lightweight headless browser for JavaScript-heavy pages
+  - Falls back when other providers fail
+  - Configurable timeout and result count
+
+- **Video Understanding with Gemma 4** (`video-extract.ts`, `youtube-extract.ts`)
+  - Standalone frame extraction using FFmpeg/yt-dlp
+  - Frames sent to Gemma 4 E2B via `queryLocalLlmMultimodal()`
+  - YouTube: Extract stream URL → Extract frames → Send to Gemma 4 → Parse structured output
+  - Local videos: Detect file → Get duration → Extract frames → Send to Gemma 4 → Parse structured output
+  - Supports up to 60 frames (60 seconds at 1fps)
+  - Returns: title, summary, transcript with timestamps, visual descriptions
+
+- **Image Understanding with Gemma 4** (`extract.ts`)
+  - Image URLs detected by extension (.jpg, .png, .gif, .webp)
+  - Downloaded and converted to base64
+  - Sent to Gemma 4 E2B via `queryLocalLlmMultimodal()`
+  - Returns detailed description of image content
+
+- **Gemma 4 E2B Local LLM** (`local-llm-api.ts`)
+  - Runs on port 8082 with llama.cpp
+  - Model: `gemma-4-E2B-it-UD-Q4_K_XL.gguf` (3.0GB, Q4_K_XL quantization)
+  - Parameters: temperature=1.0, top_p=0.95, top_k=64
+  - Flash Attention: ON, Reasoning: Auto
+  - Performance: ~32 tok/s on CPU
+  - `queryLocalLlm()` for text generation
+  - `queryLocalLlmMultimodal()` for images/video
+  - `generateEmbedding()` for BGE-M3 embeddings
+  - `cosineSimilarity()` for semantic search
+
+- **Multimodal Content API** (`local-llm-api.ts`)
+  - `MultimodalContent` type with `text`, `image`, `video` variants
+  - Images: base64 or URL with mimeType
+  - Videos: URL (Gemma 4 supports up to 60s at 1fps)
+  - Best practice: Images before text in content array
+  - Token budgets: 70/140/280/560/1120 (lower for classification, higher for OCR)
+
+### Changed
+- **Search Integration Updated**
+  - Now uses SearXNG + Firecrawl in parallel for multi-source search
+  - Results combined and deduplicated before pipeline
+  - Low-quality results (snippet < 200 chars) filtered early
+
+- **Content Extraction Enhanced**
+  - Video URLs now use frame extraction + Gemma 4 multimodal
+  - Image URLs now use base64 + Gemma 4 multimodal
+  - Regular web pages use Firecrawl/LightPanda extraction
+
+- **Settings Fixed**
+  - Removed duplicate `npm:pi-web-access` from settings.json
+  - Now uses only `~/pi-web-access` (local development copy)
+  - Fixed tool conflicts between npm package and local copy
+
+### Fixed
+- **SearXNG Endpoint**
+  - Fixed firecrawl container SearXNG endpoint (port 8080 internal)
+  - SearXNG now accessible from firecrawl container
+
+- **Video Understanding**
+  - Removed Gemini API dependency
+  - Now uses standalone frame extraction + Gemma 4 E2B
+  - Frames extracted via FFmpeg/yt-dlp, sent as base64 images
+
+- **Embeddings**
+  - BGE-M3 ONNX model downloaded and working
+  - ~21 embeddings/sec on CPU (1024-dim)
+  - Sentencepiece tokenizer for proper tokenization
+
+### Architecture
+- See `ARCHITECTURE.md` for complete system architecture documentation
+- Core flow: Query → Multi-Source Search → Content Extraction → BGE-M3 Embeddings → Vector DB → Semantic Reranking → Gemma 4 Summaries
+- Video/Image: Standalone frame extraction → Gemma 4 E2B multimodal
+- Search: SearXNG + Firecrawl (parallel) → Combine → Exa Pipeline
+- Embeddings: BGE-M3 ONNX (1024-dim, ~21/sec)
+- Summaries: Gemma 4 E2B (~32 tok/s)
+
+## [0.10.7] - 2026-05-02
+
 ## [0.10.7] - 2026-05-02
 
 ### Added

@@ -548,7 +548,6 @@ async function extractViaHttp(
 		}
 
 		if (contentType.includes("application/octet-stream") ||
-			contentType.includes("image/") ||
 			contentType.includes("audio/") ||
 			contentType.includes("video/") ||
 			contentType.includes("application/zip")) {
@@ -559,6 +558,35 @@ async function extractViaHttp(
 				content: "",
 				error: `Unsupported content type: ${contentType.split(";")[0]}`,
 			};
+		}
+
+		// Image understanding - extract and analyze with Gemma 4 E2B
+		if (contentType.includes("image/")) {
+			try {
+				const buffer = await response.arrayBuffer();
+				const base64 = Buffer.from(buffer).toString("base64");
+				const mimeType = contentType.split(";")[0] || "image/jpeg";
+
+				// Use multimodal API for image understanding
+				const { queryLocalLlmMultimodal } = await import("./local-llm-api.js");
+				const contents: Array<{type: string; base64?: string; mimeType?: string; text?: string}> = [
+					{ type: "image", base64, mimeType },
+					{ type: "text", text: "Describe this image in detail, including objects, text, and context." },
+				];
+
+				const description = await queryLocalLlmMultimodal(contents as any, { maxTokens: 1024 });
+				activityMonitor.logComplete(activityId, response.status);
+				return {
+					url,
+					title: description.split("\n")[0] || "Image",
+					content: description,
+					error: null,
+				};
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				activityMonitor.logError(activityId, message);
+				return { url, title: "", content: "", error: `Image analysis failed: ${message}` };
+			}
 		}
 
 		const text = await response.text();

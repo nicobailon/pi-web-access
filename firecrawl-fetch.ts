@@ -31,7 +31,7 @@ export async function extractWithFirecrawl(
 	url: string,
 	signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
-	const config = getFirecrawlConfig();
+	const config = await getFirecrawlConfig();
 	if (!config) return null;
 
 	const activityId = activityMonitor.logStart({ type: "api", query: `firecrawl: ${url}` });
@@ -54,7 +54,7 @@ export async function extractWithFirecrawl(
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
-				Authorization: `Bearer ${config.apiKey}`,
+				...(config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {}),
 			},
 			body: JSON.stringify(body),
 			signal: fetchSignal,

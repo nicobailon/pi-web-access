@@ -4,12 +4,13 @@ import { readFile } from "node:fs/promises";
 import { resolve, extname, basename, join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { activityMonitor } from "./activity.js";
-import { queryGeminiApiWithVideo, getApiKey, API_BASE } from "./gemini-api.js";
+// Gemini API disabled - using local model instead
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.js";
 import { readExecError, trimErrorText, mapFfmpegError } from "./utils.js";
+import { queryLocalLlmMultimodal, type MultimodalContent } from "./local-llm-api.js";
 
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
-const UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta";
+// Gemini API disabled - using local LLM instead
 
 const DEFAULT_VIDEO_PROMPT = `Extract the complete content of this video. Include:
 1. Video title (infer from content if not explicit), duration
@@ -66,7 +67,7 @@ function normalizeMaxSizeMB(value: unknown, fallback: number): number {
 
 const VIDEO_CONFIG_DEFAULTS: VideoConfig = {
 	enabled: true,
-	preferredModel: "gemini-3-flash-preview",
+	preferredModel: "gemma-4-26b-a4b-it",
 	maxSizeMB: 50,
 };
 
@@ -166,7 +167,7 @@ export async function extractVideo(
 	const displayName = basename(info.absolutePath);
 	const activityId = activityMonitor.logStart({ type: "fetch", url: `video:${displayName}` });
 
-	const result = await tryVideoGeminiApi(info, effectivePrompt, effectiveModel, signal);
+	const result = await tryVideoLocalLlm(info, effectivePrompt, effectiveModel, signal);
 
 	if (result) {
 		const thumbnail = await extractVideoFrame(info.absolutePath);
@@ -224,124 +225,60 @@ export async function getLocalVideoDuration(filePath: string): Promise<number | 
 
 
 
-async function tryVideoGeminiApi(
+async function tryVideoLocalLlm(
 	info: VideoFileInfo,
 	prompt: string,
 	model: string,
 	signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
-	const apiKey = getApiKey();
-	if (!apiKey) return null;
 	if (signal?.aborted) return null;
 
-	let fileName: string | null = null;
+	// Extract frames from video (Gemma 4 supports up to 60s at 1fps)
+	const duration = await getLocalVideoDuration(info.absolutePath);
+	if (typeof duration !== "number") return null;
+
+	// Cap at 60 frames (60 seconds) for Gemma 4 video understanding
+	const maxFrames = Math.min(60, Math.floor(duration));
+	const timestamps = computeRangeTimestamps(0, Math.floor(duration), maxFrames);
+	const frames: VideoFrame[] = [];
+	for (const t of timestamps) {
+		const frame = await extractVideoFrame(info.absolutePath, t);
+		if (!("error" in frame)) frames.push(frame);
+	}
+
+	if (frames.length === 0) return null;
+
+	// Use multimodal API with image frames (Gemma 4 E2B native image support)
+	// Per Gemma 4 docs: use lower token budget (70-140) for video understanding
+	const contents = frames.map((f) => ({
+		type: "image" as const,
+		base64: f.data,
+		mimeType: f.mimeType,
+	}));
+
+	// Add text prompt after images (Gemma 4 best practice: images before text)
+	contents.push({
+		type: "text" as const,
+		text: prompt || DEFAULT_VIDEO_PROMPT,
+	});
+
 	try {
-		const uploaded = await uploadToFilesApi(info, apiKey, signal);
-		fileName = uploaded.name;
-
-		await pollFileState(fileName, apiKey, signal, 120000);
-
-		const text = await queryGeminiApiWithVideo(prompt, uploaded.uri, {
-			model,
-			mimeType: info.mimeType,
-			signal,
-			timeoutMs: 120000,
-		});
-
+		const text = await queryLocalLlmMultimodal(contents, { model, signal, timeoutMs: 120000, maxTokens: 2048 });
 		return {
 			url: info.absolutePath,
 			title: extractVideoTitle(text, info.absolutePath),
 			content: text,
 			error: null,
+			frames,
+			duration: duration ?? undefined,
 		};
 	} catch (err) {
 		if (shouldRethrow(err)) throw err;
 		return null;
-	} finally {
-		if (fileName) deleteGeminiFile(fileName, apiKey);
 	}
 }
 
-async function uploadToFilesApi(
-	info: VideoFileInfo,
-	apiKey: string,
-	signal?: AbortSignal,
-): Promise<{ name: string; uri: string }> {
-	const displayName = basename(info.absolutePath);
-
-	const initRes = await fetch(`${UPLOAD_BASE}/files`, {
-		method: "POST",
-		headers: {
-			"x-goog-api-key": apiKey,
-			"X-Goog-Upload-Protocol": "resumable",
-			"X-Goog-Upload-Command": "start",
-			"X-Goog-Upload-Header-Content-Length": String(info.sizeBytes),
-			"X-Goog-Upload-Header-Content-Type": info.mimeType,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({ file: { display_name: displayName } }),
-		signal,
-	});
-
-	if (!initRes.ok) {
-		const text = await initRes.text();
-		throw new Error(`File upload init failed: ${initRes.status} (${text.slice(0, 200)})`);
-	}
-
-	const uploadUrl = initRes.headers.get("x-goog-upload-url");
-	if (!uploadUrl) throw new Error("No upload URL in response headers");
-
-	const fileData = await readFile(info.absolutePath);
-	const uploadRes = await fetch(uploadUrl, {
-		method: "PUT",
-		headers: {
-			"Content-Length": String(info.sizeBytes),
-			"X-Goog-Upload-Offset": "0",
-			"X-Goog-Upload-Command": "upload, finalize",
-		},
-		body: fileData,
-		signal,
-	});
-
-	if (!uploadRes.ok) {
-		const text = await uploadRes.text();
-		throw new Error(`File upload failed: ${uploadRes.status} (${text.slice(0, 200)})`);
-	}
-
-	const result = await uploadRes.json() as { file: { name: string; uri: string } };
-	return result.file;
-}
-
-async function pollFileState(
-	fileName: string,
-	apiKey: string,
-	signal?: AbortSignal,
-	timeoutMs: number = 120000,
-): Promise<void> {
-	const deadline = Date.now() + timeoutMs;
-
-	while (Date.now() < deadline) {
-		if (signal?.aborted) throw new Error("Aborted");
-
-		const res = await fetch(`${API_BASE}/${fileName}?key=${apiKey}`, { signal });
-		if (!res.ok) throw new Error(`File state check failed: ${res.status}`);
-
-		const data = await res.json() as { state: string };
-		if (data.state === "ACTIVE") return;
-		if (data.state === "FAILED") throw new Error("File processing failed");
-
-		await new Promise(r => setTimeout(r, 5000));
-	}
-
-	throw new Error("File processing timed out");
-}
-
-function deleteGeminiFile(fileName: string, apiKey: string): void {
-	fetch(`${API_BASE}/${fileName}?key=${apiKey}`, { method: "DELETE" }).catch((err) => {
-		const message = err instanceof Error ? err.message : String(err);
-		console.error(`Failed to delete Gemini file ${fileName}: ${message}`);
-	});
-}
+// Gemini API functions removed - using local LLM with frames instead
 
 function extractVideoTitle(text: string, filePath: string): string {
 	return extractHeadingTitle(text) ?? basename(filePath, extname(filePath));

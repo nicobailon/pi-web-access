@@ -5,6 +5,7 @@ import type { SummaryMeta } from "./summary-review.js";
 const STALE_THRESHOLD_MS = 30000;
 const WATCHDOG_INTERVAL_MS = 5000;
 const MAX_BODY_SIZE = 64 * 1024;
+const HANG_THRESHOLD_MS = 60000; // Hard timeout: if no browser connection after 60s, cancel to prevent agent hang
 
 type ServerState = "SEARCHING" | "RESULT_SELECTION" | "COMPLETED";
 
@@ -170,7 +171,8 @@ export function startCuratorServer(
 		defaultSummaryModel,
 	} = options;
 	let browserConnected = false;
-	let lastHeartbeatAt = Date.now();
+	const sessionStartTime = Date.now();
+	let lastHeartbeatAt = sessionStartTime;
 	let completed = false;
 	let watchdog: NodeJS.Timeout | null = null;
 	let state: ServerState = "SEARCHING";
@@ -570,10 +572,18 @@ export function startCuratorServer(
 			const url = `http://localhost:${addr.port}/?session=${sessionToken}`;
 
 			watchdog = setInterval(() => {
-				if (completed || !browserConnected) return;
-				if (Date.now() - lastHeartbeatAt <= STALE_THRESHOLD_MS) return;
-				if (!markCompleted()) return;
-				setImmediate(() => callbacks.onCancel("stale"));
+				if (completed) return;
+				// Hard timeout: if browser never connected after HANG_THRESHOLD_MS, cancel to prevent agent hang
+				if (!browserConnected && Date.now() - sessionStartTime > HANG_THRESHOLD_MS) {
+					if (!markCompleted()) return;
+					setImmediate(() => callbacks.onCancel("stale"));
+					return;
+				}
+				// Stale timeout: browser connected but no heartbeat for STALE_THRESHOLD_MS
+				if (browserConnected && Date.now() - lastHeartbeatAt > STALE_THRESHOLD_MS) {
+					if (!markCompleted()) return;
+					setImmediate(() => callbacks.onCancel("stale"));
+				}
 			}, WATCHDOG_INTERVAL_MS);
 
 			resolve({

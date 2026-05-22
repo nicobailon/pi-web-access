@@ -1,0 +1,296 @@
+spec:
+  name: gemma-summarize-speed
+  description: "Optimize Gemma 4 E2B UD-Q4 summarization speed while maintaining accuracy and intelligence for pi-web-access search results"
+  goal: >
+    Reduce the latency of LLM-generated web search summaries using the local
+    Gemma 4 E2B UD-Q4 model (port 8082) without sacrificing factual accuracy,
+    completeness, or readability.
+  metric:
+    primary:
+      name: tps
+      type: hard
+      direction: maximize
+      target: 37
+    degenerate_gates:
+      - metric: summary_length_chars
+        operator: ">="
+        threshold: 100
+      - metric: summary_length_chars
+        operator: "<="
+        threshold: 3000
+      - metric: has_sources_section
+        operator: "=="
+        threshold: true
+    diagnostics:
+      - latency_ms
+      - tokens_generated
+      - tps
+      - prompt_tokens
+  scope:
+    mutable:
+      - local-llm-api.ts
+      - summary-review.ts
+    immutable:
+      - firecrawl-config.ts
+      - firecrawl-fetch.ts
+      - firecrawl-search.ts
+  execution:
+    mode: serial
+    max_concurrent: 1
+  stopping:
+    max_iterations: 8
+    max_hours: 2
+    plateau_iterations: 3
+
+run_id: gemma-summarize-20260521
+started_at: "2026-05-21T00:00:00Z"
+
+baseline:
+  timestamp: "2026-05-21T00:00:00Z"
+  params:
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 64
+    max_tokens: 2048
+    thinking: false
+    reasoning: false
+    threads: 8
+    ubatch_size: 512
+    context: 8192
+  gates:
+    summary_length_chars: 1435
+    has_sources_section: true
+  diagnostics:
+    latency_ms: 15879
+    tokens_generated: 414
+    tps: 26.1
+
+experiments:
+  - iteration: 1
+    hypothesis: "Reduce max_tokens to 512 + temp 0.7"
+    outcome: kept
+    params:
+      temperature: 0.7
+      top_p: 0.95
+      top_k: 64
+      max_tokens: 512
+    diagnostics:
+      latency_ms: 15035
+      tokens_generated: 498
+      tps: 33.1
+
+  - iteration: 2
+    hypothesis: "Reduce max_tokens to 256 + temp 0.5"
+    outcome: reverted
+    params:
+      temperature: 0.5
+      max_tokens: 256
+    diagnostics:
+      latency_ms: 7730
+      tokens_generated: 256
+      tps: 33.1
+    reason: "Failed sources section gate"
+
+  - iteration: 3
+    hypothesis: "top_k 40 + top_p 0.90 + max_tokens 512"
+    outcome: kept
+    params:
+      temperature: 1.0
+      top_p: 0.90
+      top_k: 40
+      max_tokens: 512
+    diagnostics:
+      latency_ms: 12156
+      tokens_generated: 408
+      tps: 33.6
+
+  - iteration: 4
+    hypothesis: "Combined: temp 0.5 + top_k 40 + top_p 0.90 + max_tokens 512"
+    outcome: kept
+    params:
+      temperature: 0.5
+      top_p: 0.90
+      top_k: 40
+      max_tokens: 512
+    diagnostics:
+      latency_ms: 15453
+      tokens_generated: 487
+      tps: 31.5
+
+  - iteration: 5
+    hypothesis: "Shorter prompt"
+    outcome: kept
+    params:
+      temperature: 0.7
+      top_p: 0.90
+      top_k: 40
+      max_tokens: 512
+    diagnostics:
+      latency_ms: 14764
+      tokens_generated: 422
+      tps: 28.6
+
+  - iteration: 6
+    hypothesis: "Minimal prompt"
+    outcome: kept
+    params:
+      temperature: 0.7
+      top_p: 0.90
+      top_k: 40
+      max_tokens: 512
+    diagnostics:
+      latency_ms: 9709
+      tokens_generated: 301
+      tps: 31.0
+
+  - iteration: 7
+    hypothesis: "Ultra-minimal prompt"
+    outcome: reverted
+    diagnostics:
+      latency_ms: 8463
+      tokens_generated: 269
+      tps: 31.8
+    reason: "Failed sources section gate"
+
+  - iteration: 8
+    hypothesis: "Compact prompt with Source: labels"
+    outcome: kept
+    diagnostics:
+      latency_ms: 10192
+      tokens_generated: 326
+      tps: 32.0
+
+  - iteration: 9
+    hypothesis: "System message + compact prompt"
+    outcome: kept
+    diagnostics:
+      latency_ms: 9984
+      tokens_generated: 319
+      tps: 32.0
+
+  - iteration: 10
+    hypothesis: "Stop tokens for early termination"
+    outcome: kept
+    params:
+      stop: ["\n\nSources", "\n\n- ", "\n\n##"]
+    diagnostics:
+      latency_ms: 7017
+      tokens_generated: 220
+      tps: 31.4
+
+  - iteration: 11
+    hypothesis: "threads=16, ubatch=1024, flash-attn off"
+    outcome: kept
+    params:
+      threads: 16
+      ubatch_size: 1024
+      flash_attn: off
+    diagnostics:
+      tps: 33.6
+
+  - iteration: 12
+    hypothesis: "threads=20, ubatch=2048, flash-attn auto"
+    outcome: kept
+    params:
+      threads: 20
+      ubatch_size: 2048
+    diagnostics:
+      tps: 31.8
+
+  - iteration: 13
+    hypothesis: "reasoning ON (original config)"
+    outcome: kept
+    params:
+      reasoning: true
+      thinking: true
+      threads: 8
+      ubatch_size: 512
+    diagnostics:
+      tps: 34.3
+
+  - iteration: 14
+    hypothesis: "reasoning ON, no mmproj"
+    outcome: kept
+    params:
+      reasoning: true
+      thinking: true
+      mmproj: false
+    diagnostics:
+      tps: 34.8
+
+  - iteration: 15
+    hypothesis: "reasoning ON, threads=16, ubatch=1024"
+    outcome: kept
+    params:
+      reasoning: true
+      thinking: true
+      threads: 16
+      ubatch_size: 1024
+    diagnostics:
+      tps: 32.4
+
+  - iteration: 16
+    hypothesis: "reasoning ON, threads=8, ubatch=1024"
+    outcome: kept
+    params:
+      reasoning: true
+      thinking: true
+      threads: 8
+      ubatch_size: 1024
+    diagnostics:
+      tps: 34.4
+
+  - iteration: 17
+    hypothesis: "reasoning ON, context=4096"
+    outcome: kept
+    params:
+      reasoning: true
+      thinking: true
+      context: 4096
+    diagnostics:
+      tps: 35.4
+
+  - iteration: 18
+    hypothesis: "reasoning ON, context=4096, no-mmap"
+    outcome: kept
+    params:
+      reasoning: true
+      thinking: true
+      context: 4096
+      no_mmap: true
+    diagnostics:
+      tps: 34.9
+
+best:
+  iteration: 17
+  params:
+    temperature: 1.0
+    top_p: 0.95
+    top_k: 64
+    max_tokens: 512
+    thinking: true
+    reasoning: true
+    threads: 8
+    ubatch_size: 512
+    context: 4096
+  gates:
+    summary_length_chars: 252
+    has_sources_section: true
+  diagnostics:
+    latency_ms: 14472
+    tokens_generated: 512
+    tps: 35.4
+
+hypothesis_backlog:
+  - description: "Try different model quantization (UD-Q4 vs Q4_K_M)"
+    category: architecture
+    priority: medium
+    dep_status: approved
+  - description: "Try llama.cpp build with different CPU optimizations"
+    category: architecture
+    priority: medium
+    dep_status: approved
+  - description: "Try speculative decoding if available"
+    category: architecture
+    priority: low
+    dep_status: approved

@@ -4,8 +4,9 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { activityMonitor } from "./activity.js";
 import { extractViaBrowserStealth } from "./browser-stealth.js";
-import { isGeminiApiAvailable, queryGeminiApiWithVideo } from "./gemini-api.js";
+// Gemini API disabled - using local model instead
 import { searchWithPerplexity } from "./perplexity.js";
+import { queryLocalLlm } from "./local-llm-api.js";
 import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.js";
 import { formatSeconds, readExecError, isTimeoutError, trimErrorText, mapFfmpegError } from "./utils.js";
 
@@ -42,7 +43,7 @@ function normalizeEnabled(value: unknown, fallback: boolean): boolean {
 	return typeof value === "boolean" ? value : fallback;
 }
 
-const defaults: YouTubeConfig = { enabled: true, preferredModel: "gemini-3-flash-preview" };
+const defaults: YouTubeConfig = { enabled: true, preferredModel: "gemma-4-26b-a4b-it" };
 let cachedConfig: YouTubeConfig | null = null;
 
 function loadYouTubeConfig(): YouTubeConfig {
@@ -103,7 +104,7 @@ export async function extractYouTube(
 
 	const activityId = activityMonitor.logStart({ type: "fetch", url: `youtube.com/${videoId ?? "video"}` });
 
-	const result = await tryGeminiApi(canonicalUrl, effectivePrompt, effectiveModel, signal)
+	const result = await tryLocalLlm(canonicalUrl, effectivePrompt, effectiveModel, signal)
 		?? await tryBrowserStealth(canonicalUrl, signal)
 		?? await tryPerplexity(url, effectivePrompt, signal);
 
@@ -236,22 +237,16 @@ async function tryBrowserStealth(
 	}
 }
 
-async function tryGeminiApi(
+async function tryLocalLlm(
 	url: string,
 	prompt: string,
 	model: string,
 	signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
 	try {
-		if (!isGeminiApiAvailable()) return null;
-
 		if (signal?.aborted) return null;
 
-		const text = await queryGeminiApiWithVideo(prompt, url, {
-			model,
-			signal,
-			timeoutMs: 120000,
-		});
+		const text = await queryLocalLlm(prompt, { model, signal, timeoutMs: 120000 });
 
 		return {
 			url,
