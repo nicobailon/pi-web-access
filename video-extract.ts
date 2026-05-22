@@ -67,7 +67,7 @@ function normalizeMaxSizeMB(value: unknown, fallback: number): number {
 
 const VIDEO_CONFIG_DEFAULTS: VideoConfig = {
 	enabled: true,
-	preferredModel: "gemma-4-26b-a4b-it",
+	preferredModel: "qwen3.6-35b",
 	maxSizeMB: 50,
 };
 
@@ -233,11 +233,11 @@ async function tryVideoLocalLlm(
 ): Promise<ExtractedContent | null> {
 	if (signal?.aborted) return null;
 
-	// Extract frames from video (Gemma 4 supports up to 60s at 1fps)
+	// Extract frames from video (Qwen3.6 supports up to 60s at 1fps)
 	const duration = await getLocalVideoDuration(info.absolutePath);
 	if (typeof duration !== "number") return null;
 
-	// Cap at 60 frames (60 seconds) for Gemma 4 video understanding
+	// Cap at 60 frames (60 seconds) for Qwen3.6 video understanding
 	const maxFrames = Math.min(60, Math.floor(duration));
 	const timestamps = computeRangeTimestamps(0, Math.floor(duration), maxFrames);
 	const frames: VideoFrame[] = [];
@@ -248,15 +248,15 @@ async function tryVideoLocalLlm(
 
 	if (frames.length === 0) return null;
 
-	// Use multimodal API with image frames (Gemma 4 E2B native image support)
-	// Per Gemma 4 docs: use lower token budget (70-140) for video understanding
+	// Use multimodal API with image frames (Qwen3.6 E2B native image support)
+	// Per Qwen3.6 docs: use lower token budget (70-140) for video understanding
 	const contents = frames.map((f) => ({
 		type: "image" as const,
 		base64: f.data,
 		mimeType: f.mimeType,
 	}));
 
-	// Add text prompt after images (Gemma 4 best practice: images before text)
+	// Add text prompt after images (Qwen3.6 best practice: images before text)
 	contents.push({
 		type: "text" as const,
 		text: prompt || DEFAULT_VIDEO_PROMPT,

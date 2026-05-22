@@ -1,7 +1,7 @@
 /**
  * Stock Price Pipeline Test
  * 
- * Tests the full Firecrawl → SearXNG → Lightpanda → Gemma 4 pipeline
+ * Tests the full Firecrawl → SearXNG → Lightpanda → Qwen3.6 pipeline
  * with observability logging at each stage.
  */
 
@@ -174,8 +174,8 @@ async function runPipeline() {
 		}
 	}
 
-	// Stage 3: LLM Summary with Gemma 4
-	console.log("\n=== Stage 3: Summary (Gemma 4) ===");
+	// Stage 3: LLM Summary with Qwen3.6
+	console.log("\n=== Stage 3: Summary (Qwen3.6) ===");
 	
 	// Create a mock summary context (we'll use the local LLM directly)
 	const mockContext: SummaryGenerationContext = {

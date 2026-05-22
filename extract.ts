@@ -560,7 +560,7 @@ async function extractViaHttp(
 			};
 		}
 
-		// Image understanding - extract and analyze with Gemma 4 E2B
+		// Image understanding - extract and analyze with Qwen3.6
 		if (contentType.includes("image/")) {
 			try {
 				const buffer = await response.arrayBuffer();

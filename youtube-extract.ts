@@ -43,7 +43,7 @@ function normalizeEnabled(value: unknown, fallback: boolean): boolean {
 	return typeof value === "boolean" ? value : fallback;
 }
 
-const defaults: YouTubeConfig = { enabled: true, preferredModel: "gemma-4-26b-a4b-it" };
+const defaults: YouTubeConfig = { enabled: true, preferredModel: "qwen3.6-35b" };
 let cachedConfig: YouTubeConfig | null = null;
 
 function loadYouTubeConfig(): YouTubeConfig {

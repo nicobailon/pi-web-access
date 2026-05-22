@@ -1,10 +1,10 @@
 /**
- * Local LLM API - uses gemma-4-E2B on port 8082
+ * Local LLM API - uses Qwen3.6 on port 8080
  * Supports text, image, and video understanding (Gemma 4 E2B multimodal)
  */
 
 const LLM_BASE = "http://localhost:8082/v1";
-const DEFAULT_MODEL = "gemma-4-E2B-it-UD-Q4_K_XL.gguf";
+const DEFAULT_MODEL = "qwen3.6-35B-A3B-UD-Q4_K_XL.gguf";
 
 export interface LocalLlmOptions {
 	model?: string;

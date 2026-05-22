@@ -2344,7 +2344,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Exa.ai Semantic Search",
 		description: "Full Exa.ai-style semantic search pipeline: crawl → embed → store → search → rerank → summarize",
 		promptSnippet:
-			"Use for Exa.ai-style semantic search with BGE-M3 embeddings and Gemma 4 summaries.",
+			"Use for Exa.ai-style semantic search with BGE-M3 embeddings and Qwen3.6 summaries.",
 		parameters: Type.Object({
 			query: Type.String({ description: "Search query" }),
 			numResults: Type.Optional(Type.Number({ description: "Number of results (default: 20)" })),

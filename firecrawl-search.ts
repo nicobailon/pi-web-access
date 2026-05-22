@@ -313,7 +313,7 @@ export interface SemanticSearchOptions extends SearchOptions {
 }
 
 /**
- * Semantic reranking using local Gemma 4 E2B embeddings
+ * Semantic reranking using local Qwen3.6 embeddings
  * Exa.ai-style: embed query + documents, compute cosine similarity, rank
  */
 export async function semanticRerank(

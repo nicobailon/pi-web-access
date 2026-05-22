@@ -4,7 +4,7 @@
  * Tracks three stages:
  * 1. Search results (SearXNG validation)
  * 2. Scraping results (Lightpanda rendering validation)
- * 3. LLM summary results (Gemma 4 quality validation)
+ * 3. LLM summary results (Qwen3.6 quality validation)
  */
 
 export interface SearchLogEntry {
@@ -386,7 +386,7 @@ export function formatReport(): string {
 
 	// Summary logs
 	if (logs.some(l => l.type === "summary")) {
-		lines.push("## Summary Results (Gemma 4)\n");
+		lines.push("## Summary Results (Qwen3.6)\n");
 		const summaryLogs = logs.filter(l => l.type === "summary") as SummaryLogEntry[];
 		for (const log of summaryLogs) {
 			const status = log.error ? "✗" : "✓";

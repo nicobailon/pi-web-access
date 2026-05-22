@@ -53,7 +53,7 @@ export interface ExaPipelineResult {
 /**
  * Full Exa.ai-style pipeline (v2)
  * Uses: LightPanda + SearXNG + Firecrawl for fetching, BGE-M3 for embeddings,
- *       binary quantization for memory efficiency, Gemma 4 for reranking
+ *       binary quantization for memory efficiency, BGE-large for reranking
  */
 export async function exaPipeline(
 	query: string,
@@ -190,9 +190,9 @@ export async function exaPipeline(
 		});
 	}
 
-	// Step 7: Summarize with Gemma 4
+	// Step 7: Summarize with Qwen3.6
 	if (enableSummaries && ctx) {
-		console.log("[Exa Pipeline] Step 7: Generating summaries with Gemma 4...");
+		console.log("[Exa Pipeline] Step 7: Generating summaries with Qwen3.6...");
 		const summaryResults = await Promise.all(
 			ranked.slice(0, 10).map(async (r) => {
 				try {
