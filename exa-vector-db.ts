@@ -1,26 +1,22 @@
 /**
  * Exa.ai-style Vector Database
- * SQLite + binary quantization for memory-efficient semantic search
- * Nomic Embed v1.5 embeddings (256-dim Matryoshka) with binary quantization
+ * SQLite + full precision embeddings for semantic search
+ * Nomic Embed v1.5 embeddings (256-dim Matryoshka)
  * 
- * Binary quantization: 256 float32 (1024 bytes) → 256 bits (32 bytes) = 32x savings
- * 1M docs = 1GB RAM (vs 4GB for BGE-M3 float32)
+ * Full precision: 256 float32 (1024 bytes) per embedding
+ * 1M docs = 1GB RAM
+ * Plan explicitly recommends full precision over binary quantization
+ * to avoid the 15-30% accuracy loss from binary quantization
  */
 
 import Database from "better-sqlite3";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { existsSync, mkdirSync } from "node:fs";
-import {
-	quantize,
-	dequantize,
-	binaryCosineSimilarity,
-	type QuantizationResult,
-} from "./binary-quantizer.js";
 
 const DB_PATH = join(homedir(), ".pi", "exa-vector-db.sqlite");
 const EMBEDDING_DIMENSIONS = 256; // Nomic Embed v1.5 truncated to 256-dim
-const BYTES_PER_EMBEDDING = Math.ceil(EMBEDDING_DIMENSIONS / 8); // 32 bytes
+const BYTES_PER_EMBEDDING = EMBEDDING_DIMENSIONS * 4; // 1024 bytes (full precision)
 
 export interface Document {
 	id: string;
@@ -28,7 +24,6 @@ export interface Document {
 	title: string;
 	content: string;
 	embedding: number[];
-	embeddingBinary?: Uint8Array; // Binary quantized version (optional, computed on demand)
 	metadata?: Record<string, unknown>;
 }
 
@@ -54,7 +49,7 @@ function initDB(): Database {
 			url TEXT NOT NULL UNIQUE,
 			title TEXT NOT NULL,
 			content TEXT NOT NULL,
-			embedding_binary BLOB NOT NULL,  -- 32 bytes per embedding (binary quantized)
+			embedding BLOB NOT NULL,  -- 1024 bytes per embedding (full precision float32)
 			metadata TEXT,
 			created_at INTEGER DEFAULT (strftime('%s', 'now'))
 		);
@@ -73,65 +68,50 @@ function getDB(): Database {
 }
 
 /**
- * Encode embedding to binary quantized format
- * Converts float32 (1024 bytes) to binary (32 bytes) = 32x compression
+ * Convert number[] to Float32Array for storage
  */
-function encodeEmbeddingBinary(embedding: number[]): Uint8Array {
+function embeddingToBlob(embedding: number[]): Buffer {
 	const float32Array = new Float32Array(embedding);
-	const result = quantize(float32Array, { dimensions: EMBEDDING_DIMENSIONS });
-	return result.binary;
+	return Buffer.from(float32Array.buffer, float32Array.byteOffset, float32Array.byteLength);
 }
 
 /**
- * Decode binary quantized embedding back to float32
+ * Convert stored blob back to number[]
  */
-function decodeEmbeddingBinary(binary: Uint8Array | string): number[] {
-	// Handle both Uint8Array and string (from SQLite)
-	let bin: Uint8Array;
-	if (typeof binary === "string") {
-		bin = new Uint8Array(binary.split("\0").map((c) => c.charCodeAt(0)));
-	} else {
-		bin = binary;
-	}
-	const result = dequantize(bin, { dimensions: EMBEDDING_DIMENSIONS });
-	return Array.from(result);
+function blobToEmbedding(blob: Buffer): number[] {
+	const float32Array = new Float32Array(blob.buffer, blob.byteOffset, blob.byteLength);
+	return Array.from(float32Array);
 }
 
 /**
- * Add document to vector DB with binary quantized embedding
+ * Add document to vector DB with full precision embedding
  */
 export function addDocument(doc: Document): void {
 	const d = getDB();
 
-	// Convert to binary quantized format
-	const binaryEmbedding = encodeEmbeddingBinary(doc.embedding);
-
 	d.prepare(`
-		INSERT OR REPLACE INTO documents (id, url, title, content, embedding_binary, metadata)
+		INSERT OR REPLACE INTO documents (id, url, title, content, embedding, metadata)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`).run(
 		doc.id,
 		doc.url,
 		doc.title,
 		doc.content,
-		Buffer.from(binaryEmbedding.buffer, binaryEmbedding.byteOffset, binaryEmbedding.byteLength),
+		embeddingToBlob(doc.embedding),
 		JSON.stringify(doc.metadata || {}),
 	);
 }
 
 /**
- * Search by semantic similarity using binary cosine similarity
- * Uses Hamming distance approximation for fast binary comparison
+ * Search by semantic similarity using cosine similarity
+ * Computes cosine similarity between query embedding and stored embeddings
  */
 export function searchSimilar(queryEmbedding: number[], limit: number = 10): SearchResult[] {
 	const d = getDB();
 
-	// Convert query to binary
-	const queryBinary = encodeEmbeddingBinary(queryEmbedding);
-
 	// Get recent documents (Exa.ai uses clustering; we use recency as proxy)
 	const rows = d.prepare(`
-		SELECT id, url, title, content, embedding_binary, metadata
+		SELECT id, url, title, content, embedding, metadata
 		FROM documents
 		ORDER BY created_at DESC
 		LIMIT 1000
@@ -140,14 +120,14 @@ export function searchSimilar(queryEmbedding: number[], limit: number = 10): Sea
 		url: string;
 		title: string;
 		content: string;
-		embedding_binary: Buffer;
+		embedding: Buffer;
 		metadata: string;
 	}>;
 
-	// Compute binary cosine similarity for each document
+	// Compute cosine similarity for each document
 	const results: SearchResult[] = rows.map((row) => {
-		const rowBinary = new Uint8Array(row.embedding_binary.buffer, row.embedding_binary.byteOffset, row.embedding_binary.byteLength);
-		const similarityResult = binaryCosineSimilarity(queryBinary, rowBinary, { dimensions: EMBEDDING_DIMENSIONS });
+		const docEmbedding = blobToEmbedding(row.embedding);
+		const similarity = cosineSimilarity(queryEmbedding, docEmbedding);
 		
 		return {
 			document: {
@@ -155,15 +135,36 @@ export function searchSimilar(queryEmbedding: number[], limit: number = 10): Sea
 				url: row.url,
 				title: row.title,
 				content: row.content,
-				embedding: decodeEmbeddingBinary(rowBinary),
+				embedding: docEmbedding,
 				metadata: JSON.parse(row.metadata),
 			},
-			similarity: similarityResult.similarity,
+			similarity,
 		};
 	});
 
 	// Sort by similarity and return top results
 	return results.sort((a, b) => b.similarity - a.similarity).slice(0, limit);
+}
+
+/**
+ * Compute cosine similarity between two embeddings
+ */
+function cosineSimilarity(a: number[], b: number[]): number {
+	let dotProduct = 0;
+	let normA = 0;
+	let normB = 0;
+
+	for (let i = 0; i < a.length; i++) {
+		dotProduct += a[i] * b[i];
+		normA += a[i] * a[i];
+		normB += b[i] * b[i];
+	}
+
+	normA = Math.sqrt(normA);
+	normB = Math.sqrt(normB);
+
+	if (normA === 0 || normB === 0) return 0;
+	return dotProduct / (normA * normB);
 }
 
 /**
