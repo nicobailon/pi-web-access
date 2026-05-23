@@ -2335,7 +2335,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Exa.ai Semantic Search",
 		description: "Self-hosted Exa.ai-style semantic search: Nomic Embed v1.5 (256-dim) + jina-reranker + Qwen3.6 summaries. Fully local, zero API keys.",
 		promptSnippet:
-			"Use for self-hosted Exa.ai-style semantic search with Nomic Embed v1.5 (256-dim Matryoshka) and Qwen3.6 summaries. Fully local, zero API keys."
+			"Use for self-hosted Exa.ai-style semantic search with Nomic Embed v1.5 (256-dim Matryoshka) and Qwen3.6 summaries. Fully local, zero API keys.",
 		parameters: Type.Object({
 			query: Type.String({ description: "Search query" }),
 			numResults: Type.Optional(Type.Number({ description: "Number of results (default: 20)" })),
