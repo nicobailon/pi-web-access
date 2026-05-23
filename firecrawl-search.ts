@@ -5,11 +5,9 @@ import { activityMonitor } from "./activity.js";
 import { getFirecrawlConfig, isFirecrawlAvailable } from "./firecrawl-config.js";
 import { isBrowserStealthAvailable } from "./browser-config.js";
 import { extractViaBrowserStealth } from "./browser-stealth.js";
-import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
-import { generateEmbedding, cosineSimilarity } from "./local-llm-api.js";
-import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
+import { generateNomicEmbedding, cosineSimilarity } from "./embedding-nomic.js";
 
-export type SearchProvider = "auto" | "perplexity" | "firecrawl" | "exa";
+export type SearchProvider = "auto" | "firecrawl" | "searxng";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -59,7 +57,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return normalized === "auto" || normalized === "perplexity" || normalized === "firecrawl" || normalized === "exa"
+	return normalized === "auto" || normalized === "firecrawl" || normalized === "searxng"
 		? normalized
 		: "auto";
 }
@@ -184,7 +182,7 @@ async function searchWithFirecrawl(
 	}
 }
 
-// Browser stealth search (for Gemini Web fallback)
+// Browser stealth search (for JS-rendered content)
 async function searchWithBrowserStealth(
 	query: string,
 	options: SearchOptions = {},
@@ -216,11 +214,6 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	const config = getSearchConfig();
 	const provider = options.provider ?? config.searchProvider;
 
-	if (provider === "perplexity") {
-		const result = await searchWithPerplexity(query, options);
-		return { ...result, provider: "perplexity" };
-	}
-
 	if (provider === "firecrawl") {
 		const result = await searchWithFirecrawl(query, options);
 		if (result) return { ...result, provider: "firecrawl" };
@@ -229,48 +222,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		);
 	}
 
-	if (provider === "exa") {
-		const exaApiKeyConfigured = hasExaApiKey();
-		try {
-			const result = await searchWithExa(query, options);
-			if (result && "exhausted" in result) {
-				throw new Error(
-					"Exa monthly free tier exhausted (1,000 requests). Resets next month.\n" +
-					"  Use provider: 'perplexity' or 'firecrawl', or upgrade at exa.ai/pricing"
-				);
-			}
-			if (result && "answer" in result) return { ...result, provider: "exa" };
-			if (exaApiKeyConfigured) {
-				throw new Error("Exa search returned no results.");
-			}
-		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			if (message.toLowerCase().includes("abort")) throw err;
-			if (exaApiKeyConfigured) throw err;
-		}
-	}
-
 	const fallbackErrors: string[] = [];
-
-	if (provider !== "exa" && isExaAvailable()) {
-		try {
-			const result = await searchWithExa(query, options);
-			if (result && "answer" in result) return { ...result, provider: "exa" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
-		}
-	}
-
-	if (isPerplexityAvailable()) {
-		try {
-			const result = await searchWithPerplexity(query, options);
-			return { ...result, provider: "perplexity" };
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
-		}
-	}
 
 	if (isFirecrawlAvailable()) {
 		try {
@@ -298,14 +250,12 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 
 	throw new Error(
 		"No search provider available. Either:\n" +
-		"  1. Set perplexityApiKey in ~/.pi/web-search.json\n" +
-		"  2. Set EXA_API_KEY (or exaApiKey) in ~/.pi/web-search.json\n" +
-		"  3. Set FIRECRAWL_API_KEY in ~/.pi/web-search.json\n" +
-		"  4. Enable browserStealthEnabled in ~/.pi/web-search.json"
+		"  1. Set FIRECRAWL_API_KEY in ~/.pi/web-search.json\n" +
+		"  2. Enable browserStealthEnabled in ~/.pi/web-search.json"
 	);
 }
 
-// === Exa.ai-style semantic search ===
+// === Semantic search with Nomic Embed v1.5 ===
 
 export interface SemanticSearchOptions extends SearchOptions {
 	enableSemanticReranking?: boolean;
@@ -313,7 +263,7 @@ export interface SemanticSearchOptions extends SearchOptions {
 }
 
 /**
- * Semantic reranking using local Qwen3.6 embeddings
+ * Semantic reranking using Nomic Embed v1.5 (256-dim Matryoshka)
  * Exa.ai-style: embed query + documents, compute cosine similarity, rank
  */
 export async function semanticRerank(
@@ -321,13 +271,11 @@ export async function semanticRerank(
 	documents: SearchResult[],
 ): Promise<Array<SearchResult & { score: number }>> {
 	try {
-		const queryEmbedding = await generateEmbedding(`Represent this query for searching documents: ${query}`, {
-			inputType: "search_query",
-		});
+		const queryEmbedding = await generateNomicEmbedding(`Represent this query for searching documents: ${query}`);
 
 		const results = await Promise.all(
 			documents.map(async (doc) => {
-				const docEmbedding = await generateEmbedding(`Represent this document for searching: ${doc.title} ${doc.snippet || ""}`);
+				const docEmbedding = await generateNomicEmbedding(`Represent this document for searching: ${doc.title} ${doc.snippet || ""}`);
 				const score = cosineSimilarity(queryEmbedding, docEmbedding);
 				return { ...doc, score };
 			}),
@@ -356,7 +304,7 @@ export async function semanticSearch(
 		return [];
 	}
 
-	// Step 2: Semantic reranking (Exa.ai-style)
+	// Step 2: Semantic reranking (Exa.ai-style with Nomic Embed v1.5)
 	if (enableRerank) {
 		return semanticRerank(query, firecrawlResult.results);
 	}

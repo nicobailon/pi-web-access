@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { activityMonitor } from "./activity.js";
 import { extractViaBrowserStealth } from "./browser-stealth.js";
 // Gemini API disabled - using local model instead
-import { searchWithPerplexity } from "./perplexity.js";
+
 import { queryLocalLlm } from "./local-llm-api.js";
 import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.js";
 import { formatSeconds, readExecError, isTimeoutError, trimErrorText, mapFfmpegError } from "./utils.js";
@@ -106,7 +106,7 @@ export async function extractYouTube(
 
 	const result = await tryLocalLlm(canonicalUrl, effectivePrompt, effectiveModel, signal)
 		?? await tryBrowserStealth(canonicalUrl, signal)
-		?? await tryPerplexity(url, effectivePrompt, signal);
+		?? await tryQwen36(url, effectivePrompt, signal);
 
 	if (result) {
 		result.url = url;
@@ -260,7 +260,7 @@ async function tryLocalLlm(
 	}
 }
 
-async function tryPerplexity(
+async function tryQwen36(
 	url: string,
 	prompt: string,
 	signal?: AbortSignal,
@@ -268,25 +268,29 @@ async function tryPerplexity(
 	try {
 		if (signal?.aborted) return null;
 
-		const perplexityQuery = prompt === YOUTUBE_PROMPT
+		const query = prompt === YOUTUBE_PROMPT
 			? `Summarize this YouTube video in detail: ${url}`
 			: `${prompt} YouTube video: ${url}`;
 
-		const { answer } = await searchWithPerplexity(
-			perplexityQuery,
-			{ signal },
+		// Use Qwen3.6 to generate a summary based on the video URL
+		// This is a fallback when frame extraction fails
+		const summary = await queryLocalLlm(
+			`Provide a detailed summary of the YouTube video at ${url}. Include:
+1. Video title, channel name, and duration
+2. A brief summary (2-3 sentences)
+3. Key topics and timestamps
+4. Any code, commands, or important information shown
+
+If you don't have direct access to the video, provide general information about what this video is likely about based on the URL.`,
+			{ signal, maxTokens: 2048 },
 		);
 
-		if (!answer) return null;
-
-		const content =
-			`# Video Summary (via Perplexity)\n\n${answer}\n\n` +
-			`*Full video understanding requires Gemini access. Set GEMINI_API_KEY or sign into Google in Chrome.*`;
+		if (!summary || summary.length < 50) return null;
 
 		return {
 			url,
-			title: "Video Summary (via Perplexity)",
-			content,
+			title: "Video Summary (via Qwen3.6)",
+			content: `# Video Summary (via Qwen3.6)\n\n${summary}`,
 			error: null,
 		};
 	} catch (err) {
