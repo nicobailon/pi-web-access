@@ -58,10 +58,20 @@ pi-web-access relied on three cloud providers:
 
 ### Infrastructure
 
-- **SearXNG**: Running on port 8081 (already installed)
-- **Firecrawl**: Running on port 3002 (already installed)
+- **SearXNG**: Running on port 8081 (Docker container: `firecrawl-searxng-1`)
+- **Firecrawl**: Running on port 3002 (Docker container: `firecrawl-api-1`)
 - **LightPanda**: Installed at `/home/john/.local/bin/lightpanda` (already installed)
-- **Qwen3.6**: Running on port 8082 (already running)
+- **Qwen3.6**: Running on port 8082 (llama.cpp server, already running)
+
+### Starting Containers
+
+If containers are down, start them with:
+
+```bash
+cd /home/john/.local/firecrawl && docker compose up -d
+```
+
+This starts all services: SearXNG (port 8081), Firecrawl API (port 3002), Redis, RabbitMQ, Nuq Postgres, and lightweight-scrape.
 
 ---
 
