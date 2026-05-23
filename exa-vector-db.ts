@@ -1,9 +1,10 @@
 /**
  * Exa.ai-style Vector Database
  * SQLite + binary quantization for memory-efficient semantic search
- * BGE-M3 embeddings (1024-dim) with cosine similarity reranking
- *
- * Binary quantization: 1024 float32 (4096 bytes) → 1024 bits (128 bytes) = 32x savings
+ * Nomic Embed v1.5 embeddings (256-dim Matryoshka) with binary quantization
+ * 
+ * Binary quantization: 256 float32 (1024 bytes) → 256 bits (32 bytes) = 32x savings
+ * 1M docs = 1GB RAM (vs 4GB for BGE-M3 float32)
  */
 
 import Database from "better-sqlite3";
@@ -18,8 +19,8 @@ import {
 } from "./binary-quantizer.js";
 
 const DB_PATH = join(homedir(), ".pi", "exa-vector-db.sqlite");
-const EMBEDDING_DIMENSIONS = 1024;
-const BYTES_PER_EMBEDDING = Math.ceil(EMBEDDING_DIMENSIONS / 8); // 128 bytes
+const EMBEDDING_DIMENSIONS = 256; // Nomic Embed v1.5 truncated to 256-dim
+const BYTES_PER_EMBEDDING = Math.ceil(EMBEDDING_DIMENSIONS / 8); // 32 bytes
 
 export interface Document {
 	id: string;
@@ -45,7 +46,7 @@ function initDB(): Database {
 
 	const db = new Database(DB_PATH);
 	db.pragma("journal_mode = WAL");
-	db.pragma(" synchronous = NORMAL");
+	db.pragma("synchronous = NORMAL");
 
 	db.exec(`
 		CREATE TABLE IF NOT EXISTS documents (
@@ -53,7 +54,7 @@ function initDB(): Database {
 			url TEXT NOT NULL UNIQUE,
 			title TEXT NOT NULL,
 			content TEXT NOT NULL,
-			embedding_binary BLOB NOT NULL,  -- 128 bytes per embedding (binary quantized)
+			embedding_binary BLOB NOT NULL,  -- 32 bytes per embedding (binary quantized)
 			metadata TEXT,
 			created_at INTEGER DEFAULT (strftime('%s', 'now'))
 		);
@@ -73,7 +74,7 @@ function getDB(): Database {
 
 /**
  * Encode embedding to binary quantized format
- * Converts float32 (4096 bytes) to binary (128 bytes) = 32x compression
+ * Converts float32 (1024 bytes) to binary (32 bytes) = 32x compression
  */
 function encodeEmbeddingBinary(embedding: number[]): Uint8Array {
 	const float32Array = new Float32Array(embedding);

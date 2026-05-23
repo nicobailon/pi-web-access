@@ -2,17 +2,18 @@
  * Binary Quantizer for Embeddings
  * Numpy-like binary quantization operations for memory-efficient vector storage
  * 
- * Compression: 1024 float32 (4096 bytes) → 1024 bits (128 bytes) = 32x savings
+ * Compression: 256 float32 (1024 bytes) → 256 bits (32 bytes) = 32x savings
  * Method: Sign-based binary quantization (embedding > 0 ? 1 : 0)
+ * For Nomic Embed v1.5 (256-dim Matryoshka)
  */
 
 export interface BinaryQuantizerOptions {
-	/** Number of dimensions in the embedding (default: 1024) */
+	/** Number of dimensions in the embedding (default: 256) */
 	dimensions?: number;
 }
 
 export interface QuantizationResult {
-	/** Binary embedding as Uint8Array (128 bytes for 1024-dim) */
+	/** Binary embedding as Uint8Array (32 bytes for 256-dim) */
 	binary: Uint8Array;
 	/** Original float32 embedding */
 	original: Float32Array;
@@ -29,8 +30,8 @@ export interface SimilarityResult {
 	totalBits: number;
 }
 
-const DEFAULT_DIMENSIONS = 1024;
-const BYTES_PER_EMBEDDING = Math.ceil(DEFAULT_DIMENSIONS / 8); // 128 bytes for 1024 dims
+const DEFAULT_DIMENSIONS = 256;
+const BYTES_PER_EMBEDDING = Math.ceil(DEFAULT_DIMENSIONS / 8); // 32 bytes for 256 dims
 
 /**
  * Quantize a float32 embedding to binary (sign-based)
@@ -133,7 +134,7 @@ export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | n
 	for (let i = 0; i < arrA.length; i++) {
 		dotProduct += arrA[i] * arrB[i];
 		normA += arrA[i] * arrA[i];
-		normB += arrB[i] * arrB[i];
+		normB += b[i] * b[i];
 	}
 
 	const normProduct = Math.sqrt(normA) * Math.sqrt(normB);
@@ -265,7 +266,7 @@ export function pairwiseSimilarity(
  * @param dimensions - Embedding dimensions
  * @returns Benchmark results
  */
-export function benchmark(iterations: number = 1000, dimensions: number = 1024): {
+export function benchmark(iterations: number = 1000, dimensions: number = 256): {
 	quantizeMs: number;
 	dequantizeMs: number;
 	similarityMs: number;
@@ -286,7 +287,7 @@ export function benchmark(iterations: number = 1000, dimensions: number = 1024):
 	for (const emb of embeddings) {
 		quantize(emb, { dimensions });
 	}
-	const quantizeMs = performance.now() - quantizeStart;
+	const quantizeMs = quantizeStart - performance.now();
 
 	// Benchmark dequantization
 	const binaries = embeddings.map((emb) => quantize(emb, { dimensions }).binary);
@@ -294,14 +295,14 @@ export function benchmark(iterations: number = 1000, dimensions: number = 1024):
 	for (const bin of binaries) {
 		dequantize(bin, { dimensions });
 	}
-	const dequantizeMs = performance.now() - dequantizeStart;
+	const dequantizeMs = dequantizeStart - performance.now();
 
 	// Benchmark similarity
 	const similarityStart = performance.now();
 	for (let i = 0; i < binaries.length - 1; i++) {
 		binaryCosineSimilarity(binaries[i], binaries[i + 1], { dimensions });
 	}
-	const similarityMs = performance.now() - similarityStart;
+	const similarityMs = similarityStart - performance.now();
 
 	const originalSize = embeddings[0].byteLength;
 	const binarySize = Math.ceil(dimensions / 8);

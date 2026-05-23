@@ -6,7 +6,7 @@ import { fetchAllContent, type ExtractedContent } from "./extract.js";
 import { clearCloneCache } from "./github-extract.js";
 import { search, type SearchProvider, type ResolvedSearchProvider } from "./firecrawl-search.js";
 import { executeCodeSearch } from "./code-search.js";
-import type { SearchResult } from "./perplexity.js";
+
 import { formatSeconds } from "./utils.js";
 import {
 	clearResults,
@@ -33,9 +33,7 @@ import { createRequire } from "node:module";
 import { platform, homedir } from "node:os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { isPerplexityAvailable } from "./perplexity.js";
-import { isExaAvailable } from "./exa.js";
-// Gemini API disabled - using local model instead
+// All cloud providers replaced with self-hosted alternatives
 import { isBrowserStealthAvailable } from "./browser-config.js";
 import { isFirecrawlAvailable } from "./firecrawl-config.js";
 import { exaPipeline, type ExaPipelineOptions, type ExaPipelineResult } from "./exa-pipeline.js";
@@ -54,9 +52,9 @@ interface WebSearchConfig {
 }
 
 interface ProviderAvailability {
-	perplexity: boolean;
-	exa: boolean;
 	firecrawl: boolean;
+	searxng: boolean;
+	lightpanda: boolean;
 }
 
 type WebSearchWorkflow = "none" | "summary-review";
@@ -119,7 +117,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	if (normalized === "auto" || normalized === "exa" || normalized === "perplexity" || normalized === "firecrawl") {
+	if (normalized === "auto" || normalized === "firecrawl" || normalized === "searxng") {
 		return normalized;
 	}
 	return "auto";
@@ -155,9 +153,9 @@ function getCuratorTimeoutSeconds(): number {
 
 async function getProviderAvailability(): Promise<ProviderAvailability> {
 	return {
-		perplexity: isPerplexityAvailable(),
-		exa: isExaAvailable(),
 		firecrawl: isFirecrawlAvailable(),
+		searxng: true, // SearXNG on port 8081
+		lightpanda: existsSync("/home/john/.local/bin/lightpanda"),
 	};
 }
 
@@ -177,24 +175,17 @@ function resolveProvider(
 	const provider = normalizeProviderInput(requested ?? loadConfig().provider ?? "auto") ?? "auto";
 
 	if (provider === "auto") {
-		if (available.exa) return "exa";
-		if (available.perplexity) return "perplexity";
 		if (available.firecrawl) return "firecrawl";
-		return "exa";
-	}
-	if (provider === "exa" && !available.exa) {
-		if (available.perplexity) return "perplexity";
-		if (available.firecrawl) return "firecrawl";
-		return "exa";
-	}
-	if (provider === "perplexity" && !available.perplexity) {
-		if (available.exa) return "exa";
-		if (available.firecrawl) return "firecrawl";
-		return "perplexity";
+		if (available.searxng) return "searxng";
+		return "firecrawl";
 	}
 	if (provider === "firecrawl" && !available.firecrawl) {
-		if (available.exa) return "exa";
-		return available.perplexity ? "perplexity" : "firecrawl";
+		if (available.searxng) return "searxng";
+		return "firecrawl";
+	}
+	if (provider === "searxng" && !available.searxng) {
+		if (available.firecrawl) return "firecrawl";
+		return "searxng";
 	}
 	return provider;
 }
@@ -596,7 +587,7 @@ export default function (pi: ExtensionAPI) {
 	async function rewriteSearchQuery(query: string, ctx: SummaryGenerationContext, signal: AbortSignal): Promise<string> {
 		const { model, apiKey, headers } = await resolveFirstAvailableModel(ctx, [
 			{ provider: "anthropic", id: "claude-haiku-4-5" },
-			{ provider: "google", id: "gemini-2.5-flash" },
+			{ provider: "llama-server", id: "qwen3.6-35B-A3B-UD-Q4_K_XL.gguf" },
 			{ provider: "openai", id: "gpt-4.1-mini" },
 		]);
 		const response = await complete(
@@ -1108,7 +1099,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "perplexity", "firecrawl", "exa"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "firecrawl", "searxng"], { description: "Search provider (default: auto)" }),
 			),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review"], {
@@ -1601,7 +1592,7 @@ export default function (pi: ExtensionAPI) {
 				description: "Number of frames to extract. Use with timestamp range for custom density, with single timestamp to get N frames at 5s intervals, or alone to sample across the entire video. Requires yt-dlp + ffmpeg for YouTube, ffmpeg for local video.",
 			})),
 			model: Type.Optional(Type.String({
-				description: "Override the Gemini model for video/YouTube analysis (e.g. 'gemini-2.5-flash', 'gemini-3-flash-preview'). Defaults to config or gemini-3-flash-preview.",
+				description: "Override the model for video/YouTube analysis (e.g. 'qwen3.6-35b'). Defaults to config or qwen3.6-35b.",
 			})),
 		}),
 
@@ -2342,9 +2333,9 @@ export default function (pi: ExtensionAPI) {
 	pi.registerTool({
 		name: "exa_pipeline",
 		label: "Exa.ai Semantic Search",
-		description: "Full Exa.ai-style semantic search pipeline: crawl → embed → store → search → rerank → summarize",
+		description: "Self-hosted Exa.ai-style semantic search: Nomic Embed v1.5 (256-dim) + jina-reranker + Qwen3.6 summaries. Fully local, zero API keys.",
 		promptSnippet:
-			"Use for Exa.ai-style semantic search with BGE-M3 embeddings and Qwen3.6 summaries.",
+			"Use for self-hosted Exa.ai-style semantic search with Nomic Embed v1.5 (256-dim Matryoshka) and Qwen3.6 summaries. Fully local, zero API keys."
 		parameters: Type.Object({
 			query: Type.String({ description: "Search query" }),
 			numResults: Type.Optional(Type.Number({ description: "Number of results (default: 20)" })),
