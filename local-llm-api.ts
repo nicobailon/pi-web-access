@@ -11,6 +11,8 @@ export interface LocalLlmOptions {
 	signal?: AbortSignal;
 	timeoutMs?: number;
 	maxTokens?: number;
+	/** Unused placeholder for future input-type discrimination */
+	inputType?: string;
 }
 
 export interface MultimodalContent {
@@ -237,41 +239,6 @@ export async function generateEmbeddingsBatch(
 	texts: string[],
 ): Promise<number[][]> {
 	return generateBatchedEmbeddings(texts);
-}
-
-/**
- * Compute cosine similarity between two embeddings
-
-		const ort = await import("onnxruntime-node");
-		const outputs = await session.run({
-			input_ids: new ort.Tensor('int64', BigInt64Array.from(input_ids.map(BigInt)), [1, input_ids.length]),
-			attention_mask: new ort.Tensor('int64', BigInt64Array.from(attention_mask.map(BigInt)), [1, attention_mask.length]),
-		});
-
-		// BGE-M3 outputs: 'token_embeddings' [batch, seq_len, hidden_dim] and 'sentence_embedding' [batch, hidden_dim]
-		// Use sentence_embedding which is already pooled
-		const tensor = outputs['sentence_embedding'];
-		const embedding = tensor.data as Float32Array;
-		const hiddenDim = tensor.dims[1];
-		const mean = new Float32Array(hiddenDim);
-		for (let j = 0; j < hiddenDim; j++) {
-			mean[j] = embedding[j];
-		}
-
-		// L2 normalize
-		const norm = Math.sqrt(mean.reduce((sum, v) => sum + v * v, 0));
-		if (norm > 0) {
-			for (let j = 0; j < hiddenDim; j++) {
-				mean[j] /= norm;
-			}
-		}
-
-		return Array.from(mean);
-	} catch (err) {
-		// Fallback: return zero embedding if BGE-M3 fails
-		console.error(`BGE-M3 embedding failed: ${err}`);
-		return new Float32Array(1024).fill(0);
-	}
 }
 
 /**

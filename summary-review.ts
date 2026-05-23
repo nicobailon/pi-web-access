@@ -3,7 +3,7 @@ import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { QueryResultData } from "./storage.js";
 
 const PREFERRED_SUMMARY_MODELS = [
-	{ provider: "llama-server", id: "qwen3.6-35b" },
+	{ provider: "llama-server", id: "qwen3.6-35B-A3B-UD-Q4_K_XL.gguf" },
 	{ provider: "anthropic", id: "claude-haiku-4-5" },
 	{ provider: "openai-codex", id: "gpt-5.3-codex-spark" },
 ] as const;

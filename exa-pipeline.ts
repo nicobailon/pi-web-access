@@ -7,22 +7,20 @@
 
 import { search, semanticRerank } from "./firecrawl-search.js";
 import { searchWithSearXNG } from "./searxng-search.js";
-import { searchWithLightPanda } from "./lightpanda-search.js";
 import { generateEmbedding, generateBatchedEmbeddings } from "./local-llm-api.js";
 import {
 	addDocument,
 	searchSimilar,
 	getDocumentCount,
 	clearDocuments,
-	type Document,
-	type SearchResult,
+	type SearchResult as VectorSearchResult,
 } from "./exa-vector-db.js";
 import { extractContent, type ExtractedContent } from "./extract.js";
 import { generateSummaryDraft, type SummaryGenerationContext } from "./summary-review.js";
 import { extractVideo, type VideoContent } from "./video-extract.js";
 import { extractYouTube, type YouTubeContent } from "./youtube-extract.js";
 import { rerankWithBge, type RerankResult } from "./reranker-bge.js";
-import { benchmark, benchmarkReranking } from "./binary-quantizer.js";
+import { benchmark } from "./binary-quantizer.js";
 
 export interface ExaPipelineOptions {
 	query: string;
@@ -125,12 +123,10 @@ export async function exaPipeline(
 
 	// Step 3: Embed with BGE-M3 (1024-dim) -> Binary Quantize
 	console.log("[Exa Pipeline] Step 3: Generating BGE-M3 embeddings...");
-	const embeddedResults = await Promise.all(
-		filtered.map(async (r) => {
-			const embedding = await generateEmbedding(`Represent this document for searching: ${r.title} ${r.content}`);
-			return { ...r, embedding };
-		}),
-	);
+	const embeddingPrefix = "Represent this document for searching: ";
+	const embeddingTexts = filtered.map((r) => `${embeddingPrefix}${r.title} ${r.content}`);
+	const embeddings = await generateBatchedEmbeddings(embeddingTexts);
+	const embeddedResults = filtered.map((r, i) => ({ ...r, embedding: embeddings[i] }));
 
 	// Step 4: Store in Vector DB (binary quantized)
 	if (enableIndexing) {
@@ -150,14 +146,21 @@ export async function exaPipeline(
 	console.log("[Exa Pipeline] Step 5: Semantic search (binary quantized)...");
 	const queryEmbedding = await generateEmbedding(`Represent this query for searching documents: ${query}`);
 
-	let ranked = filtered;
+	let ranked: Array<{ url: string; title: string; content: string; score: number }>;
 	if (enableVector) {
 		const vectorResults = searchSimilar(queryEmbedding, numResults);
-		ranked = vectorResults.map((vr) => ({
+		ranked = vectorResults.map((vr: VectorSearchResult) => ({
 			url: vr.document.url,
 			title: vr.document.title,
 			content: vr.document.content,
 			score: vr.similarity,
+		}));
+	} else {
+		ranked = filtered.map((r) => ({
+			url: r.url,
+			title: r.title,
+			content: r.content,
+			score: 1,
 		}));
 	}
 
@@ -172,13 +175,8 @@ export async function exaPipeline(
 			snippet: r.content.slice(0, 500),
 		}));
 		
-		// Use BGE reranking if enabled, otherwise fallback to cosine similarity
-		let reranked: RerankResult[];
-		if (enableLLMRerank) {
-			reranked = await rerankWithBge(query, rerankResults, { batchSize: rerankBatchSize });
-		} else {
-			reranked = await rerankWithFallback(query, ranked as any, queryEmbedding, { batchSize: rerankBatchSize });
-		}
+		// Use BGE reranking
+		const reranked = await rerankWithBge(query, rerankResults, { batchSize: rerankBatchSize });
 		
 		// Merge reranking scores back
 		ranked = ranked.map((r) => {
