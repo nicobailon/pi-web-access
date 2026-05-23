@@ -98,7 +98,7 @@ function computeBM25Score(query: string, text: string, k: number = 1.2, b: numbe
 	
 	for (const term of queryTerms) {
 		const termCount = (textLower.match(new RegExp(term, 'g')) || []).length;
-		const tf = termCount / Math.max(1, termCount); // Simple term frequency
+		const tf = termCount / (termCount + k); // BM25 term frequency
 		const idf = Math.log(1 + (1000 / (termCount + 1))); // Simplified IDF
 		score += (tf * k * idf) / (tf + k * (1 - b + b * (textLen / 500)));
 	}
@@ -189,14 +189,15 @@ export async function exaPipeline(
 			// Check if it's a video URL
 			if (r.url.includes("youtube.com") || r.url.includes("youtu.be")) {
 				try {
-					const videoResult = await extractYouTube(r.url, undefined, undefined, undefined, { maxFrames });
+					const videoResult = await extractYouTube(r.url);
 					return { ...r, content: videoResult.summary || videoResult.transcript || r.snippet || "" };
 				} catch {
 					return { ...r, content: r.snippet || "" };
 				}
 			} else if (r.url.includes(".mp4") || r.url.includes(".webm") || r.url.includes(".avi")) {
 				try {
-					const videoResult = await extractVideo(r.url, undefined, { maxFrames });
+					// extractVideo requires a local file path with VideoFileInfo; skip for remote URLs
+				return { ...r, content: r.snippet || "" };
 					return { ...r, content: videoResult.summary || videoResult.frames?.[0]?.description || r.snippet || "" };
 				} catch {
 					return { ...r, content: r.snippet || "" };

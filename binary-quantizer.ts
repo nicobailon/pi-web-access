@@ -134,7 +134,7 @@ export function cosineSimilarity(a: Float32Array | number[], b: Float32Array | n
 	for (let i = 0; i < arrA.length; i++) {
 		dotProduct += arrA[i] * arrB[i];
 		normA += arrA[i] * arrA[i];
-		normB += b[i] * b[i];
+		normB += arrB[i] * arrB[i];
 	}
 
 	const normProduct = Math.sqrt(normA) * Math.sqrt(normB);
