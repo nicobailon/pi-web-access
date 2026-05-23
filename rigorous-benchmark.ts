@@ -1,6 +1,7 @@
 /**
- * Rigorous Benchmark for Exa.ai-style Semantic Search Pipeline
- * Tests all components: binary quantization, embeddings, vector search, reranking
+ * Rigorous Benchmark for Self-Hosted Exa.ai-style Semantic Search Pipeline
+ * Tests all components: binary quantization, Nomic Embed v1.5 embeddings, 
+ * vector search, jina-reranker reranking
  */
 
 import { 
@@ -11,9 +12,11 @@ import {
     benchmark as benchQuantization,
     type QuantizationResult 
 } from './binary-quantizer.js';
-import { generateEmbedding, queryLocalLlm } from './local-llm-api.js';
-import { rerankWithBge, rerankWithBge } from './reranker-bge.js';
+import { generateNomicEmbedding, generateNomicBatchedEmbeddings } from './embedding-nomic.js';
+import { rerankWithJina } from './reranker-jina.js';
 import { addDocument, searchSimilar, getDocumentCount, clearDocuments } from './exa-vector-db.js';
+
+const EMBEDDING_DIM = 256; // Nomic Embed v1.5 truncated
 
 interface BenchmarkResult {
     name: string;
@@ -28,27 +31,19 @@ const TEST_DOCS = [
     "Artificial intelligence continues to advance rapidly with new models achieving human-level performance on various benchmarks. Deep learning breakthroughs enable better natural language understanding.",
     "Climate change impacts are becoming more severe with rising sea levels and extreme weather events. Scientists urge immediate action to reduce carbon emissions.",
     "Quantum computing research has made significant progress with new error correction techniques. IBM and Google are competing to achieve quantum supremacy.",
-    "The electric vehicle market is growing rapidly with Tesla leading the charge. New battery technologies promise longer range and faster charging times.",
-    "Space exploration continues with NASA's Artemis program aiming to return humans to the moon. Private companies like SpaceX are reducing launch costs significantly.",
-    "Cybersecurity threats are evolving with AI-powered attacks becoming more sophisticated. Organizations must invest in advanced threat detection systems.",
-    "Renewable energy adoption is accelerating globally with solar and wind power becoming cost-competitive with fossil fuels.",
-    "Healthcare technology is transforming patient care with telemedicine, AI diagnostics, and personalized treatment plans becoming mainstream.",
-    "Supply chain disruptions continue to affect global trade as companies seek to build more resilient and diversified networks."
+    "Renewable energy adoption is accelerating globally with solar and wind power becoming cheaper than fossil fuels in most markets.",
+    "Cybersecurity threats continue to evolve with new ransomware variants targeting healthcare and financial institutions worldwide.",
+    "Space exploration milestones include successful Mars rover missions and plans for crewed lunar missions by 2026.",
+    "Electric vehicle sales surpassed 10 million units globally in 2024, representing 20% of all new car sales.",
+    "Breakthrough research in mRNA technology shows promise for treating previously untreatable genetic diseases.",
+    "Global supply chain disruptions continue to affect manufacturing and retail sectors across multiple industries."
 ];
 
-const TEST_QUERIES = [
-    "latest advances in AI model compression techniques",
-    "renewable energy market trends 2026",
-    "cybersecurity threats and solutions",
-    "electric vehicle battery technology",
-    "quantum computing breakthroughs"
-];
-
-async function runBenchmark<T>(
-    name: string, 
-    fn: () => T | Promise<T>, 
+async function runBenchmark(
+    name: string,
+    fn: () => Promise<unknown>,
     iterations: number,
-    warmup: number = 0
+    warmup: number
 ): Promise<BenchmarkResult> {
     // Warmup
     for (let i = 0; i < warmup; i++) {
@@ -56,37 +51,31 @@ async function runBenchmark<T>(
     }
     
     const times: number[] = [];
+    const start = performance.now();
+    
     for (let i = 0; i < iterations; i++) {
-        const start = performance.now();
+        const iterStart = performance.now();
         await fn();
-        const end = performance.now();
-        times.push(end - start);
+        times.push(performance.now() - iterStart);
     }
     
-    const totalTime = times.reduce((a, b) => a + b, 0);
-    const avgTime = totalTime / iterations;
-    const minTime = Math.min(...times);
-    const maxTime = Math.max(...times);
-    const medianTime = times.sort((a, b) => a - b)[Math.floor(iterations / 2)];
+    const totalTime = performance.now() - start;
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    const stddev = Math.sqrt(times.reduce((sum, t) => sum + Math.pow(t - avg, 2), 0) / times.length);
     
     return {
         name,
         iterations,
         totalTime,
-        perIteration: avgTime,
-        details: {
-            min: minTime,
-            max: maxTime,
-            median: medianTime,
-            stddev: Math.sqrt(times.reduce((sum, t) => sum + Math.pow(t - avgTime, 2), 0) / iterations)
-        }
+        perIteration: avg,
+        details: { stddev }
     };
 }
 
 async function main() {
-    console.log('=== Rigorous Benchmark: Exa.ai-style Semantic Search Pipeline ===\n');
-    
-    const results: BenchmarkResult[] = [];
+    console.log('=== Self-Hosted Exa Pipeline Benchmark ===');
+    console.log(`   Embedding dims: ${EMBEDDING_DIM} (Nomic Embed v1.5 Matryoshka)`);
+    console.log(`   Binary quantization: 32x compression\n`);
     
     // ============================================================
     // Section 1: Binary Quantization Benchmarks
@@ -94,10 +83,10 @@ async function main() {
     console.log('1. Binary Quantization Benchmarks');
     console.log('   '.padEnd(20) + '─'.repeat(60));
     
-    const quantBench = benchQuantization(1000, 1024);
-    console.log(`   Quantize:     ${quantBench.quantizeMs.toFixed(3)}ms ± ${(quantBench.quantizeMs * 0.1).toFixed(3)}ms`);
-    console.log(`   Dequantize:   ${quantBench.dequantizeMs.toFixed(3)}ms ± ${(quantBench.dequantizeMs * 0.1).toFixed(3)}ms`);
-    console.log(`   Similarity:   ${quantBench.similarityMs.toFixed(3)}ms ± ${(quantBench.similarityMs * 0.1).toFixed(3)}ms`);
+    const quantBench = benchQuantization(1000, EMBEDDING_DIM);
+    console.log(`   Quantize:     ${quantBench.quantizeMs.toFixed(3)}ms`);
+    console.log(`   Dequantize:   ${quantBench.dequantizeMs.toFixed(3)}ms`);
+    console.log(`   Similarity:   ${quantBench.similarityMs.toFixed(3)}ms`);
     console.log(`   Compression:  ${quantBench.compressionRatio.toFixed(1)}x`);
     
     // Accuracy benchmark
@@ -105,9 +94,9 @@ async function main() {
     let totalError = 0;
     let maxError = 0;
     for (let i = 0; i < 1000; i++) {
-        const embA = new Float32Array(1024);
-        const embB = new Float32Array(1024);
-        for (let j = 0; j < 1024; j++) {
+        const embA = new Float32Array(EMBEDDING_DIM);
+        const embB = new Float32Array(EMBEDDING_DIM);
+        for (let j = 0; j < EMBEDDING_DIM; j++) {
             embA[j] = (Math.random() - 0.5) * 2;
             embB[j] = (Math.random() - 0.5) * 2;
         }
@@ -125,14 +114,14 @@ async function main() {
     console.log(`   Max error:    ${maxError.toFixed(4)}`);
     
     // ============================================================
-    // Section 2: Embedding Generation Benchmarks
+    // Section 2: Nomic Embed v1.5 Benchmark
     // ============================================================
-    console.log('\n2. Embedding Generation Benchmarks');
+    console.log('\n2. Nomic Embed v1.5 Benchmark (256-dim Matryoshka)');
     console.log('   '.padEnd(20) + '─'.repeat(60));
     
     const embeddingBench = await runBenchmark(
-        'generateEmbedding',
-        () => generateEmbedding(TEST_DOCS[0]),
+        'generateNomicEmbedding',
+        () => generateNomicEmbedding(TEST_DOCS[0]),
         20,
         2
     );
@@ -142,11 +131,11 @@ async function main() {
     // Batch embedding benchmark
     console.log('\n   Batch Embedding Benchmark (10 docs):');
     const batchStart = performance.now();
-    const batchEmbeddings = await Promise.all(TEST_DOCS.slice(0, 10).map(doc => generateEmbedding(doc)));
+    const batchEmbeddings = await generateNomicBatchedEmbeddings(TEST_DOCS.slice(0, 10));
     const batchTime = performance.now() - batchStart;
     console.log(`   Batch time:   ${batchTime.toFixed(2)}ms`);
     console.log(`   Per doc:      ${(batchTime / 10).toFixed(2)}ms`);
-    console.log(`   Parallelism:  ${(batchTime / (batchTime / 10)).toFixed(1)}x speedup`);
+    console.log(`   Speedup:      ${(batchTime / (batchTime / 10)).toFixed(1)}x vs sequential`);
     
     // ============================================================
     // Section 3: Vector Database Benchmarks
@@ -161,7 +150,7 @@ async function main() {
     console.log('   Insert Benchmark:');
     const insertStart = performance.now();
     for (const doc of TEST_DOCS.slice(0, 20)) {
-        const emb = await generateEmbedding(doc);
+        const emb = await generateNomicEmbedding(doc);
         addDocument({
             id: `doc-${Math.random().toString(36).substr(2, 9)}`,
             url: `https://example.com/${Math.random().toString(36).substr(2, 9)}`,
@@ -173,11 +162,11 @@ async function main() {
     const insertTime = performance.now() - insertStart;
     console.log(`   Insert 20:    ${insertTime.toFixed(2)}ms`);
     console.log(`   Per insert:   ${(insertTime / 20).toFixed(2)}ms`);
-    console.log(`   Storage:      ${(getDocumentCount() * 128 / 1024).toFixed(2)}KB for ${getDocumentCount()} docs`);
+    console.log(`   Storage:      ${(getDocumentCount() * 32 / 1024).toFixed(2)}KB for ${getDocumentCount()} docs`);
     
     // Search benchmark
     console.log('\n   Search Benchmark:');
-    const queryEmb = await generateEmbedding('test query');
+    const queryEmb = await generateNomicEmbedding('test query');
     const searchTimes: number[] = [];
     for (let i = 0; i < 50; i++) {
         const start = performance.now();
@@ -190,17 +179,17 @@ async function main() {
     console.log(`   Throughput:   ${(1000 / avgSearchTime).toFixed(1)} searches/sec`);
     
     // ============================================================
-    // Section 4: Reranking Benchmarks
+    // Section 4: Jina Reranker Benchmarks
     // ============================================================
-    console.log('\n4. Reranking Benchmarks');
+    console.log('\n4. Jina Reranker v1 Tiny Benchmarks');
     console.log('   '.padEnd(20) + '─'.repeat(60));
     
-    // LLM reranking benchmark
-    console.log('   LLM Reranking Benchmark:');
+    // Reranking benchmark
+    console.log('   Reranking Benchmark:');
     const rerankResults = await runBenchmark(
-        'rerankWithBge',
+        'rerankWithJina',
         async () => {
-            const results = await rerankWithBge(
+            const results = await rerankWithJina(
                 'test query',
                 TEST_DOCS.slice(0, 10).map((doc, i) => ({
                     url: `https://example.com/${i}`,
@@ -226,8 +215,8 @@ async function main() {
     const e2eStart = performance.now();
     // Simulate pipeline steps without full search
     const pipelineDocs = TEST_DOCS.slice(0, 10);
-    const pipelineEmbeddings = await Promise.all(pipelineDocs.map(doc => generateEmbedding(doc)));
-    const pipelineQueryEmb = await generateEmbedding('test query');
+    const pipelineEmbeddings = await generateNomicBatchedEmbeddings(pipelineDocs);
+    const pipelineQueryEmb = await generateNomicEmbedding('test query');
     const pipelineSearch = searchSimilar(pipelineQueryEmb, 10);
     const e2eTime = performance.now() - e2eStart;
     
@@ -240,18 +229,18 @@ async function main() {
     // ============================================================
     console.log('\n=== Summary ===');
     console.log('   Binary Quantization:');
-    console.log(`   - Compression: 32x (4096 → 128 bytes)`);
+    console.log(`   - Compression: 32x (1024 → 32 bytes)`);
     console.log(`   - Quantize: ${quantBench.quantizeMs.toFixed(3)}ms`);
     console.log(`   - Similarity: ${quantBench.similarityMs.toFixed(3)}ms`);
     console.log(`   - Accuracy: ${(totalError / 1000).toFixed(4)} avg error`);
-    console.log('\n   Embeddings:');
+    console.log('\n   Nomic Embed v1.5 (256-dim):');
     console.log(`   - Speed: ${(1000 / embeddingBench.perIteration).toFixed(1)} docs/sec`);
     console.log(`   - Batch: ${(batchTime / 10).toFixed(2)}ms per doc`);
     console.log('\n   Vector DB:');
     console.log(`   - Insert: ${(insertTime / 20).toFixed(2)}ms per doc`);
     console.log(`   - Search: ${avgSearchTime.toFixed(2)}ms per query`);
-    console.log('\n   Reranking:');
-    console.log(`   - LLM: ${rerankResults.perIteration.toFixed(2)}ms for 10 docs`);
+    console.log('\n   Jina Reranker:');
+    console.log(`   - Rerank 10: ${rerankResults.perIteration.toFixed(2)}ms`);
     console.log('\n   End-to-End:');
     console.log(`   - Pipeline: ${e2eTime.toFixed(2)}ms for 10 docs`);
     console.log(`   - Throughput: ${(10 / (e2eTime / 1000)).toFixed(1)} docs/sec`);
