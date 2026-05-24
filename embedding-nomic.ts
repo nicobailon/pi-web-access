@@ -13,6 +13,8 @@ import { pipeline, env } from '@xenova/transformers';
 
 // Disable downloading models from hub since we have local models
 env.allowLocalModels = true;
+env.allowRemoteModels = false;
+env.localModelPath = '';
 env.useCache = true;
 
 const NOMIC_MODEL_PATH = '/home/john/.local/llm/models/nomic-embed-v1.5';

@@ -153,7 +153,7 @@ function parseTimestampSpec(ts: string): TimestampSpec | null {
 const DEFAULT_RANGE_FRAMES = 6;
 const MIN_FRAME_INTERVAL = 5;
 
-function computeRangeTimestamps(start: number, end: number, maxFrames: number = DEFAULT_RANGE_FRAMES): number[] {
+export function computeRangeTimestamps(start: number, end: number, maxFrames: number = DEFAULT_RANGE_FRAMES): number[] {
 	if (maxFrames <= 1) return [start];
 	const duration = end - start;
 	const idealInterval = duration / (maxFrames - 1);
@@ -357,7 +357,7 @@ export async function extractContent(
 		try {
 			const result = await extractVideo(localVideo.info, signal, options);
 			if (signal?.aborted) return abortedResult(url);
-			return result ?? { url, title: "", content: "", error: "Video analysis requires Gemini API. Set GEMINI_API_KEY in ~/.pi/web-search.json" };
+			return result ?? { url, title: "", content: "", error: "Video analysis failed. Ensure Qwen3.6 is running on port 8082, and that ffmpeg/yt-dlp are installed." };
 		} catch (err) {
 			if (isAbortError(err)) return abortedResult(url);
 			return { url, title: "", content: "", error: errorMessage(err) };
@@ -405,7 +405,7 @@ export async function extractContent(
 			url,
 			title: "",
 			content: "",
-			error: "Could not extract YouTube video content. Sign into Google in Chrome for automatic access, or set GEMINI_API_KEY.",
+			error: "Could not extract YouTube video content. Ensure yt-dlp and ffmpeg are installed, and that Qwen3.6 is running on port 8082.",
 		};
 	}
 

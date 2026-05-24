@@ -3,10 +3,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { activityMonitor } from "./activity.js";
-import { extractViaBrowserStealth } from "./browser-stealth.js";
 // Gemini API disabled - using local model instead
 
-import { queryLocalLlm } from "./local-llm-api.js";
+import { queryLocalLlmMultimodal } from "./local-llm-api.js";
 import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.js";
 import { formatSeconds, readExecError, isTimeoutError, trimErrorText, mapFfmpegError } from "./utils.js";
 
@@ -19,6 +18,9 @@ const YOUTUBE_PROMPT = `Extract the complete content of this YouTube video. Incl
 4. Descriptions of any code, terminal commands, diagrams, slides, or UI shown on screen
 
 Format as markdown.`;
+
+const MAX_VIDEO_FRAMES = 60; // Qwen3.6 supports up to 60 frames (60s at 1fps)
+const MIN_FRAME_INTERVAL = 5; // Minimum seconds between frames
 
 const YOUTUBE_REGEX =
 	/(?:(?:www\.|m\.)?youtube\.com\/(?:watch\?.*v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
@@ -104,9 +106,8 @@ export async function extractYouTube(
 
 	const activityId = activityMonitor.logStart({ type: "fetch", url: `youtube.com/${videoId ?? "video"}` });
 
-	const result = await tryLocalLlm(canonicalUrl, effectivePrompt, effectiveModel, signal)
-		?? await tryBrowserStealth(canonicalUrl, signal)
-		?? await tryQwen36(url, effectivePrompt, signal);
+	// Primary: yt-dlp + ffmpeg frames + Qwen3.6 multimodal
+	const result = await tryLocalLlmMultimodal(canonicalUrl, effectivePrompt, effectiveModel, signal);
 
 	if (result) {
 		result.url = url;
@@ -116,6 +117,19 @@ export async function extractYouTube(
 		}
 		activityMonitor.logComplete(activityId, 200);
 		return result;
+	}
+
+	// Fallback: text-only Qwen3.6 summary when frame extraction fails
+	// (e.g., live streams, no extractable frames, Qwen3.6 multimodal unavailable)
+	const textFallback = await tryTextOnlySummary(canonicalUrl, effectivePrompt, effectiveModel, signal);
+	if (textFallback) {
+		textFallback.url = url;
+		if (videoId) {
+			const thumb = await fetchYouTubeThumbnail(videoId);
+			if (thumb) textFallback.thumbnail = thumb;
+		}
+		activityMonitor.logComplete(activityId, 200);
+		return textFallback;
 	}
 
 	if (signal?.aborted) {
@@ -215,29 +229,11 @@ export async function fetchYouTubeThumbnail(videoId: string): Promise<{ data: st
 	}
 }
 
-async function tryBrowserStealth(
-	url: string,
-	signal?: AbortSignal,
-): Promise<ExtractedContent | null> {
-	try {
-		if (signal?.aborted) return null;
-
-		const output = await extractViaBrowserStealth(url, signal, { timeoutMs: 120000 });
-		if (!output || !output.content || output.content.length < 50) return null;
-
-		return {
-			url,
-			title: output.title ?? "YouTube Video",
-			content: output.content,
-			error: null,
-		};
-	} catch (err) {
-		if (shouldRethrow(err)) throw err;
-		return null;
-	}
-}
-
-async function tryLocalLlm(
+/**
+ * Extract YouTube video using yt-dlp + ffmpeg frames + Qwen3.6 multimodal.
+ * This is the primary extraction path — mirrors video-extract.ts pattern.
+ */
+async function tryLocalLlmMultimodal(
 	url: string,
 	prompt: string,
 	model: string,
@@ -246,13 +242,54 @@ async function tryLocalLlm(
 	try {
 		if (signal?.aborted) return null;
 
-		const text = await queryLocalLlm(prompt, { model, signal, timeoutMs: 120000 });
+		const { videoId } = isYouTubeURL(url);
+		if (!videoId) return null;
+
+		// Step 1: Get stream URL and duration via yt-dlp
+		const streamInfo = await getYouTubeStreamInfo(videoId);
+		if ("error" in streamInfo) return null;
+
+		// Step 2: Calculate frame timestamps
+		const duration = streamInfo.duration ?? 60;
+		const maxFrames = Math.min(MAX_VIDEO_FRAMES, Math.max(3, Math.floor(duration)));
+		const timestamps: number[] = [];
+		if (maxFrames <= 1) {
+			timestamps.push(0);
+		} else {
+			const interval = Math.max(MIN_FRAME_INTERVAL, Math.floor(duration / (maxFrames - 1)));
+			for (let t = 0; t <= duration && timestamps.length < maxFrames; t += interval) {
+				timestamps.push(t);
+			}
+		}
+
+		// Step 3: Extract frames via ffmpeg
+		const framePromises = timestamps.map(async (t) => {
+			const frame = await extractFrameFromStream(streamInfo.streamUrl, t);
+			if ("error" in frame) return null;
+			return { ...frame, timestamp: `${t}s` };
+		});
+		const frameResults = (await Promise.all(framePromises)).filter((f): f is NonNullable<typeof f> => f !== null);
+
+		if (frameResults.length === 0) return null;
+
+		// Step 4: Send frames + prompt to Qwen3.6 multimodal
+		const contents: Array<{ type: string; base64?: string; mimeType?: string; text?: string }> =
+			frameResults.map((f) => ({
+				type: "image",
+				base64: f.data,
+				mimeType: f.mimeType,
+			}));
+		contents.push({ type: "text", text: prompt || YOUTUBE_PROMPT });
+
+		const text = await queryLocalLlmMultimodal(contents as any, { model, signal, timeoutMs: 120000, maxTokens: 4096 });
 
 		return {
 			url,
 			title: extractHeadingTitle(text) ?? "YouTube Video",
 			content: text,
 			error: null,
+			frames: frameResults.map((f) => ({ ...f, mimeType: f.mimeType })),
+			duration: streamInfo.duration ?? undefined,
 		};
 	} catch (err) {
 		if (shouldRethrow(err)) throw err;
@@ -260,20 +297,20 @@ async function tryLocalLlm(
 	}
 }
 
-async function tryQwen36(
+/**
+ * Fallback: text-only Qwen3.6 summary when frame extraction fails.
+ * Used when Qwen3.6 multimodal is unavailable, video is a live stream,
+ * or no frames can be extracted.
+ */
+async function tryTextOnlySummary(
 	url: string,
 	prompt: string,
+	model: string,
 	signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
 	try {
 		if (signal?.aborted) return null;
 
-		const query = prompt === YOUTUBE_PROMPT
-			? `Summarize this YouTube video in detail: ${url}`
-			: `${prompt} YouTube video: ${url}`;
-
-		// Use Qwen3.6 to generate a summary based on the video URL
-		// This is a fallback when frame extraction fails
 		const summary = await queryLocalLlm(
 			`Provide a detailed summary of the YouTube video at ${url}. Include:
 1. Video title, channel name, and duration
@@ -289,8 +326,8 @@ If you don't have direct access to the video, provide general information about 
 
 		return {
 			url,
-			title: "Video Summary (via Qwen3.6)",
-			content: `# Video Summary (via Qwen3.6)\n\n${summary}`,
+			title: "Video Summary (via Qwen3.6 text-only)",
+			content: `# Video Summary (via Qwen3.6 text-only)\n\n${summary}`,
 			error: null,
 		};
 	} catch (err) {
@@ -298,3 +335,5 @@ If you don't have direct access to the video, provide general information about 
 		return null;
 	}
 }
+
+

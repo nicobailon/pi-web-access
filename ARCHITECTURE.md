@@ -224,13 +224,40 @@ pi-web-access/
 └── ARCHITECTURE.md         # This file
 ```
 
-## Infrastructure
+### Sourcegraph Setup
+Self-hosted Sourcegraph for code search (replaces Exa MCP):
+```bash
+cd ~/.local/sourcegraph && docker compose up -d
+```
+- Exposes port 3000 (configured in `code-search.ts`)
+- Provides full-text search + code graph awareness
+- Works with any git repository
+- Single-user mode enabled for personal use
+
+### YouTube Extraction Pipeline
+```
+YouTube URL → yt-dlp (stream URL + duration) → ffmpeg (frame extraction) → Qwen3.6 multimodal → Structured summary
+```
+- yt-dlp extracts the direct video stream URL and duration
+- ffmpeg extracts frames at calculated timestamps (max 60 frames, 5s intervals)
+- Frames + prompt sent to Qwen3.6 multimodal API for analysis
+- Mirrors the local video extraction pattern in `video-extract.ts`
 
 ### Ports
+- **3000**: Sourcegraph (self-hosted code search, Docker at `~/.local/sourcegraph/`)
 - **3002**: Firecrawl (search via SearXNG + content extraction via Playwright)
 - **8081**: SearXNG (search aggregation)
 - **8082**: Qwen3.6 (local LLM + multimodal)
 - **User's Chrome**: Browser stealth (shares real browser sessions, bypasses anti-bot)
+
+### YouTube Extraction Pipeline
+```
+YouTube URL → yt-dlp (stream URL + duration) → ffmpeg (frame extraction) → Qwen3.6 multimodal → Structured summary
+```
+- yt-dlp extracts the direct video stream URL and duration
+- ffmpeg extracts frames at calculated timestamps (max 60 frames, 5s intervals)
+- Frames + prompt sent to Qwen3.6 multimodal API for analysis
+- Mirrors the local video extraction pattern in `video-extract.ts`
 
 ### Models
 - **Qwen3.6-35B-A3B**: `~/.local/llm/models/Qwen3.6-35B-A3B-UD-Q4_K_XL.gguf` (MoE)

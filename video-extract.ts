@@ -6,7 +6,9 @@ import { homedir } from "node:os";
 import { activityMonitor } from "./activity.js";
 // Gemini API disabled - using local model instead
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.js";
+import { computeRangeTimestamps } from "./extract.js";
 import { readExecError, trimErrorText, mapFfmpegError } from "./utils.js";
+import type { VideoFrame } from "./extract.js";
 import { queryLocalLlmMultimodal, type MultimodalContent } from "./local-llm-api.js";
 
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");

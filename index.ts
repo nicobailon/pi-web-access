@@ -471,6 +471,23 @@ export default function (pi: ExtensionAPI) {
 		if (urls.length === 0) return null;
 		const fetchId = generateId();
 		const controller = new AbortController();
+		// Hard timeout to prevent indefinite hangs (default 120s per URL, min 30s)
+		const backgroundTimeoutMs = Math.max(30000, urls.length * 30000);
+		const timeoutId = setTimeout(() => {
+			if (pendingFetches.has(fetchId)) {
+				controller.abort();
+				pendingFetches.delete(fetchId);
+				const message = `Background content fetch timed out after ${backgroundTimeoutMs / 1000}s`;
+				pi.sendMessage(
+					{
+						customType: "web-search-error",
+						content: `Content fetch failed [${fetchId}]: ${message}`,
+						display: true,
+					},
+					{ triggerTurn: false },
+				);
+			}
+		}, backgroundTimeoutMs);
 		pendingFetches.set(fetchId, controller);
 		fetchAllContent(urls, controller.signal)
 			.then((fetched) => {
@@ -508,7 +525,10 @@ export default function (pi: ExtensionAPI) {
 					);
 				}
 			})
-			.finally(() => { pendingFetches.delete(fetchId); });
+			.finally(() => {
+				clearTimeout(timeoutId);
+				pendingFetches.delete(fetchId);
+			});
 		return fetchId;
 	}
 

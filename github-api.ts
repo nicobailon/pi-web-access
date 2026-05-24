@@ -129,6 +129,69 @@ async function fetchFileViaApi(owner: string, repo: string, path: string, ref: s
 	});
 }
 
+/**
+ * Fetch file content via direct GitHub REST API (no gh CLI needed)
+ * Works for public repos without authentication.
+ */
+async function fetchFileViaDirectApi(owner: string, repo: string, path: string, ref: string): Promise<string | null> {
+	try {
+		const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`;
+		const res = await fetch(url, {
+			headers: { "Accept": "application/vnd.github.v3+json" },
+			signal: AbortSignal.timeout(10000),
+		});
+		if (!res.ok) return null;
+		const data = await res.json() as { content?: string };
+		if (!data.content) return null;
+		return Buffer.from(data.content, "base64").toString("utf-8");
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Fetch repo tree via direct GitHub REST API (no gh CLI needed)
+ */
+async function fetchTreeViaDirectApi(owner: string, repo: string, ref: string): Promise<string | null> {
+	try {
+		const url = `https://api.github.com/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`;
+		const res = await fetch(url, {
+			headers: { "Accept": "application/vnd.github.v3+json" },
+			signal: AbortSignal.timeout(15000),
+		});
+		if (!res.ok) return null;
+		const data = await res.json() as { tree?: Array<{ path: string; type: string }> };
+		const tree = data.tree || [];
+		const filtered = tree.filter(t => t.type === "blob");
+		const paths = filtered.slice(0, MAX_TREE_ENTRIES).map(t => t.path);
+		if (paths.length === 0) return null;
+		const truncated = filtered.length > MAX_TREE_ENTRIES;
+		return paths.join("\n") + (truncated ? `\n... (${filtered.length} total entries)` : "");
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Fetch README via direct GitHub REST API (no gh CLI needed)
+ */
+async function fetchReadmeViaDirectApi(owner: string, repo: string, ref: string): Promise<string | null> {
+	try {
+		const url = `https://api.github.com/repos/${owner}/${repo}/readme?ref=${encodeURIComponent(ref)}`;
+		const res = await fetch(url, {
+			headers: { "Accept": "application/vnd.github.v3+json" },
+			signal: AbortSignal.timeout(10000),
+		});
+		if (!res.ok) return null;
+		const data = await res.json() as { content?: string };
+		if (!data.content) return null;
+		const decoded = Buffer.from(data.content, "base64").toString("utf-8");
+		return decoded.length > 8192 ? decoded.slice(0, 8192) + "\n\n[README truncated at 8K chars]" : decoded;
+	} catch {
+		return null;
+	}
+}
+
 export async function fetchViaApi(
 	url: string,
 	owner: string,
@@ -146,7 +209,11 @@ export async function fetchViaApi(
 	}
 
 	if (info.type === "blob" && info.path) {
-		const content = await fetchFileViaApi(owner, repo, info.path, ref);
+		// Try gh CLI first, fall back to direct API
+		let content = await fetchFileViaApi(owner, repo, info.path, ref);
+		if (!content) {
+			content = await fetchFileViaDirectApi(owner, repo, info.path, ref);
+		}
 		if (!content) return null;
 
 		lines.push(`## ${info.path}`);
@@ -165,10 +232,20 @@ export async function fetchViaApi(
 		};
 	}
 
-	const [tree, readme] = await Promise.all([
+	// Try gh CLI first, fall back to direct API
+	let [tree, readme] = await Promise.all([
 		fetchTreeViaApi(owner, repo, ref),
 		fetchReadmeViaApi(owner, repo, ref),
 	]);
+
+	if (!tree || !readme) {
+		const [treeFallback, readmeFallback] = await Promise.all([
+			fetchTreeViaDirectApi(owner, repo, ref),
+			fetchReadmeViaDirectApi(owner, repo, ref),
+		]);
+		tree = tree ?? treeFallback;
+		readme = readme ?? readmeFallback;
+	}
 
 	if (!tree && !readme) return null;
 
