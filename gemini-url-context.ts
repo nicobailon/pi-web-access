@@ -1,5 +1,5 @@
 import { activityMonitor } from "./activity.js";
-import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.js";
+import { getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders, isGatewayConfigured, DEFAULT_MODEL } from "./gemini-api.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
 import { extractHeadingTitle, type ExtractedContent } from "./extract.js";
 
@@ -19,20 +19,20 @@ export async function extractWithUrlContext(
 	signal?: AbortSignal,
 ): Promise<ExtractedContent | null> {
 	const apiKey = getApiKey();
-	if (!apiKey) return null;
+	if (!apiKey && !isGatewayConfigured()) return null;
 
 	const activityId = activityMonitor.logStart({ type: "api", query: `url_context: ${url}` });
 
 	try {
 		const model = DEFAULT_MODEL;
 		const body = {
-			contents: [{ parts: [{ text: EXTRACTION_PROMPT + url }] }],
+			contents: [{ role: "user", parts: [{ text: EXTRACTION_PROMPT + url }] }],
 			tools: [{ url_context: {} }],
 		};
 
-		const res = await fetch(`${API_BASE}/models/${model}:generateContent?key=${apiKey}`, {
+		const res = await fetch(`${getVersionedApiBase()}/models/${model}:generateContent${buildKeyParam(apiKey)}`, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
 			body: JSON.stringify(body),
 			signal: AbortSignal.any([
 				AbortSignal.timeout(60000),

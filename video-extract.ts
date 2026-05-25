@@ -5,7 +5,7 @@ import { resolve, extname, basename, join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { activityMonitor } from "./activity.js";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
-import { queryGeminiApiWithVideo, getApiKey, API_BASE } from "./gemini-api.js";
+import { queryGeminiApiWithVideo, getApiKey, getVersionedApiBase, buildKeyParam, buildAuthHeaders } from "./gemini-api.js";
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.js";
 import { readExecError, trimErrorText, mapFfmpegError } from "./utils.js";
 
@@ -353,7 +353,10 @@ async function pollFileState(
 	while (Date.now() < deadline) {
 		if (signal?.aborted) throw new Error("Aborted");
 
-		const res = await fetch(`${API_BASE}/${fileName}?key=${apiKey}`, { signal });
+		const res = await fetch(
+			`${getVersionedApiBase()}/${fileName}${buildKeyParam(apiKey)}`,
+			{ signal, headers: buildAuthHeaders() },
+		);
 		if (!res.ok) throw new Error(`File state check failed: ${res.status}`);
 
 		const data = await res.json() as { state: string };
@@ -367,7 +370,10 @@ async function pollFileState(
 }
 
 function deleteGeminiFile(fileName: string, apiKey: string): void {
-	fetch(`${API_BASE}/${fileName}?key=${apiKey}`, { method: "DELETE" }).catch((err) => {
+	fetch(
+		`${getVersionedApiBase()}/${fileName}${buildKeyParam(apiKey)}`,
+		{ method: "DELETE", headers: buildAuthHeaders() },
+	).catch((err) => {
 		const message = err instanceof Error ? err.message : String(err);
 		console.error(`Failed to delete Gemini file ${fileName}: ${message}`);
 	});
