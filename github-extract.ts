@@ -65,8 +65,10 @@ function normalizePositiveNumber(value: unknown, fallback: number): number {
 
 function normalizeClonePath(value: unknown, fallback: string): string {
 	if (typeof value !== "string") return fallback;
-	const normalized = value.trim();
-	return normalized.length > 0 ? normalized : fallback;
+	let normalized = value.trim();
+	if (normalized.length === 0) return fallback;
+	if (normalized.startsWith("~/")) normalized = join(homedir(), normalized.slice(2));
+	return normalized;
 }
 
 function loadGitHubConfig(): GitHubCloneConfig {
