@@ -183,7 +183,7 @@ async function resolveSummaryModel(
 ): Promise<{ model: Model; apiKey: string; headers?: Record<string, string> }> {
 	const normalizedOverride = typeof modelOverride === "string" ? modelOverride.trim() : "";
 	if (normalizedOverride.length > 0) {
-		const slashIndex = normalizedOverride.indexOf("/");
+		const slashIndex = normalizedOverride.lastIndexOf("/");
 		if (slashIndex <= 0 || slashIndex >= normalizedOverride.length - 1) {
 			throw new Error(`Invalid summary model: ${normalizedOverride}. Use provider/model-id.`);
 		}
