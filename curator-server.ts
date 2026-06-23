@@ -44,6 +44,9 @@ export interface CuratorServerHandle {
 	pushResult: (queryIndex: number, data: { answer: string; results: Array<{ title: string; url: string; domain: string }>; provider: string }) => void;
 	pushError: (queryIndex: number, error: string, provider?: string) => void;
 	searchesDone: () => void;
+	/** Reports browser connection state so a cancelled search can surface WHY it
+	 * went stale (e.g. the browser never connected). */
+	getConnectionState: () => { browserConnected: boolean; lastHeartbeatAgeMs: number };
 }
 
 function sendJson(res: ServerResponse, status: number, payload: unknown): void {
@@ -604,6 +607,10 @@ export function startCuratorServer(
 					sendSSE("done", {});
 					state = "RESULT_SELECTION";
 				},
+				getConnectionState: () => ({
+					browserConnected,
+					lastHeartbeatAgeMs: Date.now() - lastHeartbeatAt,
+				}),
 			});
 		});
 	});

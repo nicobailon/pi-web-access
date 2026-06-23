@@ -40,8 +40,27 @@ import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.ts";
 import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
 import { isBraveAvailable } from "./brave.ts";
 import { isOpenAISearchAvailable } from "./openai-search.ts";
+import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+
+/** Shared collapsed/expanded renderer for an error/cancel plan produced by
+ * buildSearchErrorPlan(). Used by every tool renderResult's error branch so
+ * Ctrl+O (app.tools.expand) reveals diagnostics instead of a dead-end single line. */
+function renderSearchErrorPlan(plan: SearchErrorPlan, expanded: boolean, theme: { fg: (key: string, s: string) => string; bg: (key: string, s: string) => string }) {
+	if (expanded) {
+		return new Text(plan.expanded.map((l, i) => i === 0 ? theme.fg("error", l) : theme.fg("toolOutput", l)).join("\n"), 0, 0);
+	}
+	const box = new Box(1, 0, (t) => theme.bg("toolErrorBg", t));
+	box.addChild(new Text(theme.fg("error", plan.expanded[0]), 0, 0));
+	for (const line of plan.collapsed) {
+		box.addChild(new Text(theme.fg("dim", line), 0, 0));
+	}
+	if (plan.expandHint) {
+		box.addChild(new Text(theme.fg("muted", plan.expandHint), 0, 0));
+	}
+	return box;
+}
 
 interface WebSearchConfig {
 	provider?: string;
@@ -591,14 +610,34 @@ export default function (pi: ExtensionAPI) {
 		};
 	}
 
-	function buildCurationCancelledReturn(reason: "user" | "stale") {
+	function buildCurationCancelledReturn(
+		reason: "user" | "stale",
+		partial?: {
+			queries?: QueryResultData[];
+			queryCount?: number;
+			browserConnected?: boolean;
+			lastHeartbeatAgeMs?: number | null;
+		},
+	) {
 		const message = `Search curation cancelled (${reason}).`;
+		const cancelledQueries = partial?.queries?.length
+			? partial.queries.map(q => ({
+				query: q.query,
+				provider: q.provider ?? null,
+				error: q.error,
+				resultCount: q.results?.length ?? 0,
+			}))
+			: undefined;
 		return {
 			content: [{ type: "text", text: message }],
 			details: {
 				error: message,
 				cancelled: true,
 				cancelReason: reason,
+				browserConnected: partial?.browserConnected,
+				lastHeartbeatAgeMs: partial?.lastHeartbeatAgeMs,
+				queryCount: partial?.queryCount,
+				cancelledQueries,
 			},
 		};
 	}
@@ -964,7 +1003,13 @@ export default function (pi: ExtensionAPI) {
 								summaryMeta: resolvedSummary.summaryMeta,
 							}));
 						} else {
-							pc.finish(buildCurationCancelledReturn(reason));
+							const conn = activeCurator?.getConnectionState();
+							pc.finish(buildCurationCancelledReturn(reason, {
+								queries: Array.from(pc.searchResults.values()),
+								queryCount: pc.queryList.length,
+								browserConnected: conn?.browserConnected,
+								lastHeartbeatAgeMs: conn?.lastHeartbeatAgeMs,
+							}));
 						}
 						closeCurator();
 					},
@@ -1236,7 +1281,13 @@ export default function (pi: ExtensionAPI) {
 
 				const cancel = (reason: "user" | "stale" = "stale") => {
 					if (cancelled) return;
-					finish(buildCurationCancelledReturn(reason));
+					const conn = activeCurator?.getConnectionState();
+					finish(buildCurationCancelledReturn(reason, {
+						queries: Array.from(searchResults.values()),
+						queryCount: queryList.length,
+						browserConnected: conn?.browserConnected,
+						lastHeartbeatAgeMs: conn?.lastHeartbeatAgeMs,
+					}));
 				};
 
 				pc.finish = finish;
@@ -1398,6 +1449,9 @@ export default function (pi: ExtensionAPI) {
 				curatedQueries?: QueryDetail[];
 				cancelled?: boolean;
 				cancelReason?: string;
+				browserConnected?: boolean;
+				lastHeartbeatAgeMs?: number | null;
+				cancelledQueries?: import("./render-search-error.ts").CancelledQueryDetail[];
 				summary?: {
 					text: string;
 					workflow: CuratorWorkflow;
@@ -1427,6 +1481,10 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (details?.error) {
+				// Expandable Ctrl+O diagnostics: which queries completed, per-query errors,
+				// browser connection state, cancel reason. See render-search-error.ts.
+				const plan = buildSearchErrorPlan(details as SearchErrorDetails);
+				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
@@ -1598,6 +1656,11 @@ export default function (pi: ExtensionAPI) {
 		renderResult(result, { expanded }, theme) {
 			const details = result.details as { query?: string; maxTokens?: number; error?: string };
 			if (details?.error) {
+				const plan = buildSearchErrorPlan({
+					error: details.error,
+					extraLines: details.query ? [`query: ${details.query}`] : [],
+				});
+				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
@@ -1806,6 +1869,18 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (details?.error) {
+				const fd = details as typeof details & { urls?: string[] };
+				const extras: string[] = [];
+				if (typeof fd.urlCount === "number" || typeof fd.successful === "number") {
+					extras.push(`urls: ${fd.successful ?? 0}/${fd.urlCount ?? 0} succeeded`);
+				}
+				if (fd.responseId) extras.push(`response id: ${fd.responseId}`);
+				if (fd.urls && fd.urls.length > 0) {
+					for (const u of fd.urls.slice(0, 8)) extras.push(`  \u25b8 ${u}`);
+					if (fd.urls.length > 8) extras.push(`  ... and ${fd.urls.length - 8} more`);
+				}
+				const plan = buildSearchErrorPlan({ error: details.error, extraLines: extras });
+				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
@@ -1994,6 +2069,12 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			if (details?.error) {
+				const extras: string[] = [];
+				if (details.query) extras.push(`query: ${details.query}`);
+				if (details.url) extras.push(`url: ${details.url}`);
+				else if (details.title) extras.push(`resource: ${details.title}`);
+				const plan = buildSearchErrorPlan({ error: details.error, extraLines: extras });
+				if (plan) return renderSearchErrorPlan(plan, expanded, theme);
 				return new Text(theme.fg("error", `Error: ${details.error}`), 0, 0);
 			}
 
