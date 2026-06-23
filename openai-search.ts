@@ -10,6 +10,7 @@ interface OpenAIAuth {
 	provider: string;
 	apiKey: string;
 	model: string;
+	headers: Record<string, string>;
 }
 
 /**
@@ -23,9 +24,15 @@ export async function resolveOpenAIAuth(ctx: ExtensionContext): Promise<OpenAIAu
 		try {
 			const m = getModel(providerId, modelId);
 			if (m) {
-				const auth = await ctx.modelRegistry.getApiKeyAndHeaders(m);
-				const key = auth?.apiKey;
-				if (key) return { provider: providerId, apiKey: key, model: modelId };
+				const resolved = await ctx.modelRegistry.getApiKeyAndHeaders(m);
+				if (resolved?.ok && resolved.apiKey) {
+					return {
+						provider: providerId,
+						apiKey: resolved.apiKey,
+						model: modelId,
+						headers: resolved.headers ?? {},
+					};
+				}
 			}
 		} catch {
 			// Model not found or no key — try next
@@ -33,7 +40,7 @@ export async function resolveOpenAIAuth(ctx: ExtensionContext): Promise<OpenAIAu
 	}
 
 	const envKey = process.env.OPENAI_API_KEY;
-	if (envKey) return { provider: "openai", apiKey: envKey, model: "gpt-4o" };
+	if (envKey) return { provider: "openai", apiKey: envKey, model: "gpt-4o", headers: {} };
 	return undefined;
 }
 
@@ -180,9 +187,36 @@ export async function searchWithOpenAI(
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	const isOAuth = isCodexJwt(auth.apiKey);
+
+	// OpenAI's web_search tool has no hard result-count or guaranteed domain enforcement
+	// (notably via the Codex backend), so requested filters are encoded as guidance in the
+	// instructions instead of being silently dropped. For strict domain filtering, pin Exa/Brave.
+	const constraints: string[] = [];
+	if (options.recencyFilter) {
+		const recencyLabel: Record<string, string> = {
+			day: "24 hours",
+			week: "week",
+			month: "month",
+			year: "year",
+		};
+		const label = recencyLabel[options.recencyFilter];
+		if (label) constraints.push(`published within the last ${label}`);
+	}
+	if (options.domainFilter && options.domainFilter.length > 0) {
+		const allowed = options.domainFilter.filter((d) => !d.startsWith("-"));
+		const excluded = options.domainFilter.filter((d) => d.startsWith("-")).map((d) => d.slice(1));
+		if (allowed.length) constraints.push(`only from: ${allowed.join(", ")}`);
+		if (excluded.length) constraints.push(`excluding: ${excluded.join(", ")}`);
+	}
+	if (options.numResults && options.numResults > 0) {
+		constraints.push(`prefer around ${options.numResults} sources`);
+	}
+	const constraintText = constraints.length ? ` Focus on results ${constraints.join("; ")}.` : "";
+	const instructions = `Perform the web search.${constraintText} Return a brief summary mentioning each source.`;
+
 	const body = {
 		model: auth.model,
-		instructions: "Perform the web search. Return a brief summary mentioning each source.",
+		instructions,
 		input: [{ role: "user", content: [{ type: "input_text", text: query }] }],
 		tools: [{ type: "web_search" }],
 		include: ["web_search_call.action.sources"],
@@ -192,7 +226,10 @@ export async function searchWithOpenAI(
 		parallel_tool_calls: true,
 	};
 
+	// Preserve model-registry auth headers (e.g. gateway/auth-proxy headers) alongside
+	// the resolved bearer token so auth works in environments that require per-request headers.
 	const headers: Record<string, string> = {
+		...auth.headers,
 		Authorization: `Bearer ${auth.apiKey}`,
 		"Content-Type": "application/json",
 		"OpenAI-Beta": "responses=experimental",

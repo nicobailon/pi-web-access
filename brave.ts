@@ -2,7 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { activityMonitor } from "./activity.js";
-import type { ExtractedContent } from "./extract.js";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.js";
 
 const BRAVE_API_URL = "https://api.search.brave.com/res/v1/web/search";
@@ -102,7 +101,6 @@ export async function searchWithBrave(
 
 		const webResults = data.web?.results ?? [];
 		const results: SearchResult[] = [];
-		const inlineContent: ExtractedContent[] = [];
 
 		for (const item of webResults.slice(0, numResults)) {
 			if (!item.url) continue;
@@ -111,14 +109,6 @@ export async function searchWithBrave(
 				url: item.url,
 				snippet: item.description || "",
 			});
-			if (item.description && options.includeContent) {
-				inlineContent.push({
-					url: item.url,
-					title: item.title || item.url,
-					content: item.description,
-					error: null,
-				});
-			}
 		}
 
 		// Build an answer from snippets
@@ -129,9 +119,7 @@ export async function searchWithBrave(
 			})
 			.join("\n\n");
 
-		const responseObj: SearchResponse = { answer, results };
-		if (inlineContent.length > 0) responseObj.inlineContent = inlineContent;
-		return responseObj;
+		return { answer, results };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		if (message.toLowerCase().includes("abort")) {

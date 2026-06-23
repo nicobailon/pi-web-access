@@ -8,11 +8,13 @@ function safeInlineJSON(data: unknown): string {
 }
 
 function buildProviderButtons(
-	available: { perplexity: boolean; exa: boolean; gemini: boolean },
+	available: { openai: boolean; brave: boolean; perplexity: boolean; exa: boolean; gemini: boolean },
 	selected: string,
 	hasInitialQueries: boolean,
 ): string {
 	const providers = [
+		{ value: "openai", label: "OpenAI", available: available.openai },
+		{ value: "brave", label: "Brave", available: available.brave },
 		{ value: "perplexity", label: "Perplexity", available: available.perplexity },
 		{ value: "exa", label: "Exa", available: available.exa },
 		{ value: "gemini", label: "Gemini", available: available.gemini },
@@ -34,7 +36,7 @@ export function generateCuratorPage(
 	queries: string[],
 	sessionToken: string,
 	timeout: number,
-	availableProviders: { perplexity: boolean; exa: boolean; gemini: boolean },
+	availableProviders: { openai: boolean; brave: boolean; perplexity: boolean; exa: boolean; gemini: boolean },
 	defaultProvider: string,
 	summaryModels: Array<{ value: string; label: string }>,
 	defaultSummaryModel: string | null,
@@ -640,6 +642,16 @@ main {
   color: #f5c27b;
   background: rgba(245, 194, 123, 0.14);
   border-color: rgba(245, 194, 123, 0.3);
+}
+.provider-tag.provider-openai {
+  color: #a6e3a1;
+  background: rgba(166, 227, 161, 0.14);
+  border-color: rgba(166, 227, 161, 0.3);
+}
+.provider-tag.provider-brave {
+  color: #f38ba8;
+  background: rgba(243, 139, 168, 0.14);
+  border-color: rgba(243, 139, 168, 0.3);
 }
 .provider-tag.provider-unknown {
   color: var(--fg-muted);
@@ -1364,7 +1376,7 @@ const SCRIPT = `(function() {
   var token = DATA.sessionToken;
   var timeoutSec = DATA.timeout;
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
-  var providers = ["perplexity", "exa", "gemini"];
+  var providers = ["openai", "brave", "perplexity", "exa", "gemini"];
   var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
   var workflow = "summary-review";
   var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";
@@ -1561,6 +1573,8 @@ const SCRIPT = `(function() {
   }
 
   function providerLabel(provider) {
+    if (provider === "openai") return "OpenAI";
+    if (provider === "brave") return "Brave";
     if (provider === "perplexity") return "Perplexity";
     if (provider === "exa") return "Exa";
     if (provider === "gemini") return "Gemini";
