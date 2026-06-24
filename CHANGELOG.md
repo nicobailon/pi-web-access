@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- Supported parallel `web_search` curator tool calls with per-call browser and cancellation state.
+
 ## [0.11.0] - 2026-06-24
 
 ### Added
