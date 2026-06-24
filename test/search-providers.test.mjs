@@ -7,12 +7,29 @@ import { test } from "node:test";
 
 const braveModuleUrl = new URL("../brave.ts", import.meta.url).href;
 const openaiModuleUrl = new URL("../openai-search.ts", import.meta.url).href;
+const tavilyModuleUrl = new URL("../tavily.ts", import.meta.url).href;
+const searchModuleUrl = new URL("../gemini-search.ts", import.meta.url).href;
 
 function runChild(script, env) {
+	const childEnv = { ...process.env };
+	for (const key of [
+		"PI_CODING_AGENT_DIR",
+		"XDG_CONFIG_HOME",
+		"OPENAI_API_KEY",
+		"BRAVE_API_KEY",
+		"PARALLEL_API_KEY",
+		"TAVILY_API_KEY",
+		"EXA_API_KEY",
+		"PERPLEXITY_API_KEY",
+		"GEMINI_API_KEY",
+	]) {
+		delete childEnv[key];
+	}
+	Object.assign(childEnv, env);
 	return spawnSync(process.execPath, ["--input-type=module"], {
 		input: script,
 		encoding: "utf8",
-		env: { ...process.env, ...env },
+		env: childEnv,
 		maxBuffer: 2 * 1024 * 1024,
 	});
 }
@@ -59,6 +76,96 @@ test("Brave search applies domain filters in the query and returned results", as
 	assert.equal(output.count, "20");
 	assert.equal(output.token, "brave-test-key");
 	assert.deepEqual(output.results.map((result) => result.url), ["https://github.com/nicobailon/pi-web-access"]);
+});
+
+test("Tavily search uses bearer auth and maps filters/content", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-tavily-"));
+	const child = runChild(`
+		let capturedUrl = "";
+		let capturedHeaders = null;
+		let capturedBody = null;
+		globalThis.fetch = async (url, init) => {
+			capturedUrl = String(url);
+			capturedHeaders = init.headers;
+			capturedBody = JSON.parse(init.body);
+			return new Response(JSON.stringify({
+				answer: "Tavily answer",
+				results: [{
+					title: "Tavily Docs",
+					url: "https://docs.tavily.com/search",
+					content: "Search docs snippet",
+					raw_content: "# Tavily Docs\\nFull content",
+				}],
+			}), { status: 200, headers: { "content-type": "application/json" } });
+		};
+
+		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const result = await searchWithTavily("tavily search docs", {
+			domainFilter: ["https://docs.tavily.com/search", "-reddit.com"],
+			recencyFilter: "week",
+			numResults: 4,
+			includeContent: true,
+		});
+		console.log(JSON.stringify({ capturedUrl, capturedHeaders, capturedBody, result }));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		TAVILY_API_KEY: "tvly-test-key",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.capturedUrl, "https://api.tavily.com/search");
+	assert.equal(output.capturedHeaders.Authorization, "Bearer tvly-test-key");
+	assert.deepEqual(output.capturedBody, {
+		query: "tavily search docs",
+		search_depth: "basic",
+		max_results: 4,
+		include_answer: "basic",
+		include_raw_content: "markdown",
+		time_range: "week",
+		include_domains: ["docs.tavily.com"],
+		exclude_domains: ["reddit.com"],
+	});
+	assert.equal(output.result.answer, "Tavily answer");
+	assert.deepEqual(output.result.results, [{ title: "Tavily Docs", url: "https://docs.tavily.com/search", snippet: "Search docs snippet" }]);
+	assert.deepEqual(output.result.inlineContent, [{ url: "https://docs.tavily.com/search", title: "Tavily Docs", content: "# Tavily Docs\nFull content", error: null }]);
+});
+
+test("auto provider falls through to Tavily after unavailable earlier providers", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-tavily-auto-"));
+	const child = runChild(`
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			const urlText = String(url);
+			calls.push(urlText);
+			if (urlText === "https://mcp.exa.ai/mcp") {
+				return new Response("Exa unavailable", { status: 503 });
+			}
+			if (urlText === "https://api.tavily.com/search") {
+				return new Response(JSON.stringify({
+					answer: "Auto Tavily answer",
+					results: [{ title: "Tavily Auto", url: "https://docs.tavily.com/auto", content: "auto snippet" }],
+				}), { status: 200, headers: { "content-type": "application/json" } });
+			}
+			throw new Error("Unexpected fetch " + urlText);
+		};
+
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const result = await search("auto tavily docs", { provider: "auto" });
+		console.log(JSON.stringify({ calls, result }));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		TAVILY_API_KEY: "tvly-test-key",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.ok(output.calls.includes("https://mcp.exa.ai/mcp"));
+	assert.ok(output.calls.includes("https://api.tavily.com/search"));
+	assert.equal(output.result.provider, "tavily");
+	assert.equal(output.result.answer, "Auto Tavily answer");
 });
 
 test("OpenAI search requires web_search and maps domain filters", async () => {

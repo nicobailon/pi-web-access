@@ -8,9 +8,10 @@ import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.ts";
 import { isBraveAvailable, searchWithBrave } from "./brave.ts";
 import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.ts";
 import { isParallelAvailable, searchWithParallel } from "./parallel.ts";
+import { isTavilyAvailable, searchWithTavily } from "./tavily.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
-export type SearchProvider = "auto" | "openai" | "brave" | "parallel" | "perplexity" | "gemini" | "exa";
+export type SearchProvider = "auto" | "openai" | "brave" | "parallel" | "tavily" | "perplexity" | "gemini" | "exa";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -60,7 +61,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "perplexity", "gemini", "exa"];
+	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "tavily", "perplexity", "gemini", "exa"];
 	return valid.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
 }
 
@@ -133,6 +134,11 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (provider === "parallel") {
 		const result = await searchWithParallel(query, options);
 		return { ...result, provider: "parallel" };
+	}
+
+	if (provider === "tavily") {
+		const result = await searchWithTavily(query, options);
+		return { ...result, provider: "tavily" };
 	}
 
 	if (provider === "perplexity") {
@@ -216,6 +222,16 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
+	if (isTavilyAvailable()) {
+		try {
+			const result = await searchWithTavily(query, options);
+			return { ...result, provider: "tavily" };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			fallbackErrors.push(`Tavily: ${errorMessage(err)}`);
+		}
+	}
+
 	if (isPerplexityAvailable()) {
 		try {
 			const result = await searchWithPerplexity(query, options);
@@ -241,8 +257,8 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	throw new Error(
 		"No search provider available. Either:\n" +
 		"  1. Use /login to sign in with a Codex subscription for OpenAI web search\n" +
-		`  2. Set openaiApiKey, braveApiKey, parallelApiKey, perplexityApiKey, exaApiKey, or geminiApiKey in ${CONFIG_PATH}\n` +
-		"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, EXA_API_KEY, PERPLEXITY_API_KEY, or GEMINI_API_KEY env vars\n" +
+		`  2. Set openaiApiKey, braveApiKey, parallelApiKey, tavilyApiKey, perplexityApiKey, exaApiKey, or geminiApiKey in ${CONFIG_PATH}\n` +
+		"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TAVILY_API_KEY, EXA_API_KEY, PERPLEXITY_API_KEY, or GEMINI_API_KEY env vars\n" +
 		"  4. Sign into gemini.google.com in a supported Chromium-based browser"
 	);
 }
