@@ -41,6 +41,7 @@ import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.ts";
 import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
 import { isBraveAvailable } from "./brave.ts";
 import { isOpenAISearchAvailable } from "./openai-search.ts";
+import { isParallelAvailable } from "./parallel.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
 
 const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
@@ -77,6 +78,7 @@ interface WebSearchConfig {
 interface ProviderAvailability {
 	openai: boolean;
 	brave: boolean;
+	parallel: boolean;
 	perplexity: boolean;
 	exa: boolean;
 	gemini: boolean;
@@ -138,7 +140,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	const valid: SearchProvider[] = ["auto", "openai", "brave", "exa", "perplexity", "gemini"];
+	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "exa", "perplexity", "gemini"];
 	return valid.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
 }
 
@@ -175,6 +177,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 	return {
 		openai: await isOpenAISearchAvailable(ctx),
 		brave: isBraveAvailable(),
+		parallel: isParallelAvailable(),
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
 		gemini: isGeminiApiAvailable() || !!geminiWebAvail,
@@ -207,6 +210,7 @@ function firstAvailableProvider(available: ProviderAvailability, preferOpenAI: b
 	if (preferOpenAI && available.openai) return "openai";
 	if (available.exa) return "exa";
 	if (available.brave) return "brave";
+	if (available.parallel) return "parallel";
 	if (available.perplexity) return "perplexity";
 	if (available.gemini) return "gemini";
 	return fallback;
@@ -228,6 +232,9 @@ function resolveProvider(
 	}
 	if (provider === "brave" && !available.brave) {
 		return firstAvailableProvider(available, preferOpenAI, "brave");
+	}
+	if (provider === "parallel" && !available.parallel) {
+		return firstAvailableProvider(available, preferOpenAI, "parallel");
 	}
 	if (provider === "exa" && !available.exa) {
 		return firstAvailableProvider(available, preferOpenAI, "exa");
@@ -1190,7 +1197,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using OpenAI, Brave, Exa, Perplexity, or Gemini. Returns an AI-synthesized answer with source citations. OpenAI web_search uses a Codex subscription or OpenAI API key. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: OpenAI when suitable and available, then Exa, Brave, Perplexity, Gemini API, then Gemini Web.`,
+			`Search the web using OpenAI, Brave, Parallel, Exa, Perplexity, or Gemini. Returns an AI-synthesized answer with source citations. OpenAI web_search uses a Codex subscription or OpenAI API key. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation. Provider auto-selects: OpenAI when suitable and available, then Exa, Brave, Parallel, Perplexity, Gemini API, then Gemini Web.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
 		parameters: Type.Object({
@@ -1203,7 +1210,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "openai", "brave", "exa", "perplexity", "gemini"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "openai", "brave", "parallel", "exa", "perplexity", "gemini"], { description: "Search provider (default: auto)" }),
 			),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review"], {
