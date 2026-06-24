@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Aligned custom message display values and widget clearing with the current Pi extension API types.
+- Surfaced real YouTube Gemini API failures instead of replacing them with the generic Chrome/API-key guidance.
 
 ### Removed
 - Removed the committed `package-lock.json` from the extension package and ignored future lockfiles.

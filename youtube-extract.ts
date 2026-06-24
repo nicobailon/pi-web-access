@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { activityMonitor } from "./activity.ts";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { isGeminiApiAvailable, queryGeminiApiWithVideo } from "./gemini-api.ts";
-import { searchWithPerplexity } from "./perplexity.ts";
+import { isPerplexityAvailable, searchWithPerplexity } from "./perplexity.ts";
 import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.ts";
 import { formatSeconds, readExecError, isTimeoutError, trimErrorText, mapFfmpegError } from "./utils.ts";
 
@@ -22,9 +22,17 @@ Format as markdown.`;
 const YOUTUBE_REGEX =
 	/(?:(?:www\.|m\.)?youtube\.com\/(?:watch\?.*v=|shorts\/|live\/|embed\/|v\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
 
+function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
 function shouldRethrow(err: unknown): boolean {
-	const message = err instanceof Error ? err.message : String(err);
-	return message.startsWith("Failed to parse ");
+	return errorMessage(err).startsWith("Failed to parse ");
+}
+
+function addAttemptError(errors: string[], label: string, err: unknown): void {
+	const message = errorMessage(err).replace(/\s+/g, " ").trim();
+	if (message) errors.push(`${label}: ${message}`);
 }
 
 interface YouTubeConfig {
@@ -102,18 +110,19 @@ export async function extractYouTube(
 	const effectiveModel = model ?? config.preferredModel;
 
 	const activityId = activityMonitor.logStart({ type: "fetch", url: `youtube.com/${videoId ?? "video"}` });
+	const attemptErrors: string[] = [];
 
-	const result = await tryGeminiWeb(canonicalUrl, effectivePrompt, effectiveModel, signal)
-		?? await tryGeminiApi(canonicalUrl, effectivePrompt, effectiveModel, signal)
-		?? await tryPerplexity(url, effectivePrompt, signal);
+	const result = await tryGeminiWeb(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors)
+		?? await tryGeminiApi(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors)
+		?? await tryPerplexity(url, effectivePrompt, signal, attemptErrors);
 
 	if (result) {
 		result.url = url;
-		if (videoId) {
+		if (!result.error && videoId) {
 			const thumb = await fetchYouTubeThumbnail(videoId);
 			if (thumb) result.thumbnail = thumb;
 		}
-		activityMonitor.logComplete(activityId, 200);
+		activityMonitor.logComplete(activityId, result.error ? 0 : 200);
 		return result;
 	}
 
@@ -122,8 +131,11 @@ export async function extractYouTube(
 		return null;
 	}
 
-	activityMonitor.logError(activityId, "all extraction paths failed");
-	return null;
+	const error = attemptErrors.length > 0
+		? ["Could not extract YouTube video content.", "", ...attemptErrors.map(message => `- ${message}`)].join("\n")
+		: "Could not extract YouTube video content. Sign into Google in Chrome for automatic access, or set GEMINI_API_KEY.";
+	activityMonitor.logError(activityId, error);
+	return { url, title: "", content: "", error };
 }
 
 type StreamInfo = { streamUrl: string; duration: number | null };
@@ -218,7 +230,8 @@ async function tryGeminiWeb(
 	url: string,
 	prompt: string,
 	model: string,
-	signal?: AbortSignal,
+	signal: AbortSignal | undefined,
+	attemptErrors: string[],
 ): Promise<ExtractedContent | null> {
 	try {
 		const cookies = await isGeminiWebAvailable();
@@ -241,6 +254,7 @@ async function tryGeminiWeb(
 		};
 	} catch (err) {
 		if (shouldRethrow(err)) throw err;
+		if (!signal?.aborted) addAttemptError(attemptErrors, "Gemini Web", err);
 		return null;
 	}
 }
@@ -249,7 +263,8 @@ async function tryGeminiApi(
 	url: string,
 	prompt: string,
 	model: string,
-	signal?: AbortSignal,
+	signal: AbortSignal | undefined,
+	attemptErrors: string[],
 ): Promise<ExtractedContent | null> {
 	try {
 		if (!isGeminiApiAvailable()) return null;
@@ -270,6 +285,7 @@ async function tryGeminiApi(
 		};
 	} catch (err) {
 		if (shouldRethrow(err)) throw err;
+		if (!signal?.aborted) addAttemptError(attemptErrors, "Gemini API", err);
 		return null;
 	}
 }
@@ -277,10 +293,11 @@ async function tryGeminiApi(
 async function tryPerplexity(
 	url: string,
 	prompt: string,
-	signal?: AbortSignal,
+	signal: AbortSignal | undefined,
+	attemptErrors: string[],
 ): Promise<ExtractedContent | null> {
 	try {
-		if (signal?.aborted) return null;
+		if (signal?.aborted || !isPerplexityAvailable()) return null;
 
 		const perplexityQuery = prompt === YOUTUBE_PROMPT
 			? `Summarize this YouTube video in detail: ${url}`
@@ -305,6 +322,7 @@ async function tryPerplexity(
 		};
 	} catch (err) {
 		if (shouldRethrow(err)) throw err;
+		if (!signal?.aborted) addAttemptError(attemptErrors, "Perplexity", err);
 		return null;
 	}
 }

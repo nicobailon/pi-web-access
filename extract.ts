@@ -396,9 +396,7 @@ export async function extractContent(
 		} catch (err) {
 			const message = errorMessage(err);
 			if (isAbortError(err)) return abortedResult(url);
-			if (isConfigParseError(err)) {
-				return { url, title: "", content: "", error: message };
-			}
+			return { url, title: "", content: "", error: message };
 		}
 		return {
 			url,
