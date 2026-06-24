@@ -9,6 +9,7 @@ import { extractGitHub } from "./github-extract.ts";
 import { isYouTubeURL, isYouTubeEnabled, extractYouTube, extractYouTubeFrame, extractYouTubeFrames, getYouTubeStreamInfo } from "./youtube-extract.ts";
 import { extractWithUrlContext, extractWithGeminiWeb } from "./gemini-url-context.ts";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./video-extract.ts";
+import { fetchRemoteUrl, validateRemoteUrl } from "./ssrf-protection.ts";
 import { formatSeconds } from "./utils.ts";
 
 const DEFAULT_TIMEOUT_MS = 30000;
@@ -80,6 +81,7 @@ async function extractWithJinaReader(
 	const activityId = activityMonitor.logStart({ type: "api", query: `jina: ${url}` });
 
 	try {
+		await validateRemoteUrl(url);
 		const res = await fetch(jinaUrl, {
 			headers: {
 				"Accept": "text/markdown",
@@ -364,9 +366,12 @@ export async function extractContent(
 	}
 
 	try {
-		new URL(url);
-	} catch {
-		return { url, title: "", content: "", error: "Invalid URL" };
+		const parsed = new URL(url);
+		if (parsed.protocol === "http:" || parsed.protocol === "https:") {
+			await validateRemoteUrl(parsed);
+		}
+	} catch (err) {
+		return { url, title: "", content: "", error: errorMessage(err) };
 	}
 
 	try {
@@ -480,7 +485,7 @@ async function extractViaHttp(
 	signal?.addEventListener("abort", onAbort);
 
 	try {
-		const response = await fetch(url, {
+		const response = await fetchRemoteUrl(url, {
 			signal: controller.signal,
 			headers: {
 				"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
