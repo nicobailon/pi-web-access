@@ -3,6 +3,7 @@ import { Box, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { StringEnum, complete, getModel, type Model } from "@earendil-works/pi-ai/compat";
 import { fetchAllContent, type ExtractedContent } from "./extract.ts";
+import { normalizeFetchContentParams } from "./fetch-params.ts";
 import { clearCloneCache } from "./github-extract.ts";
 import { search, type SearchProvider, type ResolvedSearchProvider } from "./gemini-search.ts";
 import { executeCodeSearch } from "./code-search.ts";
@@ -1703,7 +1704,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate) {
-			const urlList = params.urls ?? (params.url ? [params.url] : []);
+			const { urlList, options } = normalizeFetchContentParams(params);
 			if (urlList.length === 0) {
 				return {
 					content: [{ type: "text", text: "Error: No URL provided." }],
@@ -1716,13 +1717,7 @@ export default function (pi: ExtensionAPI) {
 				details: { phase: "fetch", progress: 0 },
 			});
 
-			const fetchResults = await fetchAllContent(urlList, signal, {
-				forceClone: params.forceClone,
-				prompt: params.prompt,
-				timestamp: params.timestamp,
-				frames: params.frames,
-				model: params.model,
-			});
+			const fetchResults = await fetchAllContent(urlList, signal, options);
 			const successful = fetchResults.filter((r) => !r.error).length;
 			const totalChars = fetchResults.reduce((sum, r) => sum + r.content.length, 0);
 
