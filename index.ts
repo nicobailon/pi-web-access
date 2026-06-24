@@ -1,13 +1,13 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
-import { Box, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Box, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { StringEnum, complete, getModel, type Model } from "@mariozechner/pi-ai";
-import { fetchAllContent, type ExtractedContent } from "./extract.js";
-import { clearCloneCache } from "./github-extract.js";
-import { search, type SearchProvider, type ResolvedSearchProvider } from "./gemini-search.js";
-import { executeCodeSearch } from "./code-search.js";
-import type { SearchResult } from "./perplexity.js";
-import { formatSeconds } from "./utils.js";
+import { StringEnum, complete, getModel, type Model } from "@earendil-works/pi-ai/compat";
+import { fetchAllContent, type ExtractedContent } from "./extract.ts";
+import { clearCloneCache } from "./github-extract.ts";
+import { search, type SearchProvider, type ResolvedSearchProvider } from "./gemini-search.ts";
+import { executeCodeSearch } from "./code-search.ts";
+import type { SearchResult } from "./perplexity.ts";
+import { formatSeconds } from "./utils.ts";
 import {
 	clearResults,
 	deleteResult,
@@ -18,25 +18,25 @@ import {
 	storeResult,
 	type QueryResultData,
 	type StoredSearchData,
-} from "./storage.js";
-import { activityMonitor, type ActivityEntry } from "./activity.js";
-import { startCuratorServer, type CuratorServerHandle } from "./curator-server.js";
+} from "./storage.ts";
+import { activityMonitor, type ActivityEntry } from "./activity.ts";
+import { startCuratorServer, type CuratorServerHandle } from "./curator-server.ts";
 import {
 	buildDeterministicSummary,
 	generateSummaryDraft,
 	type SummaryGenerationContext,
 	type SummaryMeta,
-} from "./summary-review.js";
+} from "./summary-review.ts";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { platform, homedir } from "node:os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
-import { isPerplexityAvailable } from "./perplexity.js";
-import { isExaAvailable } from "./exa.js";
-import { isGeminiApiAvailable } from "./gemini-api.js";
-import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.js";
+import { isPerplexityAvailable } from "./perplexity.ts";
+import { isExaAvailable } from "./exa.ts";
+import { isGeminiApiAvailable } from "./gemini-api.ts";
+import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.ts";
 import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
 
 const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
@@ -1064,7 +1064,7 @@ export default function (pi: ExtensionAPI) {
 			} else {
 				widgetUnsubscribe?.();
 				widgetUnsubscribe = null;
-				ctx.ui.setWidget("web-activity", null);
+				ctx.ui.setWidget("web-activity", undefined);
 			}
 		},
 	});
@@ -2014,7 +2014,7 @@ export default function (pi: ExtensionAPI) {
 				pi.sendMessage({
 					customType: "web-search-results",
 					content: payload.content,
-					display: "tool",
+					display: true,
 					details: payload.details,
 				}, { triggerTurn: true, deliverAs: "followUp" });
 			}
@@ -2234,7 +2234,7 @@ export default function (pi: ExtensionAPI) {
 			pi.sendMessage({
 				customType: "curator-config",
 				content: [{ type: "text", text: label }],
-				display: "tool",
+				display: true,
 				details: { workflow: newWorkflow },
 			}, { triggerTurn: false, deliverAs: "followUp" });
 		},
@@ -2247,7 +2247,7 @@ export default function (pi: ExtensionAPI) {
 				pi.sendMessage({
 					customType: "google-account",
 					content: [{ type: "text", text: "Gemini Web browser cookie access is disabled. Set allowBrowserCookies: true in ~/.pi/web-search.json to enable it." }],
-					display: "tool",
+					display: true,
 					details: { available: false, cookieAccessAllowed: false },
 				}, { triggerTurn: true, deliverAs: "followUp" });
 				return;
@@ -2258,7 +2258,7 @@ export default function (pi: ExtensionAPI) {
 				pi.sendMessage({
 					customType: "google-account",
 					content: [{ type: "text", text: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser." }],
-					display: "tool",
+					display: true,
 					details: { available: false, cookieAccessAllowed: true },
 				}, { triggerTurn: true, deliverAs: "followUp" });
 				return;
@@ -2272,7 +2272,7 @@ export default function (pi: ExtensionAPI) {
 			pi.sendMessage({
 				customType: "google-account",
 				content: [{ type: "text", text }],
-				display: "tool",
+				display: true,
 				details: { available: true, email: email ?? null },
 			}, { triggerTurn: true, deliverAs: "followUp" });
 		},

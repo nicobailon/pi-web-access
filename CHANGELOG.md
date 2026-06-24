@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- Updated extension imports for Pi 0.80.x, including the `@earendil-works` package namespace, `.ts` local module specifiers, and the `@earendil-works/pi-ai/compat` entrypoint for legacy model helpers.
+- Declared Pi-bundled packages as peer dependencies so Pi can provide its runtime aliases when loading the extension.
+
+### Fixed
+- Aligned custom message display values and widget clearing with the current Pi extension API types.
+
+### Removed
+- Removed the committed `package-lock.json` from the extension package and ignored future lockfiles.
+
 ## [0.10.7] - 2026-05-02
 
 ### Added

@@ -2,9 +2,9 @@ import { existsSync, readFileSync, rmSync, statSync, readdirSync, openSync, read
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { extname, join, resolve as resolvePath, sep as pathSep } from "node:path";
-import { activityMonitor } from "./activity.js";
-import type { ExtractedContent } from "./extract.js";
-import { checkGhAvailable, checkRepoSize, fetchViaApi, showGhHint } from "./github-api.js";
+import { activityMonitor } from "./activity.ts";
+import type { ExtractedContent } from "./extract.ts";
+import { checkGhAvailable, checkRepoSize, fetchViaApi, showGhHint } from "./github-api.ts";
 
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 

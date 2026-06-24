@@ -2,12 +2,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { activityMonitor } from "./activity.js";
-import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
-import { isGeminiApiAvailable, queryGeminiApiWithVideo } from "./gemini-api.js";
-import { searchWithPerplexity } from "./perplexity.js";
-import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.js";
-import { formatSeconds, readExecError, isTimeoutError, trimErrorText, mapFfmpegError } from "./utils.js";
+import { activityMonitor } from "./activity.ts";
+import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
+import { isGeminiApiAvailable, queryGeminiApiWithVideo } from "./gemini-api.ts";
+import { searchWithPerplexity } from "./perplexity.ts";
+import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.ts";
+import { formatSeconds, readExecError, isTimeoutError, trimErrorText, mapFfmpegError } from "./utils.ts";
 
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 

@@ -1,11 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { activityMonitor } from "./activity.js";
-import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.js";
-import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
-import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.js";
-import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.js";
+import { activityMonitor } from "./activity.ts";
+import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.ts";
+import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
+import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.ts";
+import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.ts";
 
 export type SearchProvider = "auto" | "perplexity" | "gemini" | "exa";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;

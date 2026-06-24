@@ -1,8 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { activityMonitor } from "./activity.js";
-import type { ExtractedContent } from "./extract.js";
+import { activityMonitor } from "./activity.ts";
+import type { ExtractedContent } from "./extract.ts";
 
 const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");

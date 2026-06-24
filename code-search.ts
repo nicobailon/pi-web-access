@@ -1,5 +1,5 @@
-import { activityMonitor } from "./activity.js";
-import { callExaMcp } from "./exa.js";
+import { activityMonitor } from "./activity.ts";
+import { callExaMcp } from "./exa.ts";
 
 const CODE_CONTEXT_TOOL = "get_code_context_exa";
 const WEB_SEARCH_TOOL = "web_search_exa";

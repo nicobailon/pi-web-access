@@ -3,11 +3,11 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve, extname, basename, join, dirname } from "node:path";
 import { homedir } from "node:os";
-import { activityMonitor } from "./activity.js";
-import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.js";
-import { queryGeminiApiWithVideo, getApiKey, API_BASE } from "./gemini-api.js";
-import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.js";
-import { readExecError, trimErrorText, mapFfmpegError } from "./utils.js";
+import { activityMonitor } from "./activity.ts";
+import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
+import { queryGeminiApiWithVideo, getApiKey, API_BASE } from "./gemini-api.ts";
+import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.ts";
+import { readExecError, trimErrorText, mapFfmpegError } from "./utils.ts";
 
 const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
 const UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta";

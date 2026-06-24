@@ -1,5 +1,5 @@
 import { basename } from "node:path";
-import { type CookieMap, getGoogleCookies } from "./chrome-cookies.js";
+import { type CookieMap, getGoogleCookies } from "./chrome-cookies.ts";
 import { getChromeProfileFromConfig, isBrowserCookieAccessAllowed, normalizeChromeProfile } from "./gemini-web-config.ts";
 
 const GEMINI_APP_URL = "https://gemini.google.com/app";
