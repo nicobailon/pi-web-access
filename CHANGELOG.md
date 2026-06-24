@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Resolved `web-search.json` from `PI_CODING_AGENT_DIR`, then `XDG_CONFIG_HOME/pi`, before falling back to `~/.pi`.
+
 ### Fixed
 - Supported parallel `web_search` curator tool calls with per-call browser and cancellation state.
 - Prevented curator sessions from hanging after searches finish when no browser connects, and finalized connected idle sessions once the curator timeout elapses.

@@ -1,15 +1,15 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { getWebSearchConfigDir, getWebSearchConfigPath } from "./utils.ts";
 
 const EXA_ANSWER_URL = "https://api.exa.ai/answer";
 const EXA_SEARCH_URL = "https://api.exa.ai/search";
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
-const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
-const USAGE_PATH = join(homedir(), ".pi", "exa-usage.json");
+const CONFIG_PATH = getWebSearchConfigPath();
+const USAGE_PATH = join(getWebSearchConfigDir(), "exa-usage.json");
 
 const MONTHLY_LIMIT = 1000;
 const WARNING_THRESHOLD = 800;
@@ -115,7 +115,7 @@ function readUsage(): ExaUsage {
 }
 
 function writeUsage(usage: ExaUsage): void {
-	const dir = join(homedir(), ".pi");
+	const dir = getWebSearchConfigDir();
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 	writeFileSync(USAGE_PATH, JSON.stringify(usage, null, 2) + "\n");
 }

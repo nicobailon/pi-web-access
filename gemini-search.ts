@@ -1,6 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { activityMonitor } from "./activity.ts";
 import { getApiKey, API_BASE, DEFAULT_MODEL } from "./gemini-api.ts";
@@ -9,6 +7,7 @@ import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type Se
 import { hasExaApiKey, isExaAvailable, searchWithExa } from "./exa.ts";
 import { isBraveAvailable, searchWithBrave } from "./brave.ts";
 import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.ts";
+import { getWebSearchConfigPath } from "./utils.ts";
 
 export type SearchProvider = "auto" | "openai" | "brave" | "perplexity" | "gemini" | "exa";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;
@@ -17,7 +16,7 @@ export interface AttributedSearchResponse extends SearchResponse {
 	provider: ResolvedSearchProvider;
 }
 
-const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+const CONFIG_PATH = getWebSearchConfigPath();
 
 let cachedSearchConfig: { searchProvider: SearchProvider; searchModel?: string } | null = null;
 
@@ -140,7 +139,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		if (result) return { ...result, provider: "gemini" };
 		throw new Error(
 			"Gemini search unavailable. Either:\n" +
-			"  1. Set GEMINI_API_KEY in ~/.pi/web-search.json\n" +
+			`  1. Set GEMINI_API_KEY in ${CONFIG_PATH}\n` +
 			"  2. Sign into gemini.google.com in a supported Chromium-based browser"
 		);
 	}
@@ -226,7 +225,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	throw new Error(
 		"No search provider available. Either:\n" +
 		"  1. Use /login to sign in with a Codex subscription for OpenAI web search\n" +
-		"  2. Set openaiApiKey, braveApiKey, perplexityApiKey, exaApiKey, or geminiApiKey in ~/.pi/web-search.json\n" +
+		`  2. Set openaiApiKey, braveApiKey, perplexityApiKey, exaApiKey, or geminiApiKey in ${CONFIG_PATH}\n` +
 		"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, EXA_API_KEY, PERPLEXITY_API_KEY, or GEMINI_API_KEY env vars\n" +
 		"  4. Sign into gemini.google.com in a supported Chromium-based browser"
 	);

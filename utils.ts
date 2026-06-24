@@ -1,3 +1,16 @@
+import { homedir } from "node:os";
+import { join } from "node:path";
+
+export function getWebSearchConfigDir(): string {
+	if (process.env.PI_CODING_AGENT_DIR) return process.env.PI_CODING_AGENT_DIR;
+	if (process.env.XDG_CONFIG_HOME) return join(process.env.XDG_CONFIG_HOME, "pi");
+	return join(homedir(), ".pi");
+}
+
+export function getWebSearchConfigPath(): string {
+	return join(getWebSearchConfigDir(), "web-search.json");
+}
+
 export function formatSeconds(s: number): string {
 	const h = Math.floor(s / 3600);
 	const m = Math.floor((s % 3600) / 60);

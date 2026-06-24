@@ -11,6 +11,8 @@ function runCookieAccessCheck(home, extraEnv = {}) {
 	const env = { ...process.env, HOME: home, USERPROFILE: home, ...extraEnv };
 	delete env.PI_ALLOW_BROWSER_COOKIES;
 	delete env.FEYNMAN_ALLOW_BROWSER_COOKIES;
+	delete env.PI_CODING_AGENT_DIR;
+	delete env.XDG_CONFIG_HOME;
 	Object.assign(env, extraEnv);
 
 	return spawnSync(process.execPath, ["--input-type=module"], {

@@ -2,14 +2,13 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve, extname, basename, join, dirname } from "node:path";
-import { homedir } from "node:os";
 import { activityMonitor } from "./activity.ts";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { queryGeminiApiWithVideo, getApiKey, API_BASE } from "./gemini-api.ts";
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.ts";
-import { readExecError, trimErrorText, mapFfmpegError } from "./utils.ts";
+import { readExecError, trimErrorText, mapFfmpegError, getWebSearchConfigPath } from "./utils.ts";
 
-const CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+const CONFIG_PATH = getWebSearchConfigPath();
 const UPLOAD_BASE = "https://generativelanguage.googleapis.com/upload/v1beta";
 
 const DEFAULT_VIDEO_PROMPT = `Extract the complete content of this video. Include:

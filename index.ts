@@ -8,7 +8,7 @@ import { clearCloneCache } from "./github-extract.ts";
 import { search, type SearchProvider, type ResolvedSearchProvider } from "./gemini-search.ts";
 import { executeCodeSearch } from "./code-search.ts";
 import type { SearchResult } from "./perplexity.ts";
-import { formatSeconds } from "./utils.ts";
+import { formatSeconds, getWebSearchConfigDir, getWebSearchConfigPath } from "./utils.ts";
 import {
 	clearResults,
 	deleteResult,
@@ -31,7 +31,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { platform, homedir } from "node:os";
+import { platform } from "node:os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.ts";
@@ -43,7 +43,7 @@ import { isBraveAvailable } from "./brave.ts";
 import { isOpenAISearchAvailable } from "./openai-search.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
 
-const WEB_SEARCH_CONFIG_PATH = join(homedir(), ".pi", "web-search.json");
+const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
 
 /** Shared collapsed/expanded renderer for an error/cancel plan produced by
  * buildSearchErrorPlan(). Used by every tool renderResult's error branch so
@@ -115,7 +115,7 @@ function saveConfig(updates: Partial<WebSearchConfig>): void {
 	}
 
 	Object.assign(config, updates);
-	const dir = join(homedir(), ".pi");
+	const dir = getWebSearchConfigDir();
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 	writeFileSync(WEB_SEARCH_CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
 }
@@ -2421,7 +2421,7 @@ export default function (pi: ExtensionAPI) {
 			if (!isBrowserCookieAccessAllowed()) {
 				pi.sendMessage({
 					customType: "google-account",
-					content: [{ type: "text", text: "Gemini Web browser cookie access is disabled. Set allowBrowserCookies: true in ~/.pi/web-search.json to enable it." }],
+					content: [{ type: "text", text: `Gemini Web browser cookie access is disabled. Set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH} to enable it.` }],
 					display: true,
 					details: { available: false, cookieAccessAllowed: false },
 				}, { triggerTurn: true, deliverAs: "followUp" });
