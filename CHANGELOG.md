@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Supported parallel `web_search` curator tool calls with per-call browser and cancellation state.
+- Prevented curator sessions from hanging after searches finish when no browser connects, and finalized connected idle sessions once the curator timeout elapses.
 
 ## [0.11.0] - 2026-06-24
 

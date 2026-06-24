@@ -266,6 +266,7 @@ interface PendingCurate {
 	summaryModels: Array<{ value: string; label: string }>;
 	defaultSummaryModel: string | null;
 	timeoutSeconds: number;
+	curatorUrl?: string;
 	onUpdate: ((update: { content: Array<{ type: string; text: string }>; details?: Record<string, unknown> }) => void) | undefined;
 	signal: AbortSignal | undefined;
 	abortSearches: () => void;
@@ -955,7 +956,7 @@ export default function (pi: ExtensionAPI) {
 						if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
 						pc.onUpdate?.({
 							content: [{ type: "text", text: "Generating summary draft..." }],
-							details: { phase: "generating-summary", progress: 0.9 },
+							details: { phase: "generating-summary", progress: 0.9, curatorUrl: pc.curatorUrl, timeoutSeconds: pc.timeoutSeconds, shortcut: curateKey },
 						});
 						const draft = await generateSummaryForSelectedIndices(
 							selectedQueryIndices,
@@ -968,7 +969,7 @@ export default function (pi: ExtensionAPI) {
 						if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
 						pc.onUpdate?.({
 							content: [{ type: "text", text: "Summary draft ready — waiting for approval..." }],
-							details: { phase: "waiting-for-approval", progress: 1 },
+							details: { phase: "waiting-for-approval", progress: 1, curatorUrl: pc.curatorUrl, timeoutSeconds: pc.timeoutSeconds, shortcut: curateKey },
 						});
 						return draft;
 					},
@@ -1085,6 +1086,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			activeCurators.set(callId, handle);
+			pc.curatorUrl = handle.url;
 
 			for (const [qi, data] of pc.searchResults) {
 				if (data.error) {
@@ -1101,7 +1103,13 @@ export default function (pi: ExtensionAPI) {
 
 			pc.onUpdate?.({
 				content: [{ type: "text", text: searchesComplete ? "Waiting for summary approval in browser..." : "Searches streaming to browser..." }],
-				details: { phase: "curating", progress: searchesComplete ? 1 : 0.5 },
+				details: {
+					phase: "curating",
+					progress: searchesComplete ? 1 : 0.5,
+					curatorUrl: handle.url,
+					timeoutSeconds: pc.timeoutSeconds,
+					shortcut: curateKey,
+				},
 			});
 
 			const open = platform() === "darwin" ? await getGlimpseOpen() : null;
@@ -1364,7 +1372,13 @@ export default function (pi: ExtensionAPI) {
 					curator.searchesDone();
 					pc.onUpdate?.({
 						content: [{ type: "text", text: "All searches complete — waiting for summary approval in browser..." }],
-						details: { phase: "curating", progress: 1 },
+						details: {
+							phase: "curating",
+							progress: 1,
+							curatorUrl: pc.curatorUrl,
+							timeoutSeconds: pc.timeoutSeconds,
+							shortcut: curateKey,
+						},
 					});
 				}
 
@@ -1471,6 +1485,9 @@ export default function (pi: ExtensionAPI) {
 				browserConnected?: boolean;
 				lastHeartbeatAgeMs?: number | null;
 				cancelledQueries?: import("./render-search-error.ts").CancelledQueryDetail[];
+				curatorUrl?: string;
+				timeoutSeconds?: number;
+				shortcut?: string;
 				summary?: {
 					text: string;
 					workflow: CuratorWorkflow;
@@ -1484,8 +1501,24 @@ export default function (pi: ExtensionAPI) {
 			};
 
 			if (isPartial) {
-				if (details?.phase === "curating") {
-					return new Text(theme.fg("accent", "waiting for summary approval..."), 0, 0);
+				if (details?.phase === "curating" || details?.phase === "waiting-for-approval" || details?.phase === "generating-summary") {
+					const phaseText = details?.phase === "generating-summary"
+						? "generating summary draft..."
+						: details?.phase === "waiting-for-approval"
+							? "summary draft ready; approve in browser..."
+							: "waiting for summary approval in browser...";
+					const lines = [theme.fg("accent", phaseText)];
+					if (details?.curatorUrl) {
+						lines.push(theme.fg("muted", `  ${details.curatorUrl}`));
+					}
+					const timeout = typeof details?.timeoutSeconds === "number" ? details.timeoutSeconds : undefined;
+					const shortcut = typeof details?.shortcut === "string" ? details.shortcut : curateKey;
+					if (timeout) {
+						lines.push(theme.fg("dim", `  auto-submits after ${timeout}s idle; ${shortcut} reopens`));
+					} else {
+						lines.push(theme.fg("dim", `  ${shortcut} reopens`));
+					}
+					return new Text(lines.join("\n"), 0, 0);
 				}
 				if (details?.phase === "searching") {
 					const progress = details?.progress ?? 0;

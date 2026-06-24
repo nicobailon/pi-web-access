@@ -3360,7 +3360,10 @@ const SCRIPT = `(function() {
 
   setInterval(function() {
     if (submitted) return;
-    postJson("/heartbeat", {}).catch(function() {
+    postJson("/heartbeat", {
+      idleMs: Math.max(0, Date.now() - lastInteraction),
+      timeoutSec: timeoutSec,
+    }).catch(function() {
       // Heartbeat is best-effort.
     });
   }, 10000);
