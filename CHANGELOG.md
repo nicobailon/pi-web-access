@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Added Olostep as a fully optional, key-gated search and content extraction provider. Set `OLOSTEP_API_KEY` or `olostepApiKey` in `~/.pi/web-search.json` to activate. When keyed, `web_search({ provider: "olostep" })` uses Olostep answers/search to return a synthesized answer with source citations. In `auto` mode, Olostep participates in the fallback chain after Tavily when a key is present. `fetch_content` uses Olostep scrape as a fallback for blocked, JS-rendered, or anti-bot pages, slotted after Jina Reader. Users without an Olostep key see no change in behavior.
+
 ## [0.13.0] - 2026-06-25
 
 ### Added

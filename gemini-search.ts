@@ -9,9 +9,10 @@ import { isBraveAvailable, searchWithBrave } from "./brave.ts";
 import { isOpenAISearchAvailable, searchWithOpenAI } from "./openai-search.ts";
 import { isParallelAvailable, searchWithParallel } from "./parallel.ts";
 import { isTavilyAvailable, searchWithTavily } from "./tavily.ts";
+import { isOlostepAvailable, searchWithOlostep } from "./olostep.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
-export type SearchProvider = "auto" | "openai" | "brave" | "parallel" | "tavily" | "perplexity" | "gemini" | "exa";
+export type SearchProvider = "auto" | "openai" | "brave" | "parallel" | "tavily" | "perplexity" | "gemini" | "exa" | "olostep";
 export type ResolvedSearchProvider = Exclude<SearchProvider, "auto">;
 
 export interface AttributedSearchResponse extends SearchResponse {
@@ -61,7 +62,7 @@ function normalizeSearchModel(value: unknown): string | undefined {
 
 function normalizeSearchProvider(value: unknown): SearchProvider {
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "tavily", "perplexity", "gemini", "exa"];
+	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "tavily", "perplexity", "gemini", "exa", "olostep"];
 	return valid.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
 }
 
@@ -173,6 +174,14 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
+	if (provider === "olostep") {
+		const result = await searchWithOlostep(query, options);
+		if (result) return { ...result, provider: "olostep" };
+		throw new Error(
+			`Olostep search requires an API key. Set OLOSTEP_API_KEY or add olostepApiKey to ${CONFIG_PATH}.`
+		);
+	}
+
 	const fallbackErrors: string[] = [];
 
 	if (shouldTryOpenAIInAuto(options)) {
@@ -224,6 +233,16 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		} catch (err) {
 			if (isAbortError(err)) throw err;
 			fallbackErrors.push(`Tavily: ${errorMessage(err)}`);
+		}
+	}
+
+	if (provider !== "olostep" && isOlostepAvailable()) {
+		try {
+			const result = await searchWithOlostep(query, options);
+			if (result) return { ...result, provider: "olostep" };
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			fallbackErrors.push(`Olostep: ${errorMessage(err)}`);
 		}
 	}
 

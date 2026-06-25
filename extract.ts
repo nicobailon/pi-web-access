@@ -13,6 +13,7 @@ import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } f
 import { existsSync, readFileSync } from "node:fs";
 import { fetchRemoteUrl, validateRemoteUrl, type Lookup } from "./ssrf-protection.ts";
 import { formatSeconds, getWebSearchConfigPath } from "./utils.ts";
+import { extractWithOlostep } from "./olostep.ts";
 
 const DEFAULT_TIMEOUT_MS = 30000;
 const CONCURRENT_LIMIT = 3;
@@ -460,6 +461,10 @@ export async function extractContent(
 
 	const jinaResult = await extractWithJinaReader(url, signal, options?.lookup);
 	if (jinaResult) return jinaResult;
+	if (signal?.aborted) return abortedResult(url);
+
+	const olostepResult = await extractWithOlostep(url, signal);
+	if (olostepResult) return olostepResult;
 	if (signal?.aborted) return abortedResult(url);
 
 	let parallelError: string | null = null;

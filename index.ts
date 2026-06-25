@@ -35,6 +35,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.ts";
 import { isExaAvailable } from "./exa.ts";
+import { isOlostepAvailable } from "./olostep.ts";
 import { isGeminiApiAvailable } from "./gemini-api.ts";
 import { getActiveGoogleEmail, isGeminiWebAvailable } from "./gemini-web.ts";
 import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
@@ -91,6 +92,7 @@ interface ProviderAvailability {
 	perplexity: boolean;
 	exa: boolean;
 	gemini: boolean;
+	olostep: boolean;
 }
 
 type WebSearchWorkflow = "none" | "summary-review" | "auto-summary";
@@ -150,7 +152,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "tavily", "exa", "perplexity", "gemini"];
+	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "tavily", "exa", "perplexity", "gemini", "olostep"];
 	return valid.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
 }
 
@@ -194,6 +196,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
 		gemini: isGeminiApiAvailable() || !!geminiWebAvail,
+		olostep: isOlostepAvailable(),
 	};
 }
 
@@ -261,6 +264,9 @@ function resolveProvider(
 	}
 	if (provider === "gemini" && !available.gemini) {
 		return firstAvailableProvider(available, preferOpenAI, "gemini");
+	}
+	if (provider === "olostep" && !available.olostep) {
+		return firstAvailableProvider(available, preferOpenAI, "olostep");
 	}
 	return provider;
 }
