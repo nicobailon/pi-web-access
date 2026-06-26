@@ -9,6 +9,7 @@ const braveModuleUrl = new URL("../brave.ts", import.meta.url).href;
 const exaModuleUrl = new URL("../exa.ts", import.meta.url).href;
 const openaiModuleUrl = new URL("../openai-search.ts", import.meta.url).href;
 const tavilyModuleUrl = new URL("../tavily.ts", import.meta.url).href;
+const searxngModuleUrl = new URL("../searxng.ts", import.meta.url).href;
 const searchModuleUrl = new URL("../gemini-search.ts", import.meta.url).href;
 
 function runChild(script, env) {
@@ -20,6 +21,7 @@ function runChild(script, env) {
 		"BRAVE_API_KEY",
 		"PARALLEL_API_KEY",
 		"TAVILY_API_KEY",
+		"SEARXNG_BASE_URL",
 		"EXA_API_KEY",
 		"PERPLEXITY_API_KEY",
 		"GEMINI_API_KEY",
@@ -131,6 +133,66 @@ test("Tavily search uses bearer auth and maps filters/content", async () => {
 	assert.equal(output.result.answer, "Tavily answer");
 	assert.deepEqual(output.result.results, [{ title: "Tavily Docs", url: "https://docs.tavily.com/search", snippet: "Search docs snippet" }]);
 	assert.deepEqual(output.result.inlineContent, [{ url: "https://docs.tavily.com/search", title: "Tavily Docs", content: "# Tavily Docs\nFull content", error: null }]);
+});
+
+
+test("SearXNG search uses configured base URL and maps JSON results", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-searxng-"));
+	const child = runChild(`
+		const { writeFileSync } = await import("node:fs");
+		writeFileSync(${JSON.stringify(home)} + "/web-search.json", JSON.stringify({ searxngBaseUrl: "https://search.example.com/" }));
+
+		let capturedUrl = "";
+		let capturedHeaders = null;
+		globalThis.fetch = async (url, init) => {
+			capturedUrl = String(url);
+			capturedHeaders = init.headers;
+			return new Response(JSON.stringify({
+				answers: ["SearXNG instant answer"],
+				results: [
+					{ title: "Pi Web Access", url: "https://github.com/nicobailon/pi-web-access", content: "repo snippet" },
+					{ title: "Blocked", url: "https://gist.github.com/nicobailon/abc", content: "blocked snippet" },
+					{ title: "Other", url: "https://example.com/nope", content: "other snippet" },
+				],
+			}), { status: 200, headers: { "content-type": "application/json" } });
+		};
+
+		const { isSearXNGAvailable, searchWithSearXNG } = await import(${JSON.stringify(searxngModuleUrl)});
+		const available = isSearXNGAvailable();
+		const result = await searchWithSearXNG("pi web access", {
+			domainFilter: ["github.com", "-gist.github.com"],
+			recencyFilter: "week",
+			numResults: 2,
+		});
+		const parsedUrl = new URL(capturedUrl);
+		console.log(JSON.stringify({
+			available,
+			url: parsedUrl.origin + parsedUrl.pathname,
+			q: parsedUrl.searchParams.get("q"),
+			format: parsedUrl.searchParams.get("format"),
+			timeRange: parsedUrl.searchParams.get("time_range"),
+			accept: capturedHeaders.Accept,
+			result,
+		}));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		PI_CODING_AGENT_DIR: home,
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.available, true);
+	assert.equal(output.url, "https://search.example.com/search");
+	assert.match(output.q, /pi web access/);
+	assert.match(output.q, /site:github\.com/);
+	assert.match(output.q, /-site:gist\.github\.com/);
+	assert.equal(output.format, "json");
+	assert.equal(output.timeRange, "week");
+	assert.equal(output.accept, "application/json");
+	assert.deepEqual(output.result.results, [{ title: "Pi Web Access", url: "https://github.com/nicobailon/pi-web-access", snippet: "repo snippet" }]);
+	assert.match(output.result.answer, /SearXNG instant answer/);
+	assert.match(output.result.answer, /repo snippet/);
 });
 
 test("auto provider falls through to Tavily after unavailable earlier providers", async () => {
