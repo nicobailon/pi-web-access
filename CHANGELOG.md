@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+- Added SearXNG as an optional `web_search` provider via `searxngBaseUrl` / `SEARXNG_BASE_URL`, using the self-hosted JSON API and supporting result count, recency, and domain filters.
+
 ## [0.13.0] - 2026-06-25
 
 ### Added

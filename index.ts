@@ -42,6 +42,7 @@ import { isBraveAvailable } from "./brave.ts";
 import { isOpenAISearchAvailable } from "./openai-search.ts";
 import { isParallelAvailable } from "./parallel.ts";
 import { isTavilyAvailable } from "./tavily.ts";
+import { isSearXNGAvailable } from "./searxng.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
 import { loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
 
@@ -88,6 +89,7 @@ interface ProviderAvailability {
 	brave: boolean;
 	parallel: boolean;
 	tavily: boolean;
+	searxng: boolean;
 	perplexity: boolean;
 	exa: boolean;
 	gemini: boolean;
@@ -150,7 +152,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "tavily", "exa", "perplexity", "gemini"];
+	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "tavily", "searxng", "exa", "perplexity", "gemini"];
 	return valid.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
 }
 
@@ -191,6 +193,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		brave: isBraveAvailable(),
 		parallel: isParallelAvailable(),
 		tavily: isTavilyAvailable(),
+		searxng: isSearXNGAvailable(),
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
 		gemini: isGeminiApiAvailable() || !!geminiWebAvail,
@@ -225,6 +228,7 @@ function firstAvailableProvider(available: ProviderAvailability, preferOpenAI: b
 	if (available.brave) return "brave";
 	if (available.parallel) return "parallel";
 	if (available.tavily) return "tavily";
+	if (available.searxng) return "searxng";
 	if (available.perplexity) return "perplexity";
 	if (available.gemini) return "gemini";
 	return fallback;
@@ -252,6 +256,9 @@ function resolveProvider(
 	}
 	if (provider === "tavily" && !available.tavily) {
 		return firstAvailableProvider(available, preferOpenAI, "tavily");
+	}
+	if (provider === "searxng" && !available.searxng) {
+		return firstAvailableProvider(available, preferOpenAI, "searxng");
 	}
 	if (provider === "exa" && !available.exa) {
 		return firstAvailableProvider(available, preferOpenAI, "exa");
@@ -1242,7 +1249,7 @@ export default function (pi: ExtensionAPI) {
 		name: "web_search",
 		label: "Web Search",
 		description:
-			`Search the web using OpenAI, Brave, Parallel, Tavily, Exa, Perplexity, or Gemini. Returns an AI-synthesized answer with source citations. OpenAI web_search uses a Codex subscription or OpenAI API key. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation or "auto-summary" for a model-generated summary without the browser curator. Provider auto-selects: OpenAI when suitable and available, then Exa, Brave, Parallel, Tavily, Perplexity, Gemini API, then Gemini Web.`,
+			`Search the web using OpenAI, Brave, Parallel, Tavily, SearXNG, Exa, Perplexity, or Gemini. Returns an AI-synthesized answer with source citations. OpenAI web_search uses a Codex subscription or OpenAI API key. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation or "auto-summary" for a model-generated summary without the browser curator. Provider auto-selects: OpenAI when suitable and available, then Exa, Brave, Parallel, Tavily, SearXNG, Perplexity, Gemini API, then Gemini Web.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage.",
 		parameters: Type.Object({
@@ -1255,7 +1262,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			provider: Type.Optional(
-				StringEnum(["auto", "openai", "brave", "parallel", "tavily", "exa", "perplexity", "gemini"], { description: "Search provider (default: auto)" }),
+				StringEnum(["auto", "openai", "brave", "parallel", "tavily", "searxng", "exa", "perplexity", "gemini"], { description: "Search provider (default: auto)" }),
 			),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review", "auto-summary"], {
