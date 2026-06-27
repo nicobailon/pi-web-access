@@ -1312,7 +1312,7 @@ export default function (pi: ExtensionAPI) {
 				const rawSearchProvider = normalizeProviderInput(params.provider ?? loadConfig().provider ?? "auto") ?? "auto";
 				const searchProvider = rawSearchProvider === "auto" ? "auto" : defaultProvider;
 				const curatorTimeoutSeconds = bootstrap.timeoutSeconds;
-				const curatorWorkflow: CuratorWorkflow = "summary-review";
+				const curatorWorkflow: CuratorWorkflow = workflow;
 
 				const summaryContext: SummaryGenerationContext = {
 					model: ctx.model,
