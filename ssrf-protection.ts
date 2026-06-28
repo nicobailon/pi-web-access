@@ -17,6 +17,15 @@ interface ValidationOptions {
 	 * strictly; an invalid entry throws so misconfiguration is not silent.
 	 */
 	allowRanges?: string[];
+	/**
+	 * When true, trust an explicitly-configured HTTP(S) proxy for hostname
+	 * resolution instead of performing local DNS lookups inside the sandbox.
+	 * This keeps localhost and literal IP blocking in place, but skips the
+	 * preflight DNS resolution step for ordinary hostnames when they will be sent
+	 * through a proxy. Intended for sandboxed environments where OpenShell and the
+	 * outbound proxy already enforce egress policy.
+	 */
+	trustEnvProxy?: boolean;
 }
 
 /** Parsed entry from `allowRanges`: a network address (4 or 16 bytes) + prefix length. */
@@ -50,6 +59,10 @@ export async function validateRemoteUrl(rawUrl: string | URL, options: Validatio
 
 	if (net.isIP(hostname)) {
 		assertPublicAddress(hostname, hostname, allowRanges);
+		return url;
+	}
+
+	if (shouldTrustEnvProxy(url, options.trustEnvProxy === true)) {
 		return url;
 	}
 
@@ -98,6 +111,36 @@ export async function fetchRemoteUrl(
 
 function normalizeHostname(hostname: string): string {
 	return hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+}
+
+function getProxyForProtocol(protocol: string): string {
+	if (protocol === "http:") {
+		return process.env.HTTP_PROXY || process.env.http_proxy || process.env.ALL_PROXY || process.env.all_proxy || "";
+	}
+	if (protocol === "https:") {
+		return process.env.HTTPS_PROXY || process.env.https_proxy ||
+			process.env.HTTP_PROXY || process.env.http_proxy ||
+			process.env.ALL_PROXY || process.env.all_proxy || "";
+	}
+	return "";
+}
+
+function hostnameMatchesNoProxy(hostname: string, noProxyEntry: string): boolean {
+	const entry = normalizeHostname(noProxyEntry.trim());
+	if (!entry) return false;
+	if (entry === "*") return true;
+	if (entry === hostname) return true;
+	const suffix = entry.startsWith("*.") ? entry.slice(1) : entry.startsWith(".") ? entry : `.${entry}`;
+	return hostname.endsWith(suffix);
+}
+
+function shouldTrustEnvProxy(url: URL, enabled: boolean): boolean {
+	if (!enabled) return false;
+	if (!getProxyForProtocol(url.protocol)) return false;
+	const hostname = normalizeHostname(url.hostname);
+	const noProxy = process.env.NO_PROXY || process.env.no_proxy || "";
+	if (!noProxy) return true;
+	return !noProxy.split(",").some(entry => hostnameMatchesNoProxy(hostname, entry));
 }
 
 function assertPublicAddress(address: string, hostname: string, allowRanges: ParsedCidr[] = []): void {

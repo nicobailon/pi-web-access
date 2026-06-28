@@ -80,6 +80,8 @@ interface WebSearchConfig {
 	ssrf?: {
 		/** CIDR ranges exempted from the SSRF guard (e.g. fake-IP proxy ranges). */
 		allowRanges?: string[];
+		/** Trust explicit HTTP(S)_PROXY env vars for hostname resolution instead of local DNS. */
+		trustEnvProxy?: boolean;
 	};
 }
 
