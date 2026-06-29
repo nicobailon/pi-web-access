@@ -27,6 +27,13 @@ import {
 	type SummaryGenerationContext,
 	type SummaryMeta,
 } from "./summary-review.ts";
+import {
+	buildResearchArtifact,
+	withClaimAssessment,
+	storeResearchArtifact,
+	getResearchArtifact,
+	type ResearchArtifact,
+} from "./source-check.ts";
 import { randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -312,6 +319,39 @@ function formatSearchSummary(results: SearchResult[], answer: string): string {
 	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n\n");
 	return output;
 }
+
+// formatSourceCheckResult renders a source-check artifact as readable text for
+// the agent. The machine-readable artifact is always returned in details.artifact.
+function formatSourceCheckResult(
+	artifact: ResearchArtifact,
+	assessment: { status: string; rationale: string; confidence: number; supporting_passages: string[]; contradicting_passages: string[] } | undefined,
+): string {
+	const lines: string[] = [];
+	lines.push(`# Source check: ${artifact.query}`);
+	lines.push("");
+	if (assessment) {
+		lines.push(`**Status:** ${assessment.status} (confidence ${assessment.confidence.toFixed(2)})`);
+		lines.push(`**Rationale:** ${assessment.rationale}`);
+		if (assessment.supporting_passages.length > 0) {
+			lines.push(`**Supporting passages:** ${assessment.supporting_passages.join(", ")}`);
+		}
+		if (assessment.contradicting_passages.length > 0) {
+			lines.push(`**Contradicting passages:** ${assessment.contradicting_passages.join(", ")}`);
+		}
+		lines.push("");
+	}
+	if (artifact.sources.length > 0) {
+		lines.push("## Sources");
+		for (const s of artifact.sources) {
+			lines.push(`${s.rank}. [${s.quality}] ${s.title}`);
+			lines.push(`   ${s.url}`);
+		}
+		lines.push("");
+	}
+	lines.push(`Artifact responseId: ${artifact.id} (retrievable via get_search_content).`);
+	return lines.join("\n");
+}
+
 
 function duplicateQuerySet(results: QueryResultData[]): Set<string> {
 	const counts = new Map<string, number>();
@@ -1786,6 +1826,121 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// source_check: machine-readable research artifacts + claim-source checking (#108).
+	// Reuses the same search provider machinery as web_search so it stays
+	// provider-agnostic, and the existing storage map for retrieval via
+	// get_search_content (responseId lookup).
+	if (initConfig.webSearch?.enabled !== false) pi.registerTool({
+		name: "source_check",
+		label: "Source Check",
+		description:
+			"Check a claim against fetched web sources and return a machine-readable research artifact. Runs one or more web searches, optionally fetches full page content, extracts passages tied to exact retrieved text, and assesses each claim as supported | contradicted | unclear | missing-evidence. Citations reference passage_ids (exact spans), not only top-level URLs. The artifact is retrievable via get_search_content using the returned responseId. Uses any configured search provider (OpenAI, Brave, Parallel, Tavily, Exa, Perplexity, Gemini).",
+		promptSnippet:
+			"Use to verify a claim against the web with structured artifacts. Returns supported/contradicted/unclear/missing-evidence with passage-tied citations.",
+		parameters: Type.Object({
+			claim: Type.String({ description: "The assertion to check against fetched sources." }),
+			queries: Type.Optional(Type.Array(Type.String(), { description: "Search queries to run (default: [claim]). Vary phrasing for broader evidence coverage." })),
+			numResults: Type.Optional(Type.Number({ description: "Results per query (default: 5, max: 20)" })),
+			fetchContent: Type.Optional(Type.Boolean({ description: "Fetch full page content to extract passages (slower, more rigorous). Default: false (snippet-only)." })),
+			recencyFilter: Type.Optional(
+				StringEnum(["day", "week", "month", "year"], { description: "Filter by recency" }),
+			),
+			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
+			provider: Type.Optional(
+				StringEnum(["auto", "openai", "brave", "parallel", "tavily", "exa", "perplexity", "gemini"], { description: "Search provider (default: auto)" }),
+			),
+		}),
+
+		async execute(_callId, params, signal) {
+			const claim = String(params.claim ?? "").trim();
+			if (!claim) {
+				return {
+					content: [{ type: "text", text: "Error: 'claim' is required." }],
+					details: { error: "Missing claim" },
+				};
+			}
+
+			const queries: string[] = Array.isArray(params.queries) && params.queries.length > 0
+				? params.queries.map((q) => String(q))
+				: [claim];
+
+			const searchOptions = {
+				numResults: typeof params.numResults === "number" ? Math.min(20, Math.max(1, params.numResults)) : 5,
+				recencyFilter: params.recencyFilter,
+				domainFilter: params.domainFilter,
+				provider: params.provider,
+				signal,
+			};
+
+			// Aggregate results across queries into one artifact per query, then
+			// merge passages into a single claim assessment.
+			const artifacts: ResearchArtifact[] = [];
+			for (const q of queries) {
+				try {
+					const resp = await search(q, searchOptions);
+					let fetched: ExtractedContent[] | undefined;
+					if (params.fetchContent && resp.results.length > 0) {
+						try {
+							fetched = await fetchAllContent(resp.results.map((r) => r.url), { signal });
+						} catch {
+							// Non-fatal: continue with snippet-only passages.
+						}
+					}
+					const artifact = buildResearchArtifact({
+						query: q,
+						provider: resp.provider,
+						summary: resp.answer,
+						results: resp.results.map((r, i) => ({ ...r, rank: r.rank ?? i + 1 })),
+						fetched,
+						recency: params.recencyFilter,
+						domainFilter: params.domainFilter,
+					});
+					artifacts.push(artifact);
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					artifacts.push({
+						id: "",
+						type: "research",
+						timestamp: Date.now(),
+						query: q,
+						sources: [],
+						passages: [],
+						summary: `Search failed: ${message}`,
+					});
+				}
+			}
+
+			// Merge passages from all queries into one claim assessment.
+			const allPassages = artifacts.flatMap((a) => a.passages);
+			const mergedArtifact: ResearchArtifact = {
+				id: artifacts[0]?.id ?? "",
+				type: "research",
+				timestamp: Date.now(),
+				query: claim,
+				provider: artifacts.find((a) => a.provider)?.provider,
+				summary: artifacts.map((a) => a.summary).filter(Boolean).join("\n\n") || undefined,
+				sources: artifacts.flatMap((a) => a.sources),
+				passages: allPassages,
+				filters: {
+					recency: params.recencyFilter,
+					domain_include: params.domainFilter?.filter((d) => !d.startsWith("-")),
+					domain_exclude: params.domainFilter?.filter((d) => d.startsWith("-")).map((d) => d.slice(1)),
+				},
+			};
+
+			const withClaims = withClaimAssessment(mergedArtifact, [claim]);
+			storeResearchArtifact(withClaims);
+
+			const assessment = withClaims.claims?.[0];
+			const text = formatSourceCheckResult(withClaims, assessment);
+
+			return {
+				content: [{ type: "text", text }],
+				details: { responseId: withClaims.id, artifact: withClaims, dryRun: false },
+			};
+		},
+	});
+
 	pi.registerTool({
 		name: "fetch_content",
 		label: "Fetch Content",
@@ -2057,6 +2212,23 @@ export default function (pi: ExtensionAPI) {
 				return {
 					content: [{ type: "text", text: `Error: No stored results for "${params.responseId}"` }],
 					details: { error: "Not found", responseId: params.responseId },
+				};
+			}
+
+			// Research artifacts (source_check, issue #108): return the full
+			// machine-readable artifact so workflows/accountability tools can
+			// consume it without scraping terminal text.
+			if (data.type === "research") {
+				const artifact = getResearchArtifact(params.responseId);
+				if (!artifact) {
+					return {
+						content: [{ type: "text", text: `Error: artifact ${params.responseId} not found` }],
+						details: { error: "Artifact not found", responseId: params.responseId },
+					};
+				}
+				return {
+					content: [{ type: "text", text: JSON.stringify(artifact, null, 2) }],
+					details: { responseId: params.responseId, artifact, type: "research" },
 				};
 			}
 

@@ -131,6 +131,35 @@ get_search_content({ responseId: "abc123", url: "https://..." })
 get_search_content({ responseId: "abc123", query: "original query" })
 ```
 
+Retrieves machine-readable research artifacts too — `source_check` returns a `responseId` whose full JSON artifact (sources, passages, claim assessments) is available here via the same lookup.
+
+### source_check
+
+Check a claim against fetched web sources and return a **machine-readable research artifact** (issue #108). Runs one or more web searches, optionally fetches full page content, extracts passages tied to **exact retrieved spans** (never paraphrased), and assesses each claim as `supported`, `contradicted`, `unclear`, or `missing-evidence`. Citations reference `passage_id`s — not only top-level URLs — so accountability tools can trace a verdict to the exact text that produced it.
+
+```typescript
+source_check({ claim: "Rust compiles faster than Go for large projects" })
+source_check({
+  claim: "The UA string was removed in Chrome 100+",
+  queries: ["Chrome user agent removed", "Chrome UA-CH reduction"],
+  fetchContent: true,       // fetch full pages for passage extraction
+  recencyFilter: "year",
+  domainFilter: ["-blogspot.com"],
+})
+```
+
+| Parameter | Description |
+|-----------|-------------|
+| `claim` | The assertion to check |
+| `queries` | Search queries to run (default: `[claim]`) |
+| `numResults` | Results per query (default: 5, max: 20) |
+| `fetchContent` | Fetch full page content to extract passages (default: false = snippet-only) |
+| `recencyFilter` | `day`, `week`, `month`, or `year` |
+| `domainFilter` | Limit to domains (prefix with `-` to exclude) |
+| `provider` | `auto` (default), `openai`, `brave`, `parallel`, `tavily`, `exa`, `perplexity`, `gemini` |
+
+Each artifact source carries a heuristic `quality` flag: `official_docs`, `vendor_docs`, `repo_issue`, `news`, `blog`, `forum`, or `unknown`. The artifact is stored and retrievable via `get_search_content` using the returned `responseId`. **No Pi-core change is required**, and an optional `ResearchProvider` adapter interface lets an external search aggregator sit behind `pi-web-access` without a separate package. See [`docs/adr/0001-source-check-and-research-artifacts.md`](docs/adr/0001-source-check-and-research-artifacts.md).
+
 ## Capabilities
 
 ### GitHub repos
