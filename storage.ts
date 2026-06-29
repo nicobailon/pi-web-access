@@ -14,10 +14,13 @@ export interface QueryResultData {
 
 export interface StoredSearchData {
 	id: string;
-	type: "search" | "fetch";
+	type: "search" | "fetch" | "research";
 	timestamp: number;
 	queries?: QueryResultData[];
 	urls?: ExtractedContent[];
+	// Research artifacts (issue #108) store the full ResearchArtifact shape
+	// alongside the discriminator so get_search_content can return them.
+	artifact?: unknown;
 }
 
 const storedResults = new Map<string, StoredSearchData>();
@@ -50,10 +53,11 @@ function isValidStoredData(data: unknown): data is StoredSearchData {
 	if (!data || typeof data !== "object") return false;
 	const d = data as Record<string, unknown>;
 	if (typeof d.id !== "string" || !d.id) return false;
-	if (d.type !== "search" && d.type !== "fetch") return false;
+	if (d.type !== "search" && d.type !== "fetch" && d.type !== "research") return false;
 	if (typeof d.timestamp !== "number") return false;
 	if (d.type === "search" && !Array.isArray(d.queries)) return false;
 	if (d.type === "fetch" && !Array.isArray(d.urls)) return false;
+	// research artifacts carry their own shape; no extra required fields.
 	return true;
 }
 
