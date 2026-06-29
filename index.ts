@@ -42,6 +42,7 @@ import { isBraveAvailable } from "./brave.ts";
 import { isOpenAISearchAvailable } from "./openai-search.ts";
 import { isParallelAvailable } from "./parallel.ts";
 import { isTavilyAvailable } from "./tavily.ts";
+import { isYoucomAvailable } from "./youcom.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
 import { loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
 
@@ -91,6 +92,7 @@ interface ProviderAvailability {
 	perplexity: boolean;
 	exa: boolean;
 	gemini: boolean;
+	youcom: boolean;
 }
 
 type WebSearchWorkflow = "none" | "summary-review" | "auto-summary";
@@ -150,7 +152,7 @@ function normalizeProviderInput(value: unknown): SearchProvider | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value !== "string") return "auto";
 	const normalized = value.trim().toLowerCase();
-	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "tavily", "exa", "perplexity", "gemini"];
+	const valid: SearchProvider[] = ["auto", "openai", "brave", "parallel", "tavily", "exa", "perplexity", "gemini", "youcom"];
 	return valid.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
 }
 
@@ -194,6 +196,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		perplexity: isPerplexityAvailable(),
 		exa: isExaAvailable(),
 		gemini: isGeminiApiAvailable() || !!geminiWebAvail,
+		youcom: isYoucomAvailable(),
 	};
 }
 
@@ -225,6 +228,7 @@ function firstAvailableProvider(available: ProviderAvailability, preferOpenAI: b
 	if (available.brave) return "brave";
 	if (available.parallel) return "parallel";
 	if (available.tavily) return "tavily";
+	if (available.youcom) return "youcom";
 	if (available.perplexity) return "perplexity";
 	if (available.gemini) return "gemini";
 	return fallback;
@@ -261,6 +265,9 @@ function resolveProvider(
 	}
 	if (provider === "gemini" && !available.gemini) {
 		return firstAvailableProvider(available, preferOpenAI, "gemini");
+	}
+	if (provider === "youcom" && !available.youcom) {
+		return firstAvailableProvider(available, preferOpenAI, "youcom");
 	}
 	return provider;
 }

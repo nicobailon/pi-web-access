@@ -35,12 +35,13 @@ Works immediately with no API keys — Exa MCP provides zero-config search. If P
   "openaiApiKey": "sk-...",
   "braveApiKey": "BSA_...",
   "exaApiKey": "exa-...",
+  "youcomApiKey": "...",
   "perplexityApiKey": "pplx-...",
   "geminiApiKey": "AIza..."
 }
 ```
 
-In `auto` mode (default), `web_search` tries OpenAI when suitable and available, then Exa (direct API if keyed, MCP if not), Brave, Parallel, Tavily, Perplexity, Gemini API, then Gemini Web when browser-cookie access is enabled.
+In `auto` mode (default), `web_search` tries OpenAI when suitable and available, then Exa (direct API if keyed, MCP if not), Brave, Parallel, Tavily, You.com, Perplexity, Gemini API, then Gemini Web when browser-cookie access is enabled.
 
 Optional dependencies for video frame extraction:
 
@@ -251,6 +252,7 @@ Config defaults to `~/.pi/web-search.json`, or `web-search.json` under `PI_CODIN
   "exaApiKey": "exa-...",
   "parallelApiKey": "...",
   "tavilyApiKey": "tvly-...",
+  "youcomApiKey": "...",
   "perplexityApiKey": "pplx-...",
   "geminiApiKey": "AIza...",
   "geminiBaseUrl": "https://my-gateway.example.com/gemini",
