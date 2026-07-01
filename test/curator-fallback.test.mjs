@@ -31,3 +31,8 @@ test("README documents manual browser fallback", () => {
 	assert.match(readmeSrc, /Docker, WSL, SSH, or headless environments/);
 	assert.match(readmeSrc, /Copy it into a browser that can reach the Pi host/);
 });
+
+test("sendCuratorFallbackUpdate is declared with wider scope than the try block to avoid catch block ReferenceError", () => {
+	assert.match(indexSrc, /let sendCuratorFallbackUpdate: \(\(message: string\) => void\) \| null = null;/);
+	assert.match(indexSrc, /sendCuratorFallbackUpdate = \(message: string\) => \{/);
+});
