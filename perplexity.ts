@@ -3,8 +3,9 @@ import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
-const PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions";
+const DEFAULT_PERPLEXITY_BASE_URL = "https://api.perplexity.ai";
 const CONFIG_PATH = getWebSearchConfigPath();
+const DEFAULT_PERPLEXITY_MODEL = "sonar";
 
 const RATE_LIMIT = {
 	maxRequests: 10,
@@ -34,6 +35,8 @@ export interface SearchOptions {
 
 interface WebSearchConfig {
 	perplexityApiKey?: unknown;
+	perplexityBaseUrl?: unknown;
+	perplexityModel?: unknown;
 }
 
 let cachedConfig: WebSearchConfig | null = null;
@@ -59,6 +62,34 @@ function normalizeApiKey(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeBaseUrl(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const normalized = value.trim().replace(/\/+$/, "");
+	return normalized.length > 0 ? normalized : null;
+}
+
+// Base URL for the OpenAI-compatible Perplexity chat/completions API.
+// Override via PERPLEXITY_BASE_URL or the perplexityBaseUrl config key to route
+// through a compatible gateway (mirrors GOOGLE_GEMINI_BASE_URL / geminiBaseUrl).
+function getPerplexityCompletionsUrl(): string {
+	const base =
+		normalizeBaseUrl(process.env.PERPLEXITY_BASE_URL) ??
+		normalizeBaseUrl(loadConfig().perplexityBaseUrl) ??
+		DEFAULT_PERPLEXITY_BASE_URL;
+	return `${base}/chat/completions`;
+}
+
+// Model for the Perplexity search call. Override via PERPLEXITY_MODEL or the
+// perplexityModel config key — needed when a gateway exposes non-Perplexity
+// model IDs (e.g. "provider/model" forms).
+function getPerplexityModel(): string {
+	return (
+		normalizeApiKey(process.env.PERPLEXITY_MODEL) ??
+		normalizeApiKey(loadConfig().perplexityModel) ??
+		DEFAULT_PERPLEXITY_MODEL
+	);
 }
 
 function getApiKey(): string {
@@ -119,7 +150,7 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 	const numResults = Math.min(options.numResults ?? 5, 20);
 
 	const requestBody: Record<string, unknown> = {
-		model: "sonar",
+		model: getPerplexityModel(),
 		messages: [{ role: "user", content: query }],
 		max_tokens: 1024,
 		return_related_questions: false,
@@ -138,7 +169,7 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 
 	let response: Response;
 	try {
-		response = await fetch(PERPLEXITY_API_URL, {
+		response = await fetch(getPerplexityCompletionsUrl(), {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,

@@ -4,10 +4,11 @@ import { activityMonitor } from "./activity.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
-const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
+const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
 const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
+const DEFAULT_OPENAI_MODEL = "gpt-5.4";
 
 const AUTH_MODEL_CANDIDATES = [
 	{ provider: "openai-codex", models: ["gpt-5.4", "gpt-5.3-codex", "gpt-5.3-codex-spark", "gpt-5.2", "gpt-5.2-codex"] },
@@ -16,6 +17,8 @@ const AUTH_MODEL_CANDIDATES = [
 
 interface WebSearchConfig {
 	openaiApiKey?: unknown;
+	openaiBaseUrl?: unknown;
+	openaiSearchModel?: unknown;
 }
 
 interface OpenAIAuth {
@@ -53,6 +56,38 @@ function normalizeApiKey(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const normalized = value.trim();
 	return normalized.length > 0 ? normalized : null;
+}
+
+function normalizeBaseUrl(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	const normalized = value.trim().replace(/\/+$/, "");
+	return normalized.length > 0 ? normalized : null;
+}
+
+// Base URL for the OpenAI-compatible Responses API. Override via
+// OPENAI_BASE_URL or the openaiBaseUrl config key to route through an
+// OpenAI-compatible gateway (mirrors GOOGLE_GEMINI_BASE_URL / geminiBaseUrl).
+function getOpenAIBaseUrl(): string {
+	return (
+		normalizeBaseUrl(process.env.OPENAI_BASE_URL) ??
+		normalizeBaseUrl(loadConfig().openaiBaseUrl) ??
+		DEFAULT_OPENAI_BASE_URL
+	);
+}
+
+function getOpenAIResponsesUrl(): string {
+	return `${getOpenAIBaseUrl()}/responses`;
+}
+
+// Model for the OpenAI Responses web_search call. Override via
+// OPENAI_SEARCH_MODEL or the openaiSearchModel config key — needed when a
+// gateway exposes non-OpenAI model IDs (e.g. "provider/model" forms).
+function getOpenAISearchModel(): string {
+	return (
+		normalizeApiKey(process.env.OPENAI_SEARCH_MODEL) ??
+		normalizeApiKey(loadConfig().openaiSearchModel) ??
+		DEFAULT_OPENAI_MODEL
+	);
 }
 
 function normalizeDomain(value: string): string | null {
@@ -140,7 +175,7 @@ export async function resolveOpenAIAuth(ctx?: ExtensionContext): Promise<OpenAIA
 
 	const apiKey = normalizeApiKey(process.env.OPENAI_API_KEY) ?? normalizeApiKey(loadConfig().openaiApiKey);
 	return apiKey
-		? { provider: "openai", apiKey, model: "gpt-5.4", headers: {} }
+		? { provider: "openai", apiKey, model: getOpenAISearchModel(), headers: {} }
 		: undefined;
 }
 
@@ -361,7 +396,7 @@ export async function searchWithOpenAI(
 	};
 
 	try {
-		const response = await fetch(useCodexEndpoint ? CODEX_RESPONSES_URL : OPENAI_RESPONSES_URL, {
+		const response = await fetch(useCodexEndpoint ? CODEX_RESPONSES_URL : getOpenAIResponsesUrl(), {
 			method: "POST",
 			headers,
 			body: JSON.stringify(body),
