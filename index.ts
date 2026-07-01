@@ -964,6 +964,7 @@ export default function (pi: ExtensionAPI) {
 	async function openCuratorBrowser(callId: string, pc: PendingCurate, searchesComplete = true): Promise<void> {
 		if (pendingCurates.get(callId) !== pc) return;
 		let handle: CuratorServerHandle | null = null;
+		let sendCuratorFallbackUpdate: ((message: string) => void) | null = null;
 		try {
 			pc.phase = "curating";
 
@@ -1136,9 +1137,9 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (searchesComplete) handle.searchesDone();
 
-			const sendCuratorFallbackUpdate = (message: string) => {
+			sendCuratorFallbackUpdate = (message: string) => {
 				pc.onUpdate?.({
-					content: [{ type: "text", text: `${message}\nOpen manually: ${handle.url}` }],
+					content: [{ type: "text", text: `${message}\nOpen manually: ${handle!.url}` }],
 					details: {
 						phase: "curator-fallback",
 						progress: searchesComplete ? 1 : 0.5,
@@ -1185,7 +1186,7 @@ export default function (pi: ExtensionAPI) {
 			console.error(`Failed to open curator UI: ${message}`);
 			if (handle && activeCurators.get(callId) === handle && pendingCurates.get(callId) === pc) {
 				pc.browserOpenError = message;
-				sendCuratorFallbackUpdate("Search curator is running, but the browser did not open automatically.");
+				sendCuratorFallbackUpdate?.("Search curator is running, but the browser did not open automatically.");
 			} else if (pendingCurates.get(callId) === pc || (handle && activeCurators.get(callId) === handle)) {
 				closeCurator(callId);
 			}
