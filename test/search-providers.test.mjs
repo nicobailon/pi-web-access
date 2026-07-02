@@ -9,6 +9,7 @@ const braveModuleUrl = new URL("../brave.ts", import.meta.url).href;
 const exaModuleUrl = new URL("../exa.ts", import.meta.url).href;
 const openaiModuleUrl = new URL("../openai-search.ts", import.meta.url).href;
 const tavilyModuleUrl = new URL("../tavily.ts", import.meta.url).href;
+const youcomModuleUrl = new URL("../youcom.ts", import.meta.url).href;
 const searchModuleUrl = new URL("../gemini-search.ts", import.meta.url).href;
 
 function runChild(script, env) {
@@ -21,6 +22,7 @@ function runChild(script, env) {
 		"PARALLEL_API_KEY",
 		"TAVILY_API_KEY",
 		"EXA_API_KEY",
+		"YDC_API_KEY",
 		"PERPLEXITY_API_KEY",
 		"GEMINI_API_KEY",
 	]) {
@@ -282,4 +284,50 @@ test("OpenAI search requires web_search and maps domain filters", async () => {
 		"https://openai.com/docs",
 		"https://openai.com/blog",
 	]);
+});
+
+test("You.com search uses X-API-Key header and maps domain filters", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-youcom-"));
+	const child = runChild(`
+		let capturedUrl = "";
+		let capturedHeaders = null;
+		let capturedBody = null;
+		globalThis.fetch = async (url, init) => {
+			capturedUrl = String(url);
+			capturedHeaders = init.headers;
+			capturedBody = JSON.parse(init.body);
+			return new Response(JSON.stringify({
+				results: [
+					{ title: "You.com Docs", url: "https://docs.you.com/search", snippet: "Search docs snippet" },
+					{ title: "Example", url: "https://example.com/nope", snippet: "filtered out" },
+				],
+			}), { status: 200, headers: { "content-type": "application/json" } });
+		};
+
+		const { searchWithYoucom } = await import(${JSON.stringify(youcomModuleUrl)});
+		const result = await searchWithYoucom("youcom search docs", {
+			domainFilter: ["docs.you.com", "-example.com"],
+			recencyFilter: "week",
+			numResults: 5,
+		});
+		console.log(JSON.stringify({
+			capturedUrl,
+			capturedHeaders,
+			capturedBody,
+			result,
+		}));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		YDC_API_KEY: "ydc-test-key",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.capturedUrl, "https://api.you.com/v1/agents/search");
+	assert.equal(output.capturedHeaders["X-API-Key"], "ydc-test-key");
+	assert.equal(output.capturedBody.query, "youcom search docs site:docs.you.com NOT site:example.com past week");
+	assert.equal(output.capturedBody.max_results, 5);
+	assert.deepEqual(output.result.results, [{ title: "You.com Docs", url: "https://docs.you.com/search", snippet: "Search docs snippet" }]);
+	assert.match(output.result.answer, /Search docs snippet/);
 });

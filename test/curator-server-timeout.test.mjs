@@ -32,7 +32,7 @@ function baseOptions(timeout = 1) {
 		queries: ["test query"],
 		sessionToken: "test-token",
 		timeout,
-		availableProviders: { openai: false, brave: false, parallel: false, tavily: false, perplexity: false, exa: true, gemini: false },
+		availableProviders: { openai: false, brave: false, parallel: false, tavily: false, perplexity: false, exa: true, gemini: false, youcom: false },
 		defaultProvider: "exa",
 		searchProvider: "exa",
 		summaryModels: [],

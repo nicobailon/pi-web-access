@@ -8,7 +8,7 @@ function safeInlineJSON(data: unknown): string {
 }
 
 function buildProviderButtons(
-	available: { openai: boolean; brave: boolean; parallel: boolean; tavily: boolean; perplexity: boolean; exa: boolean; gemini: boolean },
+	available: { openai: boolean; brave: boolean; parallel: boolean; tavily: boolean; perplexity: boolean; exa: boolean; gemini: boolean; youcom: boolean },
 	selected: string,
 	hasInitialQueries: boolean,
 ): string {
@@ -18,6 +18,7 @@ function buildProviderButtons(
 		{ value: "brave", label: "Brave", available: available.brave },
 		{ value: "parallel", label: "Parallel", available: available.parallel },
 		{ value: "tavily", label: "Tavily", available: available.tavily },
+		{ value: "youcom", label: "You.com", available: available.youcom },
 		{ value: "perplexity", label: "Perplexity", available: available.perplexity },
 		{ value: "gemini", label: "Gemini", available: available.gemini },
 	];
@@ -38,7 +39,7 @@ export function generateCuratorPage(
 	queries: string[],
 	sessionToken: string,
 	timeout: number,
-	availableProviders: { openai: boolean; brave: boolean; parallel: boolean; tavily: boolean; perplexity: boolean; exa: boolean; gemini: boolean },
+	availableProviders: { openai: boolean; brave: boolean; parallel: boolean; tavily: boolean; perplexity: boolean; exa: boolean; gemini: boolean; youcom: boolean },
 	defaultProvider: string,
 	searchProvider: string,
 	summaryModels: Array<{ value: string; label: string }>,
@@ -1389,7 +1390,7 @@ const SCRIPT = `(function() {
   var token = DATA.sessionToken;
   var timeoutSec = DATA.timeout;
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
-  var providers = ["openai", "exa", "brave", "parallel", "tavily", "perplexity", "gemini"];
+  var providers = ["openai", "exa", "brave", "parallel", "tavily", "youcom", "perplexity", "gemini"];
   var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
   var workflow = "summary-review";
   var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";

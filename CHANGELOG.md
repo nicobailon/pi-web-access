@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Added You.com Search API provider with `YDC_API_KEY` / `youcomApiKey`, domain filters, recency query enrichment, and auto-provider fallback integration.
+
 ## [0.13.0] - 2026-06-25
 
 ### Added
