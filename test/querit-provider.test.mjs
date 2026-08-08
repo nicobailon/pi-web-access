@@ -9,7 +9,8 @@ import { test } from "node:test";
 const queritModuleUrl = new URL("../querit.ts", import.meta.url).href;
 const searchModuleUrl = new URL("../gemini-search.ts", import.meta.url).href;
 const extractModuleUrl = new URL("../extract.ts", import.meta.url).href;
-const curatorPageModuleUrl = new URL("../curator-page.ts", import.meta.url).href;
+const curatorPageModuleUrl = new URL("../curator-page.ts", import.meta.url)
+	.href;
 
 const PROVIDER_ENV_KEYS = [
 	"OPENAI_API_KEY",
@@ -20,7 +21,10 @@ const PROVIDER_ENV_KEYS = [
 	"QUERIT_API_KEY",
 	"TAVILY_API_KEY",
 	"JINA_API_KEY",
-	"SERPDIVE_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY",
+	"SERPDIVE_API_KEY",
+	"KAGI_API_KEY",
+	"OLLAMA_API_KEY",
+	"SERPBASE_API_KEY",
 	"ANYSEARCH_API_KEY",
 	"SEARXNG_BASE_URL",
 	"EXA_API_KEY",
@@ -34,7 +38,11 @@ const PROVIDER_ENV_KEYS = [
 async function createHome(config = {}) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-querit-"));
 	await mkdir(join(home, ".pi"), { recursive: true });
-	await writeFile(join(home, ".pi", "web-search.json"), JSON.stringify(config) + "\n", "utf8");
+	await writeFile(
+		join(home, ".pi", "web-search.json"),
+		JSON.stringify(config) + "\n",
+		"utf8",
+	);
 	return home;
 }
 
@@ -54,36 +62,54 @@ function runChild(script, env = {}) {
 
 test("Querit availability reads environment and config credentials", async () => {
 	const emptyHome = await createHome();
-	let child = runChild(`
+	let child = runChild(
+		`
 		const { isQueritAvailable } = await import(${JSON.stringify(queritModuleUrl)});
 		console.log(String(isQueritAvailable()));
-	`, { HOME: emptyHome, USERPROFILE: emptyHome });
+	`,
+		{ HOME: emptyHome, USERPROFILE: emptyHome },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	assert.equal(child.stdout.trim(), "false");
 
-	child = runChild(`
+	child = runChild(
+		`
 		const { isQueritAvailable } = await import(${JSON.stringify(queritModuleUrl)});
 		console.log(String(isQueritAvailable()));
-	`, { HOME: emptyHome, USERPROFILE: emptyHome, QUERIT_API_KEY: "synthetic-querit-env-key" });
+	`,
+		{
+			HOME: emptyHome,
+			USERPROFILE: emptyHome,
+			QUERIT_API_KEY: "synthetic-querit-env-key",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	assert.equal(child.stdout.trim(), "true");
 
-	const configHome = await createHome({ queritApiKey: "synthetic-querit-config-key" });
-	child = runChild(`
+	const configHome = await createHome({
+		queritApiKey: "synthetic-querit-config-key",
+	});
+	child = runChild(
+		`
 		const { isQueritAvailable } = await import(${JSON.stringify(queritModuleUrl)});
 		console.log(String(isQueritAvailable()));
-	`, { HOME: configHome, USERPROFILE: configHome });
+	`,
+		{ HOME: configHome, USERPROFILE: configHome },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	assert.equal(child.stdout.trim(), "true");
 });
 
 test("Querit resolves command credentials only when a request starts", async () => {
-	const markerDir = await mkdtemp(join(tmpdir(), "pi-web-access-querit-marker-"));
+	const markerDir = await mkdtemp(
+		join(tmpdir(), "pi-web-access-querit-marker-"),
+	);
 	const marker = join(markerDir, "ran");
 	const home = await createHome({
 		queritApiKey: `!touch ${marker} && printf synthetic-querit-command-key`,
 	});
-	const child = runChild(`
+	const child = runChild(
+		`
 		import { existsSync } from "node:fs";
 		const { isQueritAvailable, searchWithQuerit } = await import(${JSON.stringify(queritModuleUrl)});
 		const availableBefore = isQueritAvailable();
@@ -95,7 +121,9 @@ test("Querit resolves command credentials only when a request starts", async () 
 		};
 		await searchWithQuerit("credential timing");
 		console.log(JSON.stringify({ availableBefore, ranBefore, ranAfter: existsSync(${JSON.stringify(marker)}), authorization }));
-	`, { HOME: home, USERPROFILE: home });
+	`,
+		{ HOME: home, USERPROFILE: home },
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	assert.deepEqual(JSON.parse(child.stdout.trim()), {
@@ -109,7 +137,8 @@ test("Querit resolves command credentials only when a request starts", async () 
 
 test("Querit search maps SDK filters and retrieves inline contents", async () => {
 	const home = await createHome();
-	const child = runChild(`
+	const child = runChild(
+		`
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
 			calls.push({
@@ -152,7 +181,13 @@ test("Querit search maps SDK filters and retrieves inline contents", async () =>
 			domainFilter: ["https://www.querit.ai/docs", "-example.com"],
 		});
 		console.log(JSON.stringify({ calls, result }));
-	`, { HOME: home, USERPROFILE: home, QUERIT_API_KEY: "synthetic-querit-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			QUERIT_API_KEY: "synthetic-querit-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -188,22 +223,27 @@ test("Querit search maps SDK filters and retrieves inline contents", async () =>
 			},
 		},
 	]);
-	assert.deepEqual(output.result.results, [{
-		title: "Querit docs",
-		url: "https://www.querit.ai/en/docs",
-		snippet: "Real-time search for LLMs.",
-	}]);
-	assert.deepEqual(output.result.inlineContent, [{
-		url: "https://www.querit.ai/en/docs",
-		title: "Querit Documentation",
-		content: "# Full Querit documentation",
-		error: null,
-	}]);
+	assert.deepEqual(output.result.results, [
+		{
+			title: "Querit docs",
+			url: "https://www.querit.ai/en/docs",
+			snippet: "Real-time search for LLMs.",
+		},
+	]);
+	assert.deepEqual(output.result.inlineContent, [
+		{
+			url: "https://www.querit.ai/en/docs",
+			title: "Querit Documentation",
+			content: "# Full Querit documentation",
+			error: null,
+		},
+	]);
 });
 
 test("Querit contents requests are batched at ten URLs", async () => {
 	const home = await createHome();
-	const child = runChild(`
+	const child = runChild(
+		`
 		const contentBatches = [];
 		globalThis.fetch = async (url, init = {}) => {
 			const body = JSON.parse(init.body);
@@ -232,17 +272,27 @@ test("Querit contents requests are batched at ten URLs", async () => {
 		const { searchWithQuerit } = await import(${JSON.stringify(queritModuleUrl)});
 		const result = await searchWithQuerit("batch", { includeContent: true, numResults: 11 });
 		console.log(JSON.stringify({ contentBatches, inlineCount: result.inlineContent?.length }));
-	`, { HOME: home, USERPROFILE: home, QUERIT_API_KEY: "synthetic-querit-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			QUERIT_API_KEY: "synthetic-querit-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.deepEqual(output.contentBatches.map((batch) => batch.length), [10, 1]);
+	assert.deepEqual(
+		output.contentBatches.map((batch) => batch.length),
+		[10, 1],
+	);
 	assert.equal(output.inlineCount, 11);
 });
 
 test("Querit extraction maps contents metadata and timeout", async () => {
 	const home = await createHome();
-	const child = runChild(`
+	const child = runChild(
+		`
 		let call = null;
 		globalThis.fetch = async (url, init = {}) => {
 			call = { url: String(url), body: JSON.parse(init.body) };
@@ -263,7 +313,13 @@ test("Querit extraction maps contents metadata and timeout", async () => {
 		const { extractWithQuerit } = await import(${JSON.stringify(queritModuleUrl)});
 		const result = await extractWithQuerit("https://example.com/article", undefined, { timeoutMs: 45_000 });
 		console.log(JSON.stringify({ call, result }));
-	`, { HOME: home, USERPROFILE: home, QUERIT_API_KEY: "synthetic-querit-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			QUERIT_API_KEY: "synthetic-querit-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -286,14 +342,21 @@ test("Querit extraction maps contents metadata and timeout", async () => {
 
 test("Querit errors redact credentials and surface API-level failures", async () => {
 	const home = await createHome();
-	let child = runChild(`
+	let child = runChild(
+		`
 		globalThis.fetch = async () => new Response("rejected synthetic-querit-secret", { status: 401 });
 		const { searchWithQuerit } = await import(${JSON.stringify(queritModuleUrl)});
 		let error = "";
 		try { await searchWithQuerit("redact me"); }
 		catch (err) { error = err.message; }
 		console.log(JSON.stringify({ error }));
-	`, { HOME: home, USERPROFILE: home, QUERIT_API_KEY: "synthetic-querit-secret" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			QUERIT_API_KEY: "synthetic-querit-secret",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	let output = JSON.parse(child.stdout.trim());
@@ -301,25 +364,36 @@ test("Querit errors redact credentials and surface API-level failures", async ()
 	assert.equal(output.error.includes("synthetic-querit-secret"), false);
 	assert.match(output.error, /\[redacted\]/i);
 
-	child = runChild(`
+	child = runChild(
+		`
 		globalThis.fetch = async () => new Response(JSON.stringify({ error_code: 429, error_msg: "quota exceeded", search_id: 301 }), { status: 200 });
 		const { searchWithQuerit } = await import(${JSON.stringify(queritModuleUrl)});
 		let error = "";
 		try { await searchWithQuerit("quota"); }
 		catch (err) { error = err.message; }
 		console.log(JSON.stringify({ error }));
-	`, { HOME: home, USERPROFILE: home, QUERIT_API_KEY: "synthetic-querit-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			QUERIT_API_KEY: "synthetic-querit-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	output = JSON.parse(child.stdout.trim());
-	assert.equal(output.error, "Querit Search API returned error 429: quota exceeded");
+	assert.equal(
+		output.error,
+		"Querit Search API returned error 429: quota exceeded",
+	);
 });
 
 test("configured search routing can select Querit", async () => {
 	const home = await createHome({
 		searchRouting: { providers: ["querit"], fallbackOn: ["network"] },
 	});
-	const child = runChild(`
+	const child = runChild(
+		`
 		globalThis.fetch = async () => new Response(JSON.stringify({
 			error_code: 200,
 			error_msg: "",
@@ -329,12 +403,14 @@ test("configured search routing can select Querit", async () => {
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
 		const result = await search("route", { provider: "auto" });
 		console.log(JSON.stringify({ provider: result.provider, results: result.results }));
-	`, {
-		HOME: home,
-		USERPROFILE: home,
-		PI_CODING_AGENT_DIR: join(home, ".pi"),
-		QUERIT_API_KEY: "synthetic-querit-test-key",
-	});
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			PI_CODING_AGENT_DIR: join(home, ".pi"),
+			QUERIT_API_KEY: "synthetic-querit-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -343,8 +419,11 @@ test("configured search routing can select Querit", async () => {
 });
 
 test("fetch_content uses Querit after local and earlier hosted extraction fail", async () => {
-	const home = await createHome();
-	const child = runChild(`
+	const home = await createHome({
+		fetchRouting: { allowRemoteHostedProviders: true },
+	});
+	const child = runChild(
+		`
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
 			const target = String(url);
@@ -369,7 +448,13 @@ test("fetch_content uses Querit after local and earlier hosted extraction fail",
 		const lookup = async () => [{ address: "93.184.216.34", family: 4 }];
 		const result = await extractContent("https://example.com/app", undefined, { lookup });
 		console.log(JSON.stringify({ calls, result }));
-	`, { HOME: home, USERPROFILE: home, QUERIT_API_KEY: "synthetic-querit-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			QUERIT_API_KEY: "synthetic-querit-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -419,8 +504,11 @@ test("curator page exposes Querit as a manual provider", async () => {
 });
 
 test("Querit provider timeout continues to the next fetch_content fallback", async () => {
-	const home = await createHome();
-	const child = runChild(`
+	const home = await createHome({
+		fetchRouting: { allowRemoteHostedProviders: true },
+	});
+	const child = runChild(
+		`
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
 			const target = String(url);
@@ -455,12 +543,14 @@ test("Querit provider timeout continues to the next fetch_content fallback", asy
 		const lookup = async () => [{ address: "93.184.216.34", family: 4 }];
 		const result = await extractContent("https://example.com/timeout", undefined, { lookup, timeoutMs: 1 });
 		console.log(JSON.stringify({ calls, result }));
-	`, {
-		HOME: home,
-		USERPROFILE: home,
-		QUERIT_API_KEY: "synthetic-querit-test-key",
-		PARALLEL_API_KEY: "synthetic-parallel-test-key",
-	});
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			QUERIT_API_KEY: "synthetic-querit-test-key",
+			PARALLEL_API_KEY: "synthetic-parallel-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());

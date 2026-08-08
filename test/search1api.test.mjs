@@ -9,7 +9,8 @@ import { test } from "node:test";
 const search1apiModuleUrl = new URL("../search1api.ts", import.meta.url).href;
 const searchModuleUrl = new URL("../gemini-search.ts", import.meta.url).href;
 const extractModuleUrl = new URL("../extract.ts", import.meta.url).href;
-const curatorPageModuleUrl = new URL("../curator-page.ts", import.meta.url).href;
+const curatorPageModuleUrl = new URL("../curator-page.ts", import.meta.url)
+	.href;
 
 const PROVIDER_ENV_KEYS = [
 	"OPENAI_API_KEY",
@@ -20,7 +21,10 @@ const PROVIDER_ENV_KEYS = [
 	"QUERIT_API_KEY",
 	"TAVILY_API_KEY",
 	"JINA_API_KEY",
-	"SERPDIVE_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY",
+	"SERPDIVE_API_KEY",
+	"KAGI_API_KEY",
+	"OLLAMA_API_KEY",
+	"SERPBASE_API_KEY",
 	"ANYSEARCH_API_KEY",
 	"SEARXNG_BASE_URL",
 	"EXA_API_KEY",
@@ -36,7 +40,11 @@ const PROVIDER_ENV_KEYS = [
 async function createHome(config = {}) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-search1api-"));
 	await mkdir(join(home, ".pi"), { recursive: true });
-	await writeFile(join(home, ".pi", "web-search.json"), JSON.stringify(config) + "\n", "utf8");
+	await writeFile(
+		join(home, ".pi", "web-search.json"),
+		JSON.stringify(config) + "\n",
+		"utf8",
+	);
 	return home;
 }
 
@@ -56,36 +64,54 @@ function runChild(script, env = {}) {
 
 test("Search1API availability reads environment and config credentials", async () => {
 	const emptyHome = await createHome();
-	let child = runChild(`
+	let child = runChild(
+		`
 		const { isSearch1APIAvailable } = await import(${JSON.stringify(search1apiModuleUrl)});
 		console.log(String(isSearch1APIAvailable()));
-	`, { HOME: emptyHome, USERPROFILE: emptyHome });
+	`,
+		{ HOME: emptyHome, USERPROFILE: emptyHome },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	assert.equal(child.stdout.trim(), "false");
 
-	child = runChild(`
+	child = runChild(
+		`
 		const { isSearch1APIAvailable } = await import(${JSON.stringify(search1apiModuleUrl)});
 		console.log(String(isSearch1APIAvailable()));
-	`, { HOME: emptyHome, USERPROFILE: emptyHome, SEARCH1API_KEY: "synthetic-search1api-env-key" });
+	`,
+		{
+			HOME: emptyHome,
+			USERPROFILE: emptyHome,
+			SEARCH1API_KEY: "synthetic-search1api-env-key",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	assert.equal(child.stdout.trim(), "true");
 
-	const configHome = await createHome({ search1apiApiKey: "synthetic-search1api-config-key" });
-	child = runChild(`
+	const configHome = await createHome({
+		search1apiApiKey: "synthetic-search1api-config-key",
+	});
+	child = runChild(
+		`
 		const { isSearch1APIAvailable } = await import(${JSON.stringify(search1apiModuleUrl)});
 		console.log(String(isSearch1APIAvailable()));
-	`, { HOME: configHome, USERPROFILE: configHome });
+	`,
+		{ HOME: configHome, USERPROFILE: configHome },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	assert.equal(child.stdout.trim(), "true");
 });
 
 test("Search1API resolves command credentials only when a request starts", async () => {
-	const markerDir = await mkdtemp(join(tmpdir(), "pi-web-access-search1api-marker-"));
+	const markerDir = await mkdtemp(
+		join(tmpdir(), "pi-web-access-search1api-marker-"),
+	);
 	const marker = join(markerDir, "ran");
 	const home = await createHome({
 		search1apiApiKey: `!touch ${marker} && printf synthetic-search1api-command-key`,
 	});
-	const child = runChild(`
+	const child = runChild(
+		`
 		import { existsSync } from "node:fs";
 		const { isSearch1APIAvailable, searchWithSearch1API } = await import(${JSON.stringify(search1apiModuleUrl)});
 		const availableBefore = isSearch1APIAvailable();
@@ -97,7 +123,9 @@ test("Search1API resolves command credentials only when a request starts", async
 		};
 		await searchWithSearch1API("credential timing");
 		console.log(JSON.stringify({ availableBefore, ranBefore, ranAfter: existsSync(${JSON.stringify(marker)}), authorization }));
-	`, { HOME: home, USERPROFILE: home });
+	`,
+		{ HOME: home, USERPROFILE: home },
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	assert.deepEqual(JSON.parse(child.stdout.trim()), {
@@ -111,7 +139,8 @@ test("Search1API resolves command credentials only when a request starts", async
 
 test("explicit Search1API search maps filters, deep content, and results", async () => {
 	const home = await createHome({ provider: "search1api" });
-	const child = runChild(`
+	const child = runChild(
+		`
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
 			calls.push({
@@ -138,42 +167,55 @@ test("explicit Search1API search maps filters, deep content, and results", async
 			domainFilter: ["https://www.search1api.com/docs", "-example.com"],
 		});
 		console.log(JSON.stringify({ calls, result }));
-	`, { HOME: home, USERPROFILE: home, SEARCH1API_KEY: "synthetic-search1api-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			SEARCH1API_KEY: "synthetic-search1api-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.deepEqual(output.calls, [{
-		url: "https://api.search1api.com/search",
-		headers: {
-			authorization: "Bearer synthetic-search1api-test-key",
-			"content-type": "application/json",
+	assert.deepEqual(output.calls, [
+		{
+			url: "https://api.search1api.com/search",
+			headers: {
+				authorization: "Bearer synthetic-search1api-test-key",
+				"content-type": "application/json",
+			},
+			body: {
+				query: "search1api docs",
+				max_results: 1,
+				crawl_results: 1,
+				include_sites: ["www.search1api.com"],
+				exclude_sites: ["example.com"],
+				time_range: "week",
+			},
 		},
-		body: {
-			query: "search1api docs",
-			max_results: 1,
-			crawl_results: 1,
-			include_sites: ["www.search1api.com"],
-			exclude_sites: ["example.com"],
-			time_range: "week",
-		},
-	}]);
+	]);
 	assert.equal(output.result.provider, "search1api");
-	assert.deepEqual(output.result.results, [{
-		title: "Search1API Docs",
-		url: "https://www.search1api.com/docs",
-		snippet: "Search, crawl, and extract.",
-	}]);
-	assert.deepEqual(output.result.inlineContent, [{
-		url: "https://www.search1api.com/docs",
-		title: "Search1API Docs",
-		content: "# Full Search1API documentation",
-		error: null,
-	}]);
+	assert.deepEqual(output.result.results, [
+		{
+			title: "Search1API Docs",
+			url: "https://www.search1api.com/docs",
+			snippet: "Search, crawl, and extract.",
+		},
+	]);
+	assert.deepEqual(output.result.inlineContent, [
+		{
+			url: "https://www.search1api.com/docs",
+			title: "Search1API Docs",
+			content: "# Full Search1API documentation",
+			error: null,
+		},
+	]);
 });
 
 test("Search1API search does not request paid page crawling unless includeContent is true", async () => {
 	const home = await createHome();
-	const child = runChild(`
+	const child = runChild(
+		`
 		let body = null;
 		globalThis.fetch = async (_url, init) => {
 			body = JSON.parse(init.body);
@@ -182,7 +224,13 @@ test("Search1API search does not request paid page crawling unless includeConten
 		const { searchWithSearch1API } = await import(${JSON.stringify(search1apiModuleUrl)});
 		await searchWithSearch1API("basic search", { numResults: 20 });
 		console.log(JSON.stringify(body));
-	`, { HOME: home, USERPROFILE: home, SEARCH1API_KEY: "synthetic-search1api-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			SEARCH1API_KEY: "synthetic-search1api-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	assert.deepEqual(JSON.parse(child.stdout.trim()), {
@@ -194,7 +242,8 @@ test("Search1API search does not request paid page crawling unless includeConten
 
 test("Search1API Crawl maps extracted content", async () => {
 	const home = await createHome();
-	const child = runChild(`
+	const child = runChild(
+		`
 		const calls = [];
 		globalThis.fetch = async (url, init) => {
 			calls.push({
@@ -215,18 +264,26 @@ test("Search1API Crawl maps extracted content", async () => {
 		const { extractWithSearch1API } = await import(${JSON.stringify(search1apiModuleUrl)});
 		const result = await extractWithSearch1API("https://example.com/article", undefined, { timeoutMs: 45000 });
 		console.log(JSON.stringify({ calls, result }));
-	`, { HOME: home, USERPROFILE: home, SEARCH1API_KEY: "synthetic-search1api-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			SEARCH1API_KEY: "synthetic-search1api-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.deepEqual(output.calls, [{
-		url: "https://api.search1api.com/crawl",
-		headers: {
-			authorization: "Bearer synthetic-search1api-test-key",
-			"content-type": "application/json",
+	assert.deepEqual(output.calls, [
+		{
+			url: "https://api.search1api.com/crawl",
+			headers: {
+				authorization: "Bearer synthetic-search1api-test-key",
+				"content-type": "application/json",
+			},
+			body: { url: "https://example.com/article" },
 		},
-		body: { url: "https://example.com/article" },
-	}]);
+	]);
 	assert.deepEqual(output.result, {
 		url: "https://example.com/article",
 		title: "Example article",
@@ -237,14 +294,21 @@ test("Search1API Crawl maps extracted content", async () => {
 
 test("Search1API errors redact credentials", async () => {
 	const home = await createHome();
-	const child = runChild(`
+	const child = runChild(
+		`
 		globalThis.fetch = async () => new Response("rejected synthetic-search1api-secret", { status: 401 });
 		const { searchWithSearch1API } = await import(${JSON.stringify(search1apiModuleUrl)});
 		let error = "";
 		try { await searchWithSearch1API("redact me"); }
 		catch (err) { error = err.message; }
 		console.log(JSON.stringify({ error }));
-	`, { HOME: home, USERPROFILE: home, SEARCH1API_KEY: "synthetic-search1api-secret" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			SEARCH1API_KEY: "synthetic-search1api-secret",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -254,8 +318,11 @@ test("Search1API errors redact credentials", async () => {
 });
 
 test("fetch_content uses Search1API after local and Jina extraction fail", async () => {
-	const home = await createHome();
-	const child = runChild(`
+	const home = await createHome({
+		fetchRouting: { allowRemoteHostedProviders: true },
+	});
+	const child = runChild(
+		`
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
 			const urlText = String(url);
@@ -277,12 +344,14 @@ test("fetch_content uses Search1API after local and Jina extraction fail", async
 		const lookup = async () => [{ address: "93.184.216.34", family: 4 }];
 		const result = await extractContent("https://example.com/app", undefined, { lookup });
 		console.log(JSON.stringify({ calls, result }));
-	`, {
-		HOME: home,
-		USERPROFILE: home,
-		SEARCH1API_KEY: "synthetic-search1api-test-key",
-		PARALLEL_API_KEY: "synthetic-parallel-test-key",
-	});
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			SEARCH1API_KEY: "synthetic-search1api-test-key",
+			PARALLEL_API_KEY: "synthetic-parallel-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -303,7 +372,8 @@ test("configured searchRouting can select Search1API", async () => {
 	const home = await createHome({
 		searchRouting: { providers: ["search1api"], fallbackOn: ["network"] },
 	});
-	const child = runChild(`
+	const child = runChild(
+		`
 		globalThis.fetch = async () => new Response(JSON.stringify({
 			searchParameters: { query: "route" },
 			results: [{ title: "Routed", snippet: "Search1API route", link: "https://example.com/routed" }],
@@ -311,7 +381,14 @@ test("configured searchRouting can select Search1API", async () => {
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
 		const result = await search("route", { provider: "auto" });
 		console.log(JSON.stringify({ provider: result.provider, results: result.results }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: join(home, ".pi"), SEARCH1API_KEY: "synthetic-search1api-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			PI_CODING_AGENT_DIR: join(home, ".pi"),
+			SEARCH1API_KEY: "synthetic-search1api-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
