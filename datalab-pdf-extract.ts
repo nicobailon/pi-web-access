@@ -290,7 +290,11 @@ export async function extractPDFViaDatalab(
 
 		const checkUrl = normalizeCheckUrl(state.request_check_url);
 		while (Date.now() < deadline) {
-			await sleep(DEFAULT_POLL_INTERVAL_MS, options.signal);
+			await sleep(
+				Math.min(DEFAULT_POLL_INTERVAL_MS, remaining(deadline)),
+				options.signal,
+			);
+			if (Date.now() >= deadline) break;
 			const poll = await fetchDatalab(
 				checkUrl,
 				{
@@ -312,7 +316,9 @@ export async function extractPDFViaDatalab(
 		throw new Error("Datalab PDF conversion timed out");
 	} finally {
 		if (fileId !== undefined && fileId !== null) {
-			await deleteDatalabFile(apiKey, String(fileId));
+			// File deletion is best-effort. Do not extend a caller's timeout or
+			// cancellation while waiting for a remote cleanup request.
+			void deleteDatalabFile(apiKey, String(fileId));
 		}
 	}
 }

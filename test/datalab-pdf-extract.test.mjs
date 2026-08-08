@@ -285,7 +285,7 @@ test("Datalab conversion rejects empty markdown", async () => {
 	);
 });
 
-test("Datalab conversion times out while polling", async () => {
+test("Datalab conversion times out while polling without waiting a full poll interval", async () => {
 	globalThis.fetch = async (url, init) => {
 		if (String(url).endsWith("/convert")) {
 			return jsonResponse({
@@ -299,6 +299,7 @@ test("Datalab conversion times out while polling", async () => {
 		return route(url, init);
 	};
 
+	const started = Date.now();
 	await assert.rejects(
 		extractPDFViaDatalab(new ArrayBuffer(1), {
 			maxPages: 1,
@@ -307,6 +308,49 @@ test("Datalab conversion times out while polling", async () => {
 		}),
 		/timed out/,
 	);
+	assert.ok(
+		Date.now() - started < 500,
+		"polling must not delay a 60ms timeout by its 1.5s interval",
+	);
+});
+
+test("Datalab cancellation returns without awaiting best-effort cleanup", async () => {
+	const controller = new AbortController();
+	let markConvertSubmitted;
+	const convertSubmitted = new Promise((resolve) => {
+		markConvertSubmitted = resolve;
+	});
+	let markCleanupStarted;
+	const cleanupStarted = new Promise((resolve) => {
+		markCleanupStarted = resolve;
+	});
+	let finishCleanup;
+	const cleanupBlocked = new Promise((resolve) => {
+		finishCleanup = resolve;
+	});
+
+	globalThis.fetch = async (url, init) => {
+		if (String(url).endsWith("/convert")) markConvertSubmitted();
+		if (String(url).endsWith("/files/7") && init.method === "DELETE") {
+			markCleanupStarted();
+			return cleanupBlocked;
+		}
+		return route(url, init);
+	};
+
+	const extraction = extractPDFViaDatalab(new ArrayBuffer(1), {
+		maxPages: 1,
+		title: "Doc",
+		signal: controller.signal,
+	});
+	await convertSubmitted;
+	controller.abort(new DOMException("cancelled", "AbortError"));
+	await cleanupStarted;
+
+	const outcome = await settlesWithin(extraction, 100);
+	assert.equal(outcome.status, "rejected");
+	assert.equal(outcome.error.name, "AbortError");
+	finishCleanup(new Response(null, { status: 200 }));
 });
 
 test("Datalab conversion rejects a cross-origin polling URL", async () => {
@@ -466,6 +510,22 @@ function jsonResponse(value) {
 	return new Response(JSON.stringify(value), {
 		status: 200,
 		headers: { "content-type": "application/json" },
+	});
+}
+
+function settlesWithin(promise, timeoutMs) {
+	return new Promise((resolve) => {
+		const timeout = setTimeout(() => resolve({ status: "pending" }), timeoutMs);
+		promise.then(
+			() => {
+				clearTimeout(timeout);
+				resolve({ status: "resolved" });
+			},
+			(error) => {
+				clearTimeout(timeout);
+				resolve({ status: "rejected", error });
+			},
+		);
 	});
 }
 
