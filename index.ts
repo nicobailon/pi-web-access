@@ -2086,7 +2086,7 @@ export default function (pi: ExtensionAPI) {
 			const totalLines = lines.length;
 
 			if (!expanded) {
-				const box = new Box(1, 0, (t) => theme.bg("toolSuccessBg", t));
+				const box = new Box(2, 0);
 				box.addChild(new Text(statusLine, 0, 0));
 
 				let collapsedLines = 1; // statusLine
