@@ -9,22 +9,67 @@ import { readPDFResponseBuffer } from "../extract.ts";
 const pdfModuleUrl = new URL("../pdf-extract.ts", import.meta.url).href;
 
 test("pdf.maxSizeMB defaults to 20 and accepts values through 50", () => {
-	assert.equal(readConfig(undefined), 20);
-	assert.equal(readConfig({ pdf: { maxSizeMB: 30 } }), 30);
-	assert.equal(readConfig({ pdf: { maxSizeMB: 50 } }), 50);
+	assert.equal(readConfig(undefined).maxSizeMB, 20);
+	assert.equal(readConfig({ pdf: { maxSizeMB: 30 } }).maxSizeMB, 30);
+	assert.equal(readConfig({ pdf: { maxSizeMB: 50 } }).maxSizeMB, 50);
 });
 
 test("pdf.maxSizeMB caps values above 50 and rejects invalid values", () => {
-	assert.equal(readConfig({ pdf: { maxSizeMB: 80 } }), 50);
-	assert.equal(readConfig({ pdf: { maxSizeMB: 0 } }), 20);
-	assert.equal(readConfig({ pdf: { maxSizeMB: -1 } }), 20);
-	assert.equal(readConfig({ pdf: { maxSizeMB: "50" } }), 20);
+	assert.equal(readConfig({ pdf: { maxSizeMB: 80 } }).maxSizeMB, 50);
+	assert.equal(readConfig({ pdf: { maxSizeMB: 0 } }).maxSizeMB, 20);
+	assert.equal(readConfig({ pdf: { maxSizeMB: -1 } }).maxSizeMB, 20);
+	assert.equal(readConfig({ pdf: { maxSizeMB: "50" } }).maxSizeMB, 20);
+});
+
+test("pdf.provider defaults to auto and validates explicit providers", () => {
+	assert.equal(readConfig(undefined).provider, "auto");
+	assert.equal(readConfig({ pdf: { provider: "gemini" } }).provider, "gemini");
+	assert.equal(
+		readConfig({ pdf: { provider: "datalab" } }).provider,
+		"datalab",
+	);
+	assert.equal(readConfig({ pdf: { provider: "unpdf" } }).provider, "unpdf");
+	assert.equal(readConfig({ pdf: { provider: "gemini2" } }).provider, "auto");
+});
+
+test("pdf.datalabMode defaults to balanced and validates modes", () => {
+	assert.equal(readConfig(undefined).datalabMode, "balanced");
+	assert.equal(
+		readConfig({ pdf: { datalabMode: "fast" } }).datalabMode,
+		"fast",
+	);
+	assert.equal(
+		readConfig({ pdf: { datalabMode: "accurate" } }).datalabMode,
+		"accurate",
+	);
+	assert.equal(
+		readConfig({ pdf: { datalabMode: "ultra" } }).datalabMode,
+		"balanced",
+	);
+});
+
+test("pdf.datalabTimeoutMs defaults to 120000 and caps at 300000", () => {
+	assert.equal(readConfig(undefined).datalabTimeoutMs, 120000);
+	assert.equal(
+		readConfig({ pdf: { datalabTimeoutMs: 5000 } }).datalabTimeoutMs,
+		5000,
+	);
+	assert.equal(
+		readConfig({ pdf: { datalabTimeoutMs: 999999 } }).datalabTimeoutMs,
+		300000,
+	);
+	assert.equal(
+		readConfig({ pdf: { datalabTimeoutMs: -1 } }).datalabTimeoutMs,
+		120000,
+	);
 });
 
 test("PDF streamed byte enforcement allows the exact limit", async () => {
 	const bytes = Uint8Array.from([1, 2]);
 	const maxSizeMB = bytes.byteLength / 1024 / 1024;
-	const response = new Response(bytes, { headers: { "content-type": "application/pdf" } });
+	const response = new Response(bytes, {
+		headers: { "content-type": "application/pdf" },
+	});
 
 	const buffer = await readPDFResponseBuffer(response, maxSizeMB);
 	assert.deepEqual(new Uint8Array(buffer), bytes);
@@ -51,14 +96,15 @@ function readConfig(config) {
 		const child = spawnSync(process.execPath, ["--input-type=module"], {
 			input: `
 				process.env.PI_CODING_AGENT_DIR = ${JSON.stringify(configDir)};
+				delete process.env.DATALAB_MODE;
 				const { loadPDFConfig } = await import(${JSON.stringify(pdfModuleUrl)});
-				console.log(loadPDFConfig().maxSizeMB);
+				console.log(JSON.stringify(loadPDFConfig()));
 			`,
 			encoding: "utf8",
 			env: { ...process.env, PI_CODING_AGENT_DIR: configDir },
 		});
 		assert.equal(child.status, 0, child.stderr);
-		return Number(child.stdout.trim());
+		return JSON.parse(child.stdout.trim());
 	} finally {
 		rmSync(configDir, { recursive: true, force: true });
 	}

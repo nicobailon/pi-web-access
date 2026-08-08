@@ -6,7 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-const brightdataModuleUrl = new URL("../brightdata-unlocker.ts", import.meta.url).href;
+const brightdataModuleUrl = new URL(
+	"../brightdata-unlocker.ts",
+	import.meta.url,
+).href;
 const extractModuleUrl = new URL("../extract.ts", import.meta.url).href;
 
 // Scrubbing the env vars is not enough on its own: a `brightdataApiKey` written
@@ -15,15 +18,31 @@ const extractModuleUrl = new URL("../extract.ts", import.meta.url).href;
 // would resolve their own credential (and run their own resolver command)
 // inside these tests. Every child therefore starts from an empty home unless a
 // test hands it a purpose-built one.
-const EMPTY_HOME = mkdtempSync(join(tmpdir(), "pi-web-access-brightdata-empty-home-"));
+const EMPTY_HOME = mkdtempSync(
+	join(tmpdir(), "pi-web-access-brightdata-empty-home-"),
+);
 
 function runChild(script, env = {}) {
-	const childEnv = { ...process.env, HOME: EMPTY_HOME, USERPROFILE: EMPTY_HOME };
+	const childEnv = {
+		...process.env,
+		HOME: EMPTY_HOME,
+		USERPROFILE: EMPTY_HOME,
+	};
 	for (const key of [
-		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "BRIGHTDATA_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "BRIGHTDATA_UNLOCKER_ZONE",
-		"BRIGHTDATA_SERP_ZONE", "FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "PARALLEL_API_KEY",
-		"TINYFISH_API_KEY", "GEMINI_API_KEY",
-	]) delete childEnv[key];
+		"PI_CODING_AGENT_DIR",
+		"XDG_CONFIG_HOME",
+		"BRIGHTDATA_API_KEY",
+		"KAGI_API_KEY",
+		"OLLAMA_API_KEY",
+		"BRIGHTDATA_UNLOCKER_ZONE",
+		"BRIGHTDATA_SERP_ZONE",
+		"FIRECRAWL_BASE_URL",
+		"FIRECRAWL_API_KEY",
+		"PARALLEL_API_KEY",
+		"TINYFISH_API_KEY",
+		"GEMINI_API_KEY",
+	])
+		delete childEnv[key];
 	Object.assign(childEnv, env);
 	return spawnSync(process.execPath, ["--input-type=module"], {
 		input: script,
@@ -37,12 +56,17 @@ const PUBLIC_LOOKUP = `async () => [{ address: "93.184.216.34", family: 4 }]`;
 
 async function configHome(config) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-brightdata-"));
-	await writeFile(join(home, "web-search.json"), JSON.stringify(config) + "\n", "utf8");
+	await writeFile(
+		join(home, "web-search.json"),
+		JSON.stringify(config) + "\n",
+		"utf8",
+	);
 	return home;
 }
 
 test("Bright Data Web Unlocker maps markdown and sends the credential and Unlocker zone", async () => {
-	const child = runChild(`
+	const child = runChild(
+		`
 		let captured = null;
 		globalThis.fetch = async (url, init) => {
 			captured = { url: String(url), method: init.method, redirect: init.redirect, headers: Object.fromEntries(new Headers(init.headers)), body: JSON.parse(init.body) };
@@ -53,7 +77,12 @@ test("Bright Data Web Unlocker maps markdown and sends the credential and Unlock
 			lookup: ${PUBLIC_LOOKUP},
 		});
 		console.log(JSON.stringify({ captured, result }));
-	`, { BRIGHTDATA_API_KEY: "bd-test-key", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-test-key",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.captured.url, "https://api.brightdata.com/request");
@@ -87,7 +116,8 @@ test("Bright Data Web Unlocker maps markdown and sends the credential and Unlock
 });
 
 test("Bright Data Web Unlocker rejects private targets without invoking the paid API", async () => {
-	const child = runChild(`
+	const child = runChild(
+		`
 		let fetchCalls = 0;
 		globalThis.fetch = async () => { fetchCalls++; return new Response("# Should never happen", { status: 200 }); };
 		const { extractWithBrightDataUnlocker } = await import(${JSON.stringify(brightdataModuleUrl)});
@@ -102,7 +132,12 @@ test("Bright Data Web Unlocker rejects private targets without invoking the paid
 		try { await extractWithBrightDataUnlocker("https://rebind.example.com/", undefined, { lookup: async () => [{ address: "93.184.216.34", family: 4 }, { address: "192.168.1.10", family: 4 }] }); }
 		catch (err) { errors.push(err.message); }
 		console.log(JSON.stringify({ errors, fetchCalls }));
-	`, { BRIGHTDATA_API_KEY: "bd-test-key", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-test-key",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	// The stub fetch succeeds, so a zero call count can only mean the guard ran first.
@@ -125,14 +160,20 @@ test("Bright Data Web Unlocker rejects private targets without invoking the paid
 // up-front guard or if "Blocked internal address" is made a recoverable error
 // the chain continues past.
 test("Bright Data Web Unlocker is not reached for a blocked target through fetch_content", async () => {
-	const home = await configHome({ brightdataApiKey: "bd-test-key", brightdataUnlockerZone: "pi_unlocker" });
-	const child = runChild(`
+	const home = await configHome({
+		brightdataApiKey: "bd-test-key",
+		brightdataUnlockerZone: "pi_unlocker",
+	});
+	const child = runChild(
+		`
 		let fetchCalls = [];
 		globalThis.fetch = async (url) => { fetchCalls.push(String(url)); return new Response("# Should never happen", { status: 200 }); };
 		const { extractContent } = await import(${JSON.stringify(extractModuleUrl)});
 		const result = await extractContent("http://169.254.169.254/latest/meta-data");
 		console.log(JSON.stringify({ fetchCalls, error: result.error, content: result.content }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home });
+	`,
+		{ HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.deepEqual(output.fetchCalls, []);
@@ -145,7 +186,8 @@ test("Bright Data Web Unlocker validates its own fixed API endpoint, not just th
 	// resolution that points api.brightdata.com at an internal address. The lookup
 	// is hostname-aware so the *target* still passes: that is what isolates the
 	// endpoint check from the target check, which every other test exercises.
-	const child = runChild(`
+	const child = runChild(
+		`
 		let fetchCalls = 0;
 		globalThis.fetch = async () => { fetchCalls++; return new Response("# Should never happen", { status: 200 }); };
 		const { extractWithBrightDataUnlocker } = await import(${JSON.stringify(brightdataModuleUrl)});
@@ -158,7 +200,12 @@ test("Bright Data Web Unlocker validates its own fixed API endpoint, not just th
 			});
 		} catch (err) { message = err.message; }
 		console.log(JSON.stringify({ message, fetchCalls }));
-	`, { BRIGHTDATA_API_KEY: "bd-test-key", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-test-key",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.fetchCalls, 0);
@@ -166,7 +213,8 @@ test("Bright Data Web Unlocker validates its own fixed API endpoint, not just th
 });
 
 test("Bright Data Web Unlocker credentials are stripped on public cross-origin API redirects", async () => {
-	const child = runChild(`
+	const child = runChild(
+		`
 		let calls = [];
 		globalThis.fetch = async (url, init) => {
 			calls.push({ url: String(url), auth: Object.fromEntries(new Headers(init.headers)).authorization ?? null });
@@ -176,18 +224,29 @@ test("Bright Data Web Unlocker credentials are stripped on public cross-origin A
 		const { extractWithBrightDataUnlocker } = await import(${JSON.stringify(brightdataModuleUrl)});
 		const result = await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} });
 		console.log(JSON.stringify({ calls, result }));
-	`, { BRIGHTDATA_API_KEY: "bd-secret", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-secret",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.deepEqual(output.calls, [
 		{ url: "https://api.brightdata.com/request", auth: "Bearer bd-secret" },
 		{ url: "https://mirror.example.com/request", auth: null },
 	]);
-	assert.deepEqual(output.result, { url: "https://example.com/a", title: "Redirect body", content: "# Redirect body", error: null });
+	assert.deepEqual(output.result, {
+		url: "https://example.com/a",
+		title: "Redirect body",
+		content: "# Redirect body",
+		error: null,
+	});
 });
 
 test("Bright Data Web Unlocker blocks API redirects to private targets", async () => {
-	const child = runChild(`
+	const child = runChild(
+		`
 		let calls = [];
 		globalThis.fetch = async (url) => {
 			calls.push(String(url));
@@ -198,7 +257,12 @@ test("Bright Data Web Unlocker blocks API redirects to private targets", async (
 		try { await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} }); }
 		catch (err) { redirectError = err.message; }
 		console.log(JSON.stringify({ calls, redirectError }));
-	`, { BRIGHTDATA_API_KEY: "bd-test-key", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-test-key",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	// The hop was validated before it was followed, so only the first request happened.
@@ -207,7 +271,8 @@ test("Bright Data Web Unlocker blocks API redirects to private targets", async (
 });
 
 test("Bright Data Web Unlocker stops after five API redirects with an explicit message", async () => {
-	const child = runChild(`
+	const child = runChild(
+		`
 		let calls = [];
 		globalThis.fetch = async (url, init) => {
 			calls.push({ url: String(url), auth: Object.fromEntries(new Headers(init.headers)).authorization ?? null });
@@ -218,24 +283,38 @@ test("Bright Data Web Unlocker stops after five API redirects with an explicit m
 		try { await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} }); }
 		catch (err) { message = err.message; }
 		console.log(JSON.stringify({ calls, message }));
-	`, { BRIGHTDATA_API_KEY: "bd-secret", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-secret",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	// Six requests total: the initial POST plus exactly DEFAULT_MAX_REDIRECTS = 5
 	// followed hops. A seventh would mean the cap does not hold.
-	assert.deepEqual(output.calls.map(call => call.url), [
-		"https://api.brightdata.com/request",
-		"https://hop1.example.com/request",
-		"https://hop2.example.com/request",
-		"https://hop3.example.com/request",
-		"https://hop4.example.com/request",
-		"https://hop5.example.com/request",
-	]);
+	assert.deepEqual(
+		output.calls.map((call) => call.url),
+		[
+			"https://api.brightdata.com/request",
+			"https://hop1.example.com/request",
+			"https://hop2.example.com/request",
+			"https://hop3.example.com/request",
+			"https://hop4.example.com/request",
+			"https://hop5.example.com/request",
+		],
+	);
 	// The cap raises a named error rather than returning null or the last 302 body,
 	// and it names the hop it gave up on.
-	assert.equal(output.message, "Too many redirects fetching https://hop5.example.com/request");
+	assert.equal(
+		output.message,
+		"Too many redirects fetching https://hop5.example.com/request",
+	);
 	// The credential is dropped at the first origin change and never reinstated.
-	assert.deepEqual(output.calls.map(call => call.auth), ["Bearer bd-secret", null, null, null, null, null]);
+	assert.deepEqual(
+		output.calls.map((call) => call.auth),
+		["Bearer bd-secret", null, null, null, null, null],
+	);
 	assert.equal(output.message.includes("bd-secret"), false);
 });
 
@@ -243,12 +322,16 @@ test("BRIGHTDATA_UNLOCKER_ZONE takes precedence over brightdataUnlockerZone in t
 	// Both sources are populated at once, so the assertion can only pass if the
 	// precedence order is the documented one. Reversing it in getZone() still
 	// typechecks and still passes every other test in this file.
-	const home = await configHome({ brightdataApiKey: "bd-test-key", brightdataUnlockerZone: "config_zone1" });
+	const home = await configHome({
+		brightdataApiKey: "bd-test-key",
+		brightdataUnlockerZone: "config_zone1",
+	});
 	for (const { env, expected } of [
 		{ env: {}, expected: "config_zone1" },
 		{ env: { BRIGHTDATA_UNLOCKER_ZONE: "env_zone1" }, expected: "env_zone1" },
 	]) {
-		const child = runChild(`
+		const child = runChild(
+			`
 			let zone = null;
 			globalThis.fetch = async (_url, init) => {
 				zone = JSON.parse(init.body).zone;
@@ -257,15 +340,25 @@ test("BRIGHTDATA_UNLOCKER_ZONE takes precedence over brightdataUnlockerZone in t
 			const { extractWithBrightDataUnlocker } = await import(${JSON.stringify(brightdataModuleUrl)});
 			await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} });
 			console.log(JSON.stringify({ zone }));
-		`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home, ...env });
+		`,
+			{ HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home, ...env },
+		);
 		assert.equal(child.status, 0, child.stderr);
-		assert.equal(JSON.parse(child.stdout.trim()).zone, expected, JSON.stringify(env));
+		assert.equal(
+			JSON.parse(child.stdout.trim()).zone,
+			expected,
+			JSON.stringify(env),
+		);
 	}
 });
 
 test("Bright Data Web Unlocker requires its own zone and never borrows the SERP zone", async () => {
-	const home = await configHome({ brightdataApiKey: "bd-test-key", brightdataSerpZone: "serp_zone1" });
-	const child = runChild(`
+	const home = await configHome({
+		brightdataApiKey: "bd-test-key",
+		brightdataSerpZone: "serp_zone1",
+	});
+	const child = runChild(
+		`
 		let fetchCalls = 0;
 		globalThis.fetch = async () => { fetchCalls++; return new Response("# Should never happen", { status: 200 }); };
 		const { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } = await import(${JSON.stringify(brightdataModuleUrl)});
@@ -274,13 +367,18 @@ test("Bright Data Web Unlocker requires its own zone and never borrows the SERP 
 		try { await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} }); }
 		catch (err) { zoneError = err.message; }
 		console.log(JSON.stringify({ available, zoneError, fetchCalls }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home });
+	`,
+		{ HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	// A SERP-only configuration must not opt the user into Web Unlocker spend.
 	assert.equal(output.available, false);
 	assert.equal(output.fetchCalls, 0);
-	assert.match(output.zoneError, /Bright Data Web Unlocker zone not configured/);
+	assert.match(
+		output.zoneError,
+		/Bright Data Web Unlocker zone not configured/,
+	);
 	assert.match(output.zoneError, /brightdataUnlockerZone/);
 	assert.match(output.zoneError, /BRIGHTDATA_UNLOCKER_ZONE/);
 });
@@ -290,16 +388,35 @@ test("Bright Data Web Unlocker availability needs both a zone and a credential s
 		{ env: {}, expected: false },
 		{ env: { BRIGHTDATA_API_KEY: "bd-test-key" }, expected: false },
 		{ env: { BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" }, expected: false },
-		{ env: { BRIGHTDATA_API_KEY: "bd-test-key", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" }, expected: true },
-		{ env: { BRIGHTDATA_API_KEY: "bd-test-key", BRIGHTDATA_UNLOCKER_ZONE: "https://zone.example.com" }, expected: false },
+		{
+			env: {
+				BRIGHTDATA_API_KEY: "bd-test-key",
+				BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+			},
+			expected: true,
+		},
+		{
+			env: {
+				BRIGHTDATA_API_KEY: "bd-test-key",
+				BRIGHTDATA_UNLOCKER_ZONE: "https://zone.example.com",
+			},
+			expected: false,
+		},
 	];
 	for (const { env, expected } of cases) {
-		const child = runChild(`
+		const child = runChild(
+			`
 			const { isBrightDataUnlockerAvailable } = await import(${JSON.stringify(brightdataModuleUrl)});
 			console.log(JSON.stringify({ available: isBrightDataUnlockerAvailable() }));
-		`, env);
+		`,
+			env,
+		);
 		assert.equal(child.status, 0, child.stderr);
-		assert.equal(JSON.parse(child.stdout.trim()).available, expected, JSON.stringify(env));
+		assert.equal(
+			JSON.parse(child.stdout.trim()).available,
+			expected,
+			JSON.stringify(env),
+		);
 	}
 });
 
@@ -314,7 +431,8 @@ test("Bright Data Web Unlocker resolves the credential at request time, after th
 		}) + "\n",
 		"utf8",
 	);
-	const child = runChild(`
+	const child = runChild(
+		`
 		import { existsSync } from "node:fs";
 		let auth = null;
 		globalThis.fetch = async (_url, init) => {
@@ -331,7 +449,9 @@ test("Bright Data Web Unlocker resolves the credential at request time, after th
 		await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} });
 		const ranAfter = existsSync(${JSON.stringify(marker)});
 		console.log(JSON.stringify({ availableBefore, ranBefore, blockedError, ranAfterBlocked, ranAfter, auth }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home });
+	`,
+		{ HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.availableBefore, true);
@@ -343,7 +463,8 @@ test("Bright Data Web Unlocker resolves the credential at request time, after th
 });
 
 test("Bright Data Web Unlocker HTTP failures surface the status and redact the credential", async () => {
-	const child = runChild(`
+	const child = runChild(
+		`
 		globalThis.fetch = async () => new Response("payment required for token bd-secret", { status: 402 });
 		const { extractWithBrightDataUnlocker } = await import(${JSON.stringify(brightdataModuleUrl)});
 		let message = null;
@@ -351,7 +472,12 @@ test("Bright Data Web Unlocker HTTP failures surface the status and redact the c
 		try { result = await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} }); }
 		catch (err) { message = err.message; }
 		console.log(JSON.stringify({ message, result }));
-	`, { BRIGHTDATA_API_KEY: "bd-secret", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-secret",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	// A paid failure throws; it is never collapsed into a silent null.
@@ -368,7 +494,8 @@ test("Bright Data Web Unlocker redacts the credential before truncating a long e
 	// would be cut into a fragment that the later message-level redaction cannot
 	// match by exact string, and the fragment would reach the user. Both redactions
 	// individually pass the 402 test above, so only this one can tell them apart.
-	const child = runChild(`
+	const child = runChild(
+		`
 		const key = "bd-boundary-secret-0123456789";
 		globalThis.fetch = async () => new Response("e".repeat(280) + key + " trailing detail", { status: 500 });
 		const { extractWithBrightDataUnlocker } = await import(${JSON.stringify(brightdataModuleUrl)});
@@ -376,7 +503,12 @@ test("Bright Data Web Unlocker redacts the credential before truncating a long e
 		try { await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} }); }
 		catch (err) { message = err.message; }
 		console.log(JSON.stringify({ message }));
-	`, { BRIGHTDATA_API_KEY: "bd-boundary-secret-0123456789", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-boundary-secret-0123456789",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.match(output.message, /Bright Data Web Unlocker error 500/);
@@ -389,7 +521,8 @@ test("Bright Data Web Unlocker redacts transport errors and preserves the error 
 	// The catch-level redaction, pinned on its own: this path never touches the
 	// response-body redaction, and it must rebuild the error without losing
 	// `err.name`, which is what downstream abort detection reads.
-	const child = runChild(`
+	const child = runChild(
+		`
 		globalThis.fetch = async () => {
 			const err = new Error("socket hang up while sending token bd-secret");
 			err.name = "TypeError";
@@ -402,7 +535,12 @@ test("Bright Data Web Unlocker redacts transport errors and preserves the error 
 		try { result = await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} }); }
 		catch (err) { name = err.name; message = err.message; }
 		console.log(JSON.stringify({ name, message, result }));
-	`, { BRIGHTDATA_API_KEY: "bd-secret", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-secret",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.result, "not-reached");
@@ -413,7 +551,8 @@ test("Bright Data Web Unlocker redacts transport errors and preserves the error 
 });
 
 test("Bright Data Web Unlocker returns null only for genuinely empty content", async () => {
-	const child = runChild(`
+	const child = runChild(
+		`
 		const bodies = ["", "   \\n\\t  ", "Paywalled: subscribe to continue reading."];
 		let index = 0;
 		globalThis.fetch = async () => new Response(bodies[index++], { status: 200 });
@@ -423,7 +562,12 @@ test("Bright Data Web Unlocker returns null only for genuinely empty content", a
 			results.push(await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} }));
 		}
 		console.log(JSON.stringify({ results }));
-	`, { BRIGHTDATA_API_KEY: "bd-test-key", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-test-key",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const results = JSON.parse(child.stdout.trim()).results;
 	assert.equal(results[0], null);
@@ -438,7 +582,8 @@ test("Bright Data Web Unlocker returns null only for genuinely empty content", a
 });
 
 test("Bright Data Web Unlocker propagates cancellation instead of returning null", async () => {
-	const child = runChild(`
+	const child = runChild(
+		`
 		let sawAbortedSignal = null;
 		globalThis.fetch = async (_url, init) => {
 			sawAbortedSignal = init.signal?.aborted ?? null;
@@ -451,7 +596,12 @@ test("Bright Data Web Unlocker propagates cancellation instead of returning null
 		try { await extractWithBrightDataUnlocker("https://example.com/a", AbortSignal.abort(), { lookup: ${PUBLIC_LOOKUP} }); }
 		catch (err) { name = err.name; message = err.message; }
 		console.log(JSON.stringify({ sawAbortedSignal, name, message }));
-	`, { BRIGHTDATA_API_KEY: "bd-test-key", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-test-key",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	// The caller signal reaches the request, and the abort is rethrown so
@@ -462,7 +612,8 @@ test("Bright Data Web Unlocker propagates cancellation instead of returning null
 });
 
 test("Bright Data Web Unlocker uses fetch_content's timeoutMs and its own 60s default otherwise", async () => {
-	const child = runChild(`
+	const child = runChild(
+		`
 		// AbortSignal.timeout is the only place the effective budget is observable,
 		// and the signal it returns is the one handed to fetch.
 		const realTimeout = AbortSignal.timeout;
@@ -496,7 +647,12 @@ test("Bright Data Web Unlocker uses fetch_content's timeoutMs and its own 60s de
 		try { timedOutResult = await extractWithBrightDataUnlocker("https://example.com/c", undefined, { lookup: ${PUBLIC_LOOKUP}, timeoutMs: 25 }); }
 		catch (err) { timedOutName = err.name; }
 		console.log(JSON.stringify({ explicit, fallback, tiny: requested, sawSignal, timedOutName, timedOutResult }));
-	`, { BRIGHTDATA_API_KEY: "bd-test-key", BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker" });
+	`,
+		{
+			BRIGHTDATA_API_KEY: "bd-test-key",
+			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.sawSignal, true);
@@ -519,8 +675,13 @@ test("Bright Data Web Unlocker uses fetch_content's timeoutMs and its own 60s de
 // Bright Data hit returns before the Gemini fallbacks are consulted. The full
 // ordering is a source-order property of `extractContent`, not a tested one.
 test("fetch_content tries Bright Data after the direct fetch and Jina Reader, and returns before Gemini", async () => {
-	const home = await configHome({ brightdataApiKey: "bd-test-key", brightdataUnlockerZone: "pi_unlocker" });
-	const child = runChild(`
+	const home = await configHome({
+		brightdataApiKey: "bd-test-key",
+		brightdataUnlockerZone: "pi_unlocker",
+		fetchRouting: { allowRemoteHostedProviders: true },
+	});
+	const child = runChild(
+		`
 		let calls = [];
 		globalThis.fetch = async (url) => {
 			calls.push(String(url));
@@ -531,7 +692,9 @@ test("fetch_content tries Bright Data after the direct fetch and Jina Reader, an
 		const { extractContent } = await import(${JSON.stringify(extractModuleUrl)});
 		const result = await extractContent("https://example.com/protected", undefined, { lookup: ${PUBLIC_LOOKUP} });
 		console.log(JSON.stringify({ calls, result }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home });
+	`,
+		{ HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.deepEqual(output.calls, [
@@ -548,8 +711,13 @@ test("fetch_content tries Bright Data after the direct fetch and Jina Reader, an
 });
 
 test("Bright Data Web Unlocker failures stay visible in fetch_content guidance", async () => {
-	const home = await configHome({ brightdataApiKey: "bd-secret", brightdataUnlockerZone: "pi_unlocker" });
-	const child = runChild(`
+	const home = await configHome({
+		brightdataApiKey: "bd-secret",
+		brightdataUnlockerZone: "pi_unlocker",
+		fetchRouting: { allowRemoteHostedProviders: true },
+	});
+	const child = runChild(
+		`
 		let calls = [];
 		globalThis.fetch = async (url) => {
 			calls.push(String(url));
@@ -560,17 +728,29 @@ test("Bright Data Web Unlocker failures stay visible in fetch_content guidance",
 		const { extractContent } = await import(${JSON.stringify(extractModuleUrl)});
 		const result = await extractContent("https://example.com/paywalled", undefined, { lookup: ${PUBLIC_LOOKUP} });
 		console.log(JSON.stringify({ calls, error: result.error }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home });
+	`,
+		{ HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.match(output.error, /Bright Data fallback failed: Bright Data Web Unlocker error 402/);
-	assert.match(output.error, /Set brightdataApiKey and brightdataUnlockerZone in .*web-search\.json or BRIGHTDATA_API_KEY and BRIGHTDATA_UNLOCKER_ZONE/);
+	assert.match(
+		output.error,
+		/Bright Data fallback failed: Bright Data Web Unlocker error 402/,
+	);
+	assert.match(
+		output.error,
+		/Set brightdataApiKey and brightdataUnlockerZone in .*web-search\.json or BRIGHTDATA_API_KEY and BRIGHTDATA_UNLOCKER_ZONE/,
+	);
 	assert.equal(output.error.includes("bd-secret"), false);
 });
 
 test("Bright Data Web Unlocker rejects a malformed zone and a malformed config root", async () => {
-	const badZone = await configHome({ brightdataApiKey: "bd-test-key", brightdataUnlockerZone: "https://zone.example.com" });
-	const badZoneChild = runChild(`
+	const badZone = await configHome({
+		brightdataApiKey: "bd-test-key",
+		brightdataUnlockerZone: "https://zone.example.com",
+	});
+	const badZoneChild = runChild(
+		`
 		let fetchCalls = 0;
 		globalThis.fetch = async () => { fetchCalls++; return new Response("# Should never happen", { status: 200 }); };
 		const { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } = await import(${JSON.stringify(brightdataModuleUrl)});
@@ -579,24 +759,35 @@ test("Bright Data Web Unlocker rejects a malformed zone and a malformed config r
 		try { await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} }); }
 		catch (err) { message = err.message; }
 		console.log(JSON.stringify({ available, message, fetchCalls }));
-	`, { HOME: badZone, USERPROFILE: badZone, PI_CODING_AGENT_DIR: badZone });
+	`,
+		{ HOME: badZone, USERPROFILE: badZone, PI_CODING_AGENT_DIR: badZone },
+	);
 	assert.equal(badZoneChild.status, 0, badZoneChild.stderr);
 	const badZoneOutput = JSON.parse(badZoneChild.stdout.trim());
 	assert.equal(badZoneOutput.available, false);
 	assert.equal(badZoneOutput.fetchCalls, 0);
-	assert.match(badZoneOutput.message, /Invalid Bright Data Unlocker zone: brightdataUnlockerZone in .*web-search\.json/);
+	assert.match(
+		badZoneOutput.message,
+		/Invalid Bright Data Unlocker zone: brightdataUnlockerZone in .*web-search\.json/,
+	);
 
 	const badRoot = await mkdtemp(join(tmpdir(), "pi-web-access-brightdata-"));
 	await writeFile(join(badRoot, "web-search.json"), "[]\n", "utf8");
-	const badRootChild = runChild(`
+	const badRootChild = runChild(
+		`
 		const { extractWithBrightDataUnlocker } = await import(${JSON.stringify(brightdataModuleUrl)});
 		let message = null;
 		try { await extractWithBrightDataUnlocker("https://example.com/a", undefined, { lookup: ${PUBLIC_LOOKUP} }); }
 		catch (err) { message = err.message; }
 		console.log(JSON.stringify({ message }));
-	`, { HOME: badRoot, USERPROFILE: badRoot, PI_CODING_AGENT_DIR: badRoot });
+	`,
+		{ HOME: badRoot, USERPROFILE: badRoot, PI_CODING_AGENT_DIR: badRoot },
+	);
 	assert.equal(badRootChild.status, 0, badRootChild.stderr);
-	assert.match(JSON.parse(badRootChild.stdout.trim()).message, /Invalid config in .*web-search\.json: expected a JSON object/);
+	assert.match(
+		JSON.parse(badRootChild.stdout.trim()).message,
+		/Invalid config in .*web-search\.json: expected a JSON object/,
+	);
 });
 
 test("a private Bright Data endpoint mirror requires an explicit narrow SSRF range", async () => {
@@ -607,9 +798,11 @@ test("a private Bright Data endpoint mirror requires an explicit narrow SSRF ran
 		const home = await configHome({
 			brightdataApiKey: "bd-test-key",
 			brightdataUnlockerZone: "pi_unlocker",
+			fetchRouting: { allowRemoteHostedProviders: true },
 			...(allowRanges ? { ssrf: { allowRanges } } : {}),
 		});
-		const child = runChild(`
+		const child = runChild(
+			`
 			let calls = [];
 			globalThis.fetch = async (url) => {
 				calls.push(String(url));
@@ -623,15 +816,25 @@ test("a private Bright Data endpoint mirror requires an explicit narrow SSRF ran
 			const { extractContent } = await import(${JSON.stringify(extractModuleUrl)});
 			const result = await extractContent("https://example.com/protected", undefined, { lookup: ${PUBLIC_LOOKUP} });
 			console.log(JSON.stringify({ calls, result }));
-		`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home });
+		`,
+			{ HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home },
+		);
 		assert.equal(child.status, 0, child.stderr);
 		const output = JSON.parse(child.stdout.trim());
 		if (allowRanges) {
-			assert.deepEqual(output.calls.slice(2), ["https://api.brightdata.com/request", "http://127.0.0.1:3002/request"]);
+			assert.deepEqual(output.calls.slice(2), [
+				"https://api.brightdata.com/request",
+				"http://127.0.0.1:3002/request",
+			]);
 			assert.equal(output.result.content, "# Local mirror");
 		} else {
-			assert.deepEqual(output.calls.slice(2), ["https://api.brightdata.com/request"]);
-			assert.match(output.result.error, /Bright Data fallback failed: Blocked internal address/);
+			assert.deepEqual(output.calls.slice(2), [
+				"https://api.brightdata.com/request",
+			]);
+			assert.match(
+				output.result.error,
+				/Bright Data fallback failed: Blocked internal address/,
+			);
 		}
 	}
 });

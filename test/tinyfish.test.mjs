@@ -8,7 +8,8 @@ import { test } from "node:test";
 const tinyfishModuleUrl = new URL("../tinyfish.ts", import.meta.url).href;
 const searchModuleUrl = new URL("../gemini-search.ts", import.meta.url).href;
 const extractModuleUrl = new URL("../extract.ts", import.meta.url).href;
-const curatorPageModuleUrl = new URL("../curator-page.ts", import.meta.url).href;
+const curatorPageModuleUrl = new URL("../curator-page.ts", import.meta.url)
+	.href;
 
 const PROVIDER_ENV_KEYS = [
 	"OPENAI_API_KEY",
@@ -17,7 +18,10 @@ const PROVIDER_ENV_KEYS = [
 	"TINYFISH_API_KEY",
 	"TAVILY_API_KEY",
 	"JINA_API_KEY",
-	"SERPDIVE_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY",
+	"SERPDIVE_API_KEY",
+	"KAGI_API_KEY",
+	"OLLAMA_API_KEY",
+	"SERPBASE_API_KEY",
 	"ANYSEARCH_API_KEY",
 	"BRIGHTDATA_API_KEY",
 	"BRIGHTDATA_SERP_ZONE",
@@ -35,7 +39,11 @@ const PROVIDER_ENV_KEYS = [
 async function createHome(config = {}) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-tinyfish-"));
 	await mkdir(join(home, ".pi"), { recursive: true });
-	await writeFile(join(home, ".pi", "web-search.json"), JSON.stringify(config) + "\n", "utf8");
+	await writeFile(
+		join(home, ".pi", "web-search.json"),
+		JSON.stringify(config) + "\n",
+		"utf8",
+	);
 	return home;
 }
 
@@ -55,32 +63,48 @@ function runChild(script, env = {}) {
 
 test("TinyFish availability reads environment and config credentials", async () => {
 	const emptyHome = await createHome();
-	let child = runChild(`
+	let child = runChild(
+		`
 		const { isTinyFishAvailable } = await import(${JSON.stringify(tinyfishModuleUrl)});
 		console.log(String(isTinyFishAvailable()));
-	`, { HOME: emptyHome, USERPROFILE: emptyHome });
+	`,
+		{ HOME: emptyHome, USERPROFILE: emptyHome },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	assert.equal(child.stdout.trim(), "false");
 
-	child = runChild(`
+	child = runChild(
+		`
 		const { isTinyFishAvailable } = await import(${JSON.stringify(tinyfishModuleUrl)});
 		console.log(String(isTinyFishAvailable()));
-	`, { HOME: emptyHome, USERPROFILE: emptyHome, TINYFISH_API_KEY: "synthetic-tinyfish-env-key" });
+	`,
+		{
+			HOME: emptyHome,
+			USERPROFILE: emptyHome,
+			TINYFISH_API_KEY: "synthetic-tinyfish-env-key",
+		},
+	);
 	assert.equal(child.status, 0, child.stderr);
 	assert.equal(child.stdout.trim(), "true");
 
-	const configHome = await createHome({ tinyfishApiKey: "synthetic-tinyfish-config-key" });
-	child = runChild(`
+	const configHome = await createHome({
+		tinyfishApiKey: "synthetic-tinyfish-config-key",
+	});
+	child = runChild(
+		`
 		const { isTinyFishAvailable } = await import(${JSON.stringify(tinyfishModuleUrl)});
 		console.log(String(isTinyFishAvailable()));
-	`, { HOME: configHome, USERPROFILE: configHome });
+	`,
+		{ HOME: configHome, USERPROFILE: configHome },
+	);
 	assert.equal(child.status, 0, child.stderr);
 	assert.equal(child.stdout.trim(), "true");
 });
 
 test("explicit TinyFish search maps filters, results, and full inline content", async () => {
 	const home = await createHome({ provider: "tinyfish" });
-	const child = runChild(`
+	const child = runChild(
+		`
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
 			const urlText = String(url);
@@ -114,40 +138,60 @@ test("explicit TinyFish search maps filters, results, and full inline content", 
 			domainFilter: ["docs.tinyfish.ai", "-example.com"],
 		});
 		console.log(JSON.stringify({ calls, result }));
-	`, { HOME: home, USERPROFILE: home, TINYFISH_API_KEY: "synthetic-tinyfish-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			TINYFISH_API_KEY: "synthetic-tinyfish-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.calls.length, 2);
 	const searchUrl = new URL(output.calls[0].url);
-	assert.equal(searchUrl.origin + searchUrl.pathname, "https://api.search.tinyfish.ai/");
+	assert.equal(
+		searchUrl.origin + searchUrl.pathname,
+		"https://api.search.tinyfish.ai/",
+	);
 	assert.equal(searchUrl.searchParams.get("query"), "tinyfish docs");
-	assert.equal(searchUrl.searchParams.get("include_domains"), "docs.tinyfish.ai");
+	assert.equal(
+		searchUrl.searchParams.get("include_domains"),
+		"docs.tinyfish.ai",
+	);
 	assert.equal(searchUrl.searchParams.get("exclude_domains"), "example.com");
 	assert.equal(searchUrl.searchParams.get("recency_minutes"), "10080");
-	assert.equal(output.calls[0].headers["x-api-key"], "synthetic-tinyfish-test-key");
+	assert.equal(
+		output.calls[0].headers["x-api-key"],
+		"synthetic-tinyfish-test-key",
+	);
 	assert.deepEqual(output.calls[1].body, {
 		urls: ["https://docs.tinyfish.ai/"],
 		format: "markdown",
 		per_url_timeout_ms: 110000,
 	});
 	assert.equal(output.result.provider, "tinyfish");
-	assert.deepEqual(output.result.results, [{
-		title: "TinyFish Docs",
-		url: "https://docs.tinyfish.ai/",
-		snippet: "Search and fetch",
-	}]);
-	assert.deepEqual(output.result.inlineContent, [{
-		url: "https://docs.tinyfish.ai/",
-		title: "TinyFish Docs",
-		content: "# Full TinyFish documentation",
-		error: null,
-	}]);
+	assert.deepEqual(output.result.results, [
+		{
+			title: "TinyFish Docs",
+			url: "https://docs.tinyfish.ai/",
+			snippet: "Search and fetch",
+		},
+	]);
+	assert.deepEqual(output.result.inlineContent, [
+		{
+			url: "https://docs.tinyfish.ai/",
+			title: "TinyFish Docs",
+			content: "# Full TinyFish documentation",
+			error: null,
+		},
+	]);
 });
 
 test("TinyFish search paginates when more than ten results are requested", async () => {
 	const home = await createHome();
-	const child = runChild(`
+	const child = runChild(
+		`
 		const urls = [];
 		globalThis.fetch = async (url) => {
 			const parsed = new URL(String(url));
@@ -164,7 +208,13 @@ test("TinyFish search paginates when more than ten results are requested", async
 		const { searchWithTinyFish } = await import(${JSON.stringify(tinyfishModuleUrl)});
 		const result = await searchWithTinyFish("many", { numResults: 15 });
 		console.log(JSON.stringify({ urls, count: result.results.length, last: result.results.at(-1)?.url }));
-	`, { HOME: home, USERPROFILE: home, TINYFISH_API_KEY: "synthetic-tinyfish-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			TINYFISH_API_KEY: "synthetic-tinyfish-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -176,7 +226,8 @@ test("TinyFish search paginates when more than ten results are requested", async
 
 test("TinyFish extraction maps successful content and reports per-URL errors", async () => {
 	const home = await createHome();
-	const child = runChild(`
+	const child = runChild(
+		`
 		let attempt = 0;
 		const bodies = [];
 		globalThis.fetch = async (_url, init) => {
@@ -199,7 +250,13 @@ test("TinyFish extraction maps successful content and reports per-URL errors", a
 		try { await extractWithTinyFish("https://example.com/blocked"); }
 		catch (err) { error = err.message; }
 		console.log(JSON.stringify({ bodies, good, error }));
-	`, { HOME: home, USERPROFILE: home, TINYFISH_API_KEY: "synthetic-tinyfish-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			TINYFISH_API_KEY: "synthetic-tinyfish-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -215,19 +272,29 @@ test("TinyFish extraction maps successful content and reports per-URL errors", a
 		content: "# Rendered body",
 		error: null,
 	});
-	assert.match(output.error, /TinyFish Fetch failed .*bot_blocked \(HTTP 403\)/);
+	assert.match(
+		output.error,
+		/TinyFish Fetch failed .*bot_blocked \(HTTP 403\)/,
+	);
 });
 
 test("TinyFish API errors redact credentials", async () => {
 	const home = await createHome();
-	const child = runChild(`
+	const child = runChild(
+		`
 		globalThis.fetch = async () => new Response("rejected synthetic-tinyfish-secret", { status: 401 });
 		const { searchWithTinyFish } = await import(${JSON.stringify(tinyfishModuleUrl)});
 		let error = "";
 		try { await searchWithTinyFish("redact me"); }
 		catch (err) { error = err.message; }
 		console.log(JSON.stringify({ error }));
-	`, { HOME: home, USERPROFILE: home, TINYFISH_API_KEY: "synthetic-tinyfish-secret" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			TINYFISH_API_KEY: "synthetic-tinyfish-secret",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -237,8 +304,11 @@ test("TinyFish API errors redact credentials", async () => {
 });
 
 test("fetch_content uses TinyFish before Parallel after local and Jina extraction fail", async () => {
-	const home = await createHome();
-	const child = runChild(`
+	const home = await createHome({
+		fetchRouting: { allowRemoteHostedProviders: true },
+	});
+	const child = runChild(
+		`
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
 			const urlText = String(url);
@@ -260,12 +330,14 @@ test("fetch_content uses TinyFish before Parallel after local and Jina extractio
 		const lookup = async () => [{ address: "93.184.216.34", family: 4 }];
 		const result = await extractContent("https://example.com/app", undefined, { lookup });
 		console.log(JSON.stringify({ calls, result }));
-	`, {
-		HOME: home,
-		USERPROFILE: home,
-		TINYFISH_API_KEY: "synthetic-tinyfish-test-key",
-		PARALLEL_API_KEY: "synthetic-parallel-test-key",
-	});
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			TINYFISH_API_KEY: "synthetic-tinyfish-test-key",
+			PARALLEL_API_KEY: "synthetic-parallel-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
@@ -286,7 +358,8 @@ test("configured searchRouting can select TinyFish", async () => {
 	const home = await createHome({
 		searchRouting: { providers: ["tinyfish"], fallbackOn: ["network"] },
 	});
-	const child = runChild(`
+	const child = runChild(
+		`
 		globalThis.fetch = async () => new Response(JSON.stringify({
 			query: "route",
 			results: [{ title: "Routed", snippet: "TinyFish route", url: "https://example.com/routed" }],
@@ -296,7 +369,14 @@ test("configured searchRouting can select TinyFish", async () => {
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
 		const result = await search("route", { provider: "auto" });
 		console.log(JSON.stringify({ provider: result.provider, results: result.results }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: join(home, ".pi"), TINYFISH_API_KEY: "synthetic-tinyfish-test-key" });
+	`,
+		{
+			HOME: home,
+			USERPROFILE: home,
+			PI_CODING_AGENT_DIR: join(home, ".pi"),
+			TINYFISH_API_KEY: "synthetic-tinyfish-test-key",
+		},
+	);
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
