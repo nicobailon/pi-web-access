@@ -403,6 +403,7 @@ test("curator page exposes TinyFish as a manual provider", async () => {
 			perplexity: false,
 			exa: false,
 			gemini: false,
+			kimi: false,
 			anysearch: false,
 		},
 		"tinyfish",

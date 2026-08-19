@@ -85,7 +85,7 @@ test("Curator page exposes usable Serper and Valyu provider entries", async () =
 	const available = {
 		all: false, openai: false, brave: false, parallel: false, tinyfish: false, search1api: false, searchinfinity: false,
 		querit: false, tavily: false, firecrawl: false, jina: false, serpdive: false, kagi: false, bocha: false, ollama: false,
-		searxng: false, duckduckgo: false, perplexity: false, exa: false, gemini: false, anysearch: false, xai: false,
+		searxng: false, duckduckgo: false, perplexity: false, exa: false, gemini: false, kimi: false, anysearch: false, xai: false,
 		brightdata: false, serpbase: false, serper: true, valyu: true,
 	};
 	const page = generateCuratorPage(["query"], "session-token", 20, available, "serper", "valyu", [], null);

@@ -1206,6 +1206,7 @@ test("curator page exposes Bright Data as a manual provider", async () => {
 			perplexity: false,
 			exa: false,
 			gemini: false,
+			kimi: false,
 			anysearch: false,
 		},
 		"brightdata",
