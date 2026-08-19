@@ -493,6 +493,7 @@ test("curator page exposes Querit as a manual provider", async () => {
 			perplexity: false,
 			exa: false,
 			gemini: false,
+			kimi: false,
 			anysearch: false,
 		},
 		"querit",

@@ -29,9 +29,10 @@ import { isBrightDataAvailable, searchWithBrightData } from "./brightdata.ts";
 import { isSerpBaseAvailable, searchWithSerpBase } from "./serpbase.ts";
 import { isSerperAvailable, searchWithSerper } from "./serper.ts";
 import { isValyuAvailable, searchWithValyu } from "./valyu.ts";
+import { isKimiSearchAvailable, searchWithKimi } from "./kimi-search.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
-export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "searxng", "duckduckgo", "perplexity", "gemini", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "brightdata", "serpbase", "serper", "valyu", "bocha"] as const;
+export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "searxng", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "brightdata", "serpbase", "serper", "valyu", "bocha"] as const;
 export const SEARCH_PROVIDERS = ["auto", "all", ...RESOLVED_SEARCH_PROVIDERS] as const;
 
 export type ResolvedSearchProvider = typeof RESOLVED_SEARCH_PROVIDERS[number];
@@ -93,7 +94,7 @@ export interface AttributedSearchResponse extends SearchResponse {
 
 const CONFIG_PATH = getWebSearchConfigPath();
 const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
-// Explicit-only providers (Parallel MCP, DuckDuckGo, AnySearch, xAI, Bright Data, SerpBase, Serper, Valyu) are deliberately absent:
+// Explicit-only providers (Parallel MCP, DuckDuckGo, Kimi, AnySearch, xAI, Bright Data, SerpBase, Serper, Valyu) are deliberately absent:
 // `all` must never fan out to an opt-in or paid provider without the user asking for it.
 const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "ollama", "perplexity", "gemini", "bocha"];
 const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response"] as const;
@@ -324,6 +325,7 @@ async function searchWithResolvedProvider(
 	if (provider === "perplexity") return { ...(await searchWithPerplexity(query, options)), provider };
 	if (provider === "searxng") return { ...(await searchWithSearXNG(query, options)), provider };
 	if (provider === "duckduckgo") return { ...(await searchWithDuckDuckGo(query, options)), provider };
+	if (provider === "kimi") return { ...(await searchWithKimi(query, options, options.extensionContext)), provider };
 	if (provider === "gemini") {
 		const result = await searchWithGemini(query, options, true);
 		if (result) return { ...result, provider };
@@ -364,6 +366,7 @@ async function isResolvedProviderAvailable(provider: ResolvedSearchProvider, opt
 	if (provider === "perplexity") return isPerplexityAvailable();
 	if (provider === "searxng") return isSearXNGAvailable();
 	if (provider === "duckduckgo") return isDuckDuckGoAvailable();
+	if (provider === "kimi") return isKimiSearchAvailable(options.extensionContext);
 	if (provider === "gemini") return isGeminiApiAvailable() || !!(await isGeminiWebAvailable());
 	return isExaAvailable();
 }
@@ -381,6 +384,7 @@ function providerLabel(provider: ResolvedSearchProvider): string {
 	if (provider === "duckduckgo") return "DuckDuckGo";
 	if (provider === "kagi") return "Kagi";
 	if (provider === "bocha") return "Bocha";
+	if (provider === "kimi") return "Kimi";
 	if (provider === "ollama") return "Ollama";
 	if (provider === "xai") return "xAI";
 	if (provider === "brightdata") return "Bright Data";
@@ -413,7 +417,7 @@ async function searchWithProviders(
 			: await isResolvedProviderAvailable(provider, options),
 	})))).filter((entry) => entry.available).map((entry) => entry.provider);
 	if (providers.length === 0) {
-		throw new Error("No configured search provider available for provider \"all\". Parallel MCP, AnySearch, xAI, Bright Data, SerpBase, Serper, and Valyu are excluded.");
+		throw new Error("No configured search provider available for provider \"all\". Parallel MCP, DuckDuckGo, Kimi, AnySearch, xAI, Bright Data, SerpBase, Serper, and Valyu are excluded.");
 	}
 
 	const settled = await Promise.allSettled(

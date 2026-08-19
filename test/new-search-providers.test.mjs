@@ -180,7 +180,7 @@ test("Curator page exposes Bocha as a manual provider", async () => {
 			all: false, openai: false, brave: false, parallel: false, tinyfish: false, search1api: false,
 			searchinfinity: false, querit: false, tavily: false, jina: false, serpdive: false, kagi: false,
 			bocha: true, ollama: false, searxng: false, duckduckgo: false, perplexity: false, exa: false,
-			gemini: false, anysearch: false, xai: false, brightdata: false, serpbase: false,
+			gemini: false, kimi: false, anysearch: false, xai: false, brightdata: false, serpbase: false,
 		},
 		"bocha",
 		"bocha",

@@ -443,6 +443,7 @@ test("curator page exposes Jina Search as a manual provider", async () => {
 			perplexity: false,
 			exa: false,
 			gemini: false,
+			kimi: false,
 			anysearch: false,
 			xai: false,
 			brightdata: false,

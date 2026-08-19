@@ -416,6 +416,7 @@ test("curator page exposes Search1API as a manual provider", async () => {
 			perplexity: false,
 			exa: false,
 			gemini: false,
+			kimi: false,
 			anysearch: false,
 		},
 		"search1api",

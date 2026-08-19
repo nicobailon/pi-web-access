@@ -252,6 +252,7 @@ test("curator page exposes xAI as a manual provider", async () => {
 			perplexity: false,
 			exa: false,
 			gemini: false,
+			kimi: false,
 			anysearch: false,
 			xai: true,
 		},

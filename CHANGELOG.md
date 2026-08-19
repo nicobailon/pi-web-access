@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Added explicit-only Kimi Code Plan search using Pi's refreshed `kimi-coding` OAuth credentials.
+
 ## [0.24.0] - 2026-08-18
 
 ### Highlights
