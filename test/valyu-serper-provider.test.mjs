@@ -93,7 +93,7 @@ test("Curator page exposes usable Serper and Valyu provider entries", async () =
 	assert.match(page, />Serper<\/button>/);
 	assert.match(page, /data-provider="valyu"/);
 	assert.match(page, />Valyu<\/button>/);
-	assert.match(page, /"serpbase", "serper", "valyu"/);
+	assert.match(page, /"serpbase", "serpapi", "serper", "valyu"/);
 });
 
 test("Valyu maps domain and recency filters to documented request fields", async () => {
