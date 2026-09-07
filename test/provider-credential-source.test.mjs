@@ -120,6 +120,40 @@ test("previously unsupported providers resolve explicit env and command sources 
 	assert.equal(output.calls[2].headers.authorization, "Bearer tavily-command-key");
 });
 
+test("provider requests can resolve credentials through an inherited 1Password service-account token", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-web-access-fake-op-"));
+	const fakeOp = join(root, "fake-op.mjs");
+	await writeFile(fakeOp, `
+		if (process.argv.slice(2).join(" ") !== "read op://Automation/Brave/credential") process.exit(2);
+		if (process.env.OP_SERVICE_ACCOUNT_TOKEN !== "synthetic-service-account-token") process.exit(3);
+		if (process.env.UNRELATED_SECRET !== undefined) process.exit(4);
+		process.stdout.write("synthetic-brave-key");
+	`, "utf8");
+	const command = `${JSON.stringify(process.execPath)} ${JSON.stringify(fakeOp)} read ${JSON.stringify("op://Automation/Brave/credential")}`;
+	const { home, agentDir } = await createHome({ braveApiKey: `!${command}` });
+	const child = runChild(`
+		const { searchWithBrave } = await import(${JSON.stringify(braveModuleUrl)});
+		let request;
+		globalThis.fetch = async (url, init = {}) => {
+			request = { url: String(url), headers: Object.fromEntries(new Headers(init.headers)), body: String(init.body ?? "") };
+			return new Response(JSON.stringify({ web: { results: [] } }), { status: 200 });
+		};
+		await searchWithBrave("query", { numResults: 1 });
+		console.log(JSON.stringify({ request }));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		PI_CODING_AGENT_DIR: agentDir,
+		OP_SERVICE_ACCOUNT_TOKEN: "synthetic-service-account-token",
+		UNRELATED_SECRET: "must-not-reach-command",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const { request } = JSON.parse(child.stdout.trim());
+	assert.equal(request.headers["x-subscription-token"], "synthetic-brave-key");
+	assert.equal(JSON.stringify(request).includes("synthetic-service-account-token"), false);
+});
+
 test("provider API errors redact resolved credential-source values", async () => {
 	const { home, agentDir } = await createHome({
 		braveApiKey: "${BRAVE_SCOPED_KEY}",

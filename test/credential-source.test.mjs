@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 
 import {
@@ -42,6 +45,7 @@ test("command sources override stale values, remain lazy, and rotate per resolut
 		assert.deepEqual(runOptions.environment, {
 			HOME: "/synthetic/home",
 			PATH: "/usr/bin:/bin",
+			OP_SERVICE_ACCOUNT_TOKEN: "synthetic-service-account-token",
 			OP_SESSION_my: "synthetic-password-manager-session",
 		});
 		return { stdout: calls === 1 ? "first-value\n" : "second-value\n" };
@@ -54,7 +58,7 @@ test("command sources override stale values, remain lazy, and rotate per resolut
 			PATH: "/usr/bin:/bin",
 			EXA_API_KEY: "stale-provider-key-must-not-reach-command",
 			OP_SESSION_my: "synthetic-password-manager-session",
-			OP_SERVICE_ACCOUNT_TOKEN: "must-not-reach-command",
+			OP_SERVICE_ACCOUNT_TOKEN: "synthetic-service-account-token",
 			NODE_OPTIONS: "--require=untrusted.js",
 		},
 	};
@@ -64,6 +68,40 @@ test("command sources override stale values, remain lazy, and rotate per resolut
 	assert.equal(await resolveCredential(commandOptions), "first-value");
 	assert.equal(await resolveCredential(commandOptions), "second-value");
 	assert.equal(calls, 2);
+});
+
+test("service-account tokens remain absent unless inherited by Pi", async () => {
+	let childEnvironment;
+	await resolveCredential({
+		...options("!/trusted/read synthetic", undefined),
+		runCommand: async (_command, runOptions) => {
+			childEnvironment = runOptions.environment;
+			return { stdout: "value" };
+		},
+		environment: { HOME: "/synthetic/home" },
+	});
+	assert.equal(childEnvironment.OP_SERVICE_ACCOUNT_TOKEN, undefined);
+});
+
+test("a real resolver child can authenticate with an inherited service-account token", async () => {
+	const directory = await mkdtemp(join(tmpdir(), "pi-web-access-fake-op-"));
+	const fakeOp = join(directory, "fake-op.mjs");
+	await writeFile(fakeOp, `
+		if (process.argv.slice(2).join(" ") !== "read op://Synthetic/Search/credential") process.exit(2);
+		if (process.env.OP_SERVICE_ACCOUNT_TOKEN !== "synthetic-service-account-token") process.exit(3);
+		if (process.env.UNRELATED_SECRET !== undefined) process.exit(4);
+		process.stdout.write("synthetic-provider-key");
+	`, "utf8");
+	const command = `${JSON.stringify(process.execPath)} ${JSON.stringify(fakeOp)} read ${JSON.stringify("op://Synthetic/Search/credential")}`;
+	assert.equal(await resolveCredential({
+		...options(`!${command}`, undefined),
+		environment: {
+			HOME: directory,
+			PATH: process.env.PATH,
+			OP_SERVICE_ACCOUNT_TOKEN: "synthetic-service-account-token",
+			UNRELATED_SECRET: "must-not-reach-command",
+		},
+	}), "synthetic-provider-key");
 });
 
 test("command output must be one non-empty bounded value", async () => {
