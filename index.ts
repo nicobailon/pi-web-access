@@ -2,7 +2,7 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-
 import { Box, Text, truncateToWidth, type KeyId } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import pLimit from "p-limit";
-import { StringEnum, type ImageContent, type TextContent } from "@earendil-works/pi-ai/compat";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai/compat";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
 import { resolveAuthFetchProfile, type AuthFetchProfile } from "./auth-fetch.ts";
@@ -42,6 +42,17 @@ import { platform } from "node:os";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.ts";
+
+// 本地 StringEnum（语义同 @earendil-works/pi-ai 的 typebox-helpers）：
+// 避免仅为这一个 helper 在扩展加载时拖入整个 pi-ai compat barrel（拖慢 /reload）。
+function StringEnum<T extends string[]>(values: T, options?: { description?: string; default?: T[number] }) {
+	return Type.Unsafe<T[number]>({
+		type: "string",
+		enum: values,
+		...(options?.description && { description: options.description }),
+		...(options?.default && { default: options.default }),
+	});
+}
 import { isExaAvailable } from "./exa.ts";
 import { isGeminiApiAvailable } from "./gemini-api.ts";
 import { getActiveGoogleEmail, getGeminiWebAvailabilityDiagnostic, getGeminiWebAvailabilityDiagnosticDetails, isGeminiWebAvailable } from "./gemini-web.ts";

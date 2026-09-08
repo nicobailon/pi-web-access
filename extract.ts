@@ -1,8 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { Readability } from "@mozilla/readability";
-import { resizeImage } from "@earendil-works/pi-coding-agent";
 import { parseHTML } from "linkedom";
-import TurndownService from "turndown";
 import pLimit from "p-limit";
 import { activityMonitor } from "./activity.ts";
 import { extractRSCContent } from "./rsc-extract.ts";
@@ -83,6 +80,7 @@ function isDefuddleConsoleError(args: Parameters<typeof console.error>): boolean
 
 async function extractWithDefuddle(text: string, url: string): Promise<{ title: string; content: string } | null> {
 	const { Defuddle } = await import("defuddle/node");
+	const { parseHTML } = await import("linkedom");
 	const { document } = parseHTML(text);
 	Object.defineProperty(document, "location", {
 		value: new URL(url),
@@ -288,10 +286,21 @@ function abortedResult(url: string): ExtractedContent {
 	return { url, title: "", content: "", error: "Aborted" };
 }
 
-const turndown = new TurndownService({
-	headingStyle: "atx",
-	codeBlockStyle: "fenced",
-});
+// Turndown / linkedom / Readability 加载成本高（各数百 ms 的模块求值），
+// 且仅在真正解析 HTML 时才需要 —— 延迟到首次使用，缩短扩展加载时间。
+type TurndownCtor = typeof import("turndown");
+let turndownInstance: Promise<InstanceType<TurndownCtor>> | undefined;
+async function loadTurndown(): Promise<InstanceType<TurndownCtor>> {
+	const mod = (await import("turndown")) as unknown as { default: TurndownCtor };
+	return new mod.default({
+		headingStyle: "atx",
+		codeBlockStyle: "fenced",
+	});
+}
+function getTurndown(): Promise<InstanceType<TurndownCtor>> {
+	turndownInstance ??= loadTurndown();
+	return turndownInstance;
+}
 
 const fetchLimit = pLimit(CONCURRENT_LIMIT);
 
@@ -1210,6 +1219,7 @@ async function extractViaHttp(
 			}
 			try {
 				const buffer = await readResponseBufferWithLimit(response, maxResponseSize, () => responseSizeLimitError(maxResponseSize));
+				const { resizeImage } = await import("@earendil-works/pi-coding-agent");
 				const resized = await resizeImage(new Uint8Array(buffer), mimeType, { maxWidth: 2000, maxHeight: 2000 });
 				activityMonitor.logComplete(activityId, response.status);
 				if (!resized) return { url, title: "", content: "", error: `Could not decode image: ${mimeType}`, mimeType, status: response.status };
@@ -1278,6 +1288,7 @@ async function extractViaHttp(
 			return { url, title, content: text, error: null };
 		}
 
+		const { parseHTML } = await import("linkedom");
 		const { document } = parseHTML(text);
 		const documentTitle = document.title?.trim() ?? "";
 		const declaredLinks = discoverDeclaredWebLinks(
@@ -1285,6 +1296,7 @@ async function extractViaHttp(
 			response.headers.get("link"),
 			response.url || url,
 		);
+		const { Readability } = await import("@mozilla/readability");
 		const reader = new Readability(document as unknown as Document);
 		const article = reader.parse();
 
@@ -1332,7 +1344,7 @@ async function extractViaHttp(
 		if (typeof article.content !== "string") {
 			throw new Error("Readability returned invalid article content");
 		}
-		const markdown = turndown.turndown(article.content);
+		const markdown = (await getTurndown()).turndown(article.content);
 		activityMonitor.logComplete(activityId, response.status);
 
 		if (markdown.length < MIN_USEFUL_CONTENT) {

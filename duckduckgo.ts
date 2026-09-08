@@ -1,4 +1,3 @@
-import { parseHTML } from "linkedom";
 import { activityMonitor } from "./activity.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
 
@@ -88,6 +87,7 @@ export async function searchWithDuckDuckGo(query: string, options: SearchOptions
 			throw new Error(`DuckDuckGo search error ${response.status}: ${body.slice(0, 300)}`);
 		}
 
+		const { parseHTML } = await import("linkedom");
 		const { document } = parseHTML(await response.text());
 		const filters = normalizeDomainFilters(options.domainFilter);
 		const results: SearchResult[] = [];

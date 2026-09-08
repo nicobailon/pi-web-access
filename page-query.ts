@@ -1,4 +1,4 @@
-import { complete, type Api, type Message, type Model } from "@earendil-works/pi-ai/compat";
+import type { complete, Api, Message, Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
 import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
@@ -111,7 +111,7 @@ export async function answerFromPage(
 	if (!auth.ok || !auth.apiKey) throw new Error(`No API key available for answer model ${model.provider}/${model.id}`);
 	const registry = ctx.modelRegistry as typeof ctx.modelRegistry & { complete?: typeof complete };
 	const usesRegistryComplete = typeof registry.complete === "function";
-	const completeFn = usesRegistryComplete ? registry.complete!.bind(registry) : complete;
+	const completeFn = usesRegistryComplete ? registry.complete!.bind(registry) : (await import("@earendil-works/pi-ai/compat")).complete;
 
 	const contextTokens = model.contextWindow > 0 ? model.contextWindow : FALLBACK_CONTEXT_TOKENS;
 	const maximumInputTokens = Math.max(1, Math.min(

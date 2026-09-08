@@ -1,4 +1,4 @@
-import { complete, type Api, type Model, type ProviderHeaders } from "@earendil-works/pi-ai/compat";
+import type { complete, Api, Model, ProviderHeaders } from "@earendil-works/pi-ai/compat";
 import type { SummaryGenerationContext } from "./summary-review.ts";
 import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
 
@@ -28,7 +28,7 @@ export async function rewriteSearchQuery(
 	]);
 	const registry = ctx.modelRegistry as typeof ctx.modelRegistry & { complete?: typeof complete };
 	const usesRegistryComplete = typeof registry.complete === "function";
-	const completeFn = usesRegistryComplete ? registry.complete!.bind(registry) : complete;
+	const completeFn = usesRegistryComplete ? registry.complete!.bind(registry) : (await import("@earendil-works/pi-ai/compat")).complete;
 	const response = await completeFn(
 		model,
 		{

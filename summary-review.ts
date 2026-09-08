@@ -1,5 +1,5 @@
-import { clampThinkingLevel, type ModelThinkingLevel, type ThinkingLevel } from "@earendil-works/pi-ai";
-import { complete, completeSimple, type Api, type Message, type Model } from "@earendil-works/pi-ai/compat";
+import type { ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
+import type { complete, completeSimple, Api, Message, Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns, splitThinkingSuffix, type SummaryThinkingLevel } from "./summary-model-scope.ts";
 import type { QueryResultData } from "./storage.ts";
@@ -204,8 +204,9 @@ function parseModelSelector(value: string): { provider: string; id: string; thin
 	};
 }
 
-function resolveThinkingLevel(model: Model<Api>, requested?: SummaryThinkingLevel): ModelThinkingLevel | undefined {
+async function resolveThinkingLevel(model: Model<Api>, requested?: SummaryThinkingLevel): Promise<ModelThinkingLevel | undefined> {
 	if (!requested) return undefined;
+	const { clampThinkingLevel } = await import("@earendil-works/pi-ai");
 	return clampThinkingLevel(model, requested as ModelThinkingLevel);
 }
 
@@ -299,7 +300,11 @@ export async function generateSummaryDraft(
 	const registry = ctx.modelRegistry as SummaryModelRegistry;
 	const customCompleteFn = completeFn !== undefined;
 	const usesRegistryComplete = !customCompleteFn && typeof registry.complete === "function";
-	completeFn ??= usesRegistryComplete ? registry.complete!.bind(registry) as CompleteFunction : complete;
+	// 仅在没有自定义 complete 且 registry 未提供时才需要 pi-ai compat（barrel 较重，按需加载）
+	const piAiCompat = customCompleteFn || usesRegistryComplete
+		? undefined
+		: await import("@earendil-works/pi-ai/compat");
+	completeFn ??= usesRegistryComplete ? registry.complete!.bind(registry) as CompleteFunction : piAiCompat!.complete;
 
 	const generationStartedAt = Date.now();
 	const deadlineController = new AbortController();
@@ -364,7 +369,7 @@ export async function generateSummaryDraft(
 					content: [{ type: "text", text: prompt }],
 					timestamp: Date.now(),
 				};
-				const requestedThinkingLevel = resolveThinkingLevel(model, thinkingLevel);
+				const requestedThinkingLevel = await resolveThinkingLevel(model, thinkingLevel);
 				const enabledThinkingLevel = requestedThinkingLevel && requestedThinkingLevel !== "off"
 					? requestedThinkingLevel as ThinkingLevel
 					: undefined;
@@ -375,7 +380,7 @@ export async function generateSummaryDraft(
 					...(enabledThinkingLevel ? { reasoningEffort: enabledThinkingLevel } : {}),
 				};
 				const completion = thinkingLevel !== undefined && !customCompleteFn && !usesRegistryComplete
-					? completeSimple(model, { messages: [userMessage] }, { apiKey, headers, signal: completionSignal, ...(enabledThinkingLevel ? { reasoning: enabledThinkingLevel } : {}) })
+					? piAiCompat!.completeSimple(model, { messages: [userMessage] }, { apiKey, headers, signal: completionSignal, ...(enabledThinkingLevel ? { reasoning: enabledThinkingLevel } : {}) })
 					: completeFn(model, { messages: [userMessage] }, completionOptions);
 
 				const response = await raceSummaryOperation(Promise.resolve(completion));
