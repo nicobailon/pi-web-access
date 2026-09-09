@@ -208,7 +208,7 @@ const proxyStorage = new AsyncLocalStorage<string | null>();
 
 export function normalizeProxyUrl(value: unknown, source: string): string | null {
 	if (value === undefined || value === null) return null;
-	if (typeof value !== "string") throw new Error(`${source} must be an http(s) proxy URL string`);
+	if (typeof value !== "string") throw new Error(`${source} must be an http(s) or socks proxy URL string`);
 	const trimmed = value.trim();
 	if (!trimmed) return null;
 	let parsed: URL;
@@ -217,8 +217,10 @@ export function normalizeProxyUrl(value: unknown, source: string): string | null
 	} catch {
 		throw new Error(`${source} must be a valid proxy URL: ${JSON.stringify(trimmed)}`);
 	}
-	if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-		throw new Error(`${source} must use the http:// or https:// scheme: ${trimmed}`);
+	if (parsed.protocol !== "http:" && parsed.protocol !== "https:" &&
+		parsed.protocol !== "socks4:" && parsed.protocol !== "socks4a:" &&
+		parsed.protocol !== "socks5:" && parsed.protocol !== "socks5h:") {
+		throw new Error(`${source} must use the http://, https://, or socks scheme: ${trimmed}`);
 	}
 	if (!parsed.hostname) throw new Error(`${source} must include a proxy host: ${trimmed}`);
 	parsed.hash = "";

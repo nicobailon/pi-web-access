@@ -96,7 +96,7 @@ function normalizeAuth(value: unknown): true | string | undefined {
 
 function normalizeProxy(value: unknown): string | undefined {
 	if (value === undefined || value === false) return undefined;
-	if (value === null) throw new Error("proxy must be an http(s) proxy URL string");
+	if (value === null) throw new Error("proxy must be an http(s) or socks proxy URL string");
 	const normalized = normalizeProxyUrl(value, "proxy");
 	return normalized ?? "";
 }
