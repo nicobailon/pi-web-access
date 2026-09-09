@@ -193,7 +193,7 @@ test("omitted proxy preserves trusted environment proxy routing when no proxy is
 
 test("invalid configured proxy fails closed instead of direct fetching", async (t) => {
 	const dir = await mkdtemp(join(tmpdir(), "pi-proxy-invalid-config-test-"));
-	await writeFile(join(dir, "web-search.json"), JSON.stringify({ proxy: "socks5://proxy.example:1080" }));
+	await writeFile(join(dir, "web-search.json"), JSON.stringify({ proxy: "ftp://proxy.example:21" }));
 	t.after(async () => {
 		await rm(dir, { recursive: true, force: true });
 	});
@@ -206,7 +206,7 @@ test("invalid configured proxy fails closed instead of direct fetching", async (
 			message = error.message;
 		}
 		console.log(JSON.stringify(message));
-	`), /proxy.*must use the http:\/\/ or https:\/\/ scheme/);
+	`), /proxy.*must use the http:\/\/, https:\/\/, or socks scheme/);
 });
 
 test("invalid configured proxy reaches background fetch rejection handling", async (t) => {
@@ -226,7 +226,7 @@ test("invalid configured proxy reaches background fetch rejection handling", asy
 				if (String(url) !== "https://api.openai.com/v1/responses") {
 					throw new Error("Unexpected fetch: " + url);
 				}
-				writeFileSync(configPath, JSON.stringify({ provider: "openai", proxy: "socks5://proxy.example:1080" }));
+				writeFileSync(configPath, JSON.stringify({ provider: "openai", proxy: "ftp://proxy.example:21" }));
 				return new Response(JSON.stringify({ output: [
 					{ type: "web_search_call", action: { sources: [{ title: "Source", url: "https://example.com/source" }] } },
 					{ type: "message", content: [{ type: "output_text", text: "Search answer" }] },
@@ -266,7 +266,7 @@ test("invalid configured proxy reaches background fetch rejection handling", asy
 	const output = JSON.parse(child.stdout.trim());
 	assert.match(output.result, /Content fetching in background/);
 	assert.equal(output.errors.length, 1, JSON.stringify(output));
-	assert.match(output.errors[0], /proxy.*must use the http:\/\/ or https:\/\/ scheme/);
+	assert.match(output.errors[0], /proxy.*must use the http:\/\/, https:\/\/, or socks scheme/);
 });
 
 test("proxy transport does not spawn curl for pre-aborted requests", async (t) => {
@@ -502,5 +502,39 @@ test("websearch command scopes searches but not model callbacks to configured pr
 		assert.equal(calls.length, 2);
 		assert.equal(calls.filter((args) => args.at(-1) === "https://run.xcrawl.com/v1/serp").length, 2);
 		assert.ok(calls.every((args) => ["http://configured-proxy.example:8080", "http://configured-proxy.example:8080/"].includes(proxyArg(args))));
+	});
+});
+
+test("configured socks5h proxy is accepted and routed to curl", async (t) => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-proxy-socks-config-test-"));
+	await writeFile(join(dir, "web-search.json"), JSON.stringify({ proxy: "socks5h://proxy.example:9050" }));
+	t.after(async () => {
+		await rm(dir, { recursive: true, force: true });
+	});
+
+	await withFakeCurl(t, {
+		"https://example.com/page": { status: 200, statusText: "OK", body: "through socks proxy" },
+	}, async (logPath) => {
+		const child = spawnSync(process.execPath, ["--input-type=module"], {
+			input: `
+				const { getActiveProxy, installGlobalProxyFetch, runWithProxy } = await import(${JSON.stringify(utilsUrl)});
+				installGlobalProxyFetch();
+				const response = await runWithProxy(undefined, () => fetch("https://example.com/page"));
+				console.log(JSON.stringify({ active: runWithProxy(undefined, () => getActiveProxy()), body: await response.text() }));
+			`,
+			encoding: "utf8",
+			env: { ...process.env, PI_CODING_AGENT_DIR: dir },
+			maxBuffer: 2 * 1024 * 1024,
+		});
+		assert.equal(child.status, 0, child.stderr);
+		const output = JSON.parse(child.stdout.trim());
+
+		assert.equal(output.active, "socks5h://proxy.example:9050/");
+		assert.equal(output.body, "through socks proxy");
+
+		const calls = await readCurlCalls(logPath);
+		const pageCall = calls.find((args) => args.at(-1) === "https://example.com/page");
+		assert.ok(pageCall);
+		assert.ok(["socks5h://proxy.example:9050", "socks5h://proxy.example:9050/"].includes(proxyArg(pageCall)));
 	});
 });
