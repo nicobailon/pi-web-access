@@ -2121,7 +2121,11 @@ export default function (pi: ExtensionAPI) {
 			});
 		},
 
-		renderCall(args, theme) {
+		renderCall(args, optionsOrTheme: unknown, maybeTheme?: unknown) {
+			const theme = (maybeTheme && typeof maybeTheme === "object" && "fg" in maybeTheme ? maybeTheme : optionsOrTheme) as {
+				fg: (color: string, text: string) => string;
+				bold: (text: string) => string;
+			};
 			const input = args as { query?: unknown; queries?: unknown };
 			const rawQueryList: unknown[] = Array.isArray(input.queries)
 				? input.queries
@@ -2685,7 +2689,11 @@ export default function (pi: ExtensionAPI) {
 			});
 		},
 
-		renderCall(args, theme) {
+		renderCall(args, optionsOrTheme: unknown, maybeTheme?: unknown) {
+			const theme = (maybeTheme && typeof maybeTheme === "object" && "fg" in maybeTheme ? maybeTheme : optionsOrTheme) as {
+				fg: (color: string, text: string) => string;
+				bold: (text: string) => string;
+			};
 			const { urlList, options } = normalizeFetchContentParams(args);
 			const { prompt, timestamp, frames, model, mode, answerModel, auth } = options;
 			if (urlList.length === 0) {
@@ -3080,7 +3088,11 @@ export default function (pi: ExtensionAPI) {
 			};
 		},
 
-		renderCall(args, theme) {
+		renderCall(args, optionsOrTheme: unknown, maybeTheme?: unknown) {
+			const theme = (maybeTheme && typeof maybeTheme === "object" && "fg" in maybeTheme ? maybeTheme : optionsOrTheme) as {
+				fg: (color: string, text: string) => string;
+				bold: (text: string) => string;
+			};
 			const { responseId, query, queryIndex, url, urlIndex, offset, findText } = args as {
 				responseId: string;
 				query?: string;

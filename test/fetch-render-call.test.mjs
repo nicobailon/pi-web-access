@@ -32,3 +32,17 @@ test("fetch_content renderCall falls back to url when urls is empty", () => {
 
 	assert.deepEqual(lines, ["fetch https://example.com/docs"]);
 });
+
+test("fetch_content renderCall accepts (args, options, theme) signature", () => {
+	const tool = getFetchTool();
+	const renderOptions = { expanded: false, isPartial: false };
+	const lines = tool.renderCall({
+		url: "https://example.com/docs",
+		urls: [],
+		frames: 1,
+		prompt: "",
+		model: "",
+	}, renderOptions, theme).render(120).map(line => line.trimEnd());
+
+	assert.deepEqual(lines, ["fetch https://example.com/docs"]);
+});
