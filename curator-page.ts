@@ -150,6 +150,7 @@ ${CSS}
 <button class="btn btn-secondary" id="btn-summary-regenerate">Regenerate</button>
 <button class="btn btn-secondary" id="btn-summary-preview" title="Preview rendered summary">Preview</button>
 <button class="btn btn-submit" id="btn-summary-approve">Approve</button>
+<button class="btn btn-submit" id="btn-summary-approve-remaining">Approve + auto-summary remaining searches for this prompt</button>
 </div>
 </section>
 </main>
@@ -1198,6 +1199,7 @@ main {
 }
 .summary-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
@@ -1535,6 +1537,7 @@ const SCRIPT = `(function() {
   var btnSummaryRegenerate = document.getElementById("btn-summary-regenerate");
   var btnSummaryPreview = document.getElementById("btn-summary-preview");
   var btnSummaryApprove = document.getElementById("btn-summary-approve");
+  var btnSummaryApproveRemaining = document.getElementById("btn-summary-approve-remaining");
   var successOverlay = document.getElementById("success-overlay");
   var successText = document.getElementById("success-text");
   var expiredOverlay = document.getElementById("expired-overlay");
@@ -2117,6 +2120,9 @@ const SCRIPT = `(function() {
     if (btnSummaryPreview) btnSummaryPreview.disabled = !hasDraft || stage === "generating-summary";
     if (btnSummaryApprove) {
       btnSummaryApprove.disabled = submitted || timerExpired || submitInFlight || stage === "generating-summary" || isRegenerating || !hasSelection || !hasDraft;
+    }
+    if (btnSummaryApproveRemaining) {
+      btnSummaryApproveRemaining.disabled = submitted || timerExpired || submitInFlight || stage === "generating-summary" || isRegenerating || !hasSelection || !hasDraft;
     }
 
     applyProviderInterlocks();
@@ -3209,7 +3215,7 @@ const SCRIPT = `(function() {
     requestSummary(selected);
   }
 
-  function doApprove() {
+  function doApprove(autoApproveRemainingSearches) {
     if (submitted || timerExpired || submitInFlight || stage !== "summary-review") return;
 
     var selected = getSelectedIndices();
@@ -3221,6 +3227,7 @@ const SCRIPT = `(function() {
 
     var draft = getSummaryDraftText();
     var payload = { selected: selected };
+    if (autoApproveRemainingSearches === true) payload.autoApproveRemainingSearches = true;
     if (draft.length > 0) {
       payload.summary = draft;
       payload.summaryMeta = normalizeSummaryMeta(summaryMeta, summaryMeta && summaryMeta.edited === true);
@@ -3455,6 +3462,13 @@ const SCRIPT = `(function() {
   if (btnSummaryApprove) {
     btnSummaryApprove.addEventListener("click", function() {
       doApprove();
+      resetTimer();
+    });
+  }
+
+  if (btnSummaryApproveRemaining) {
+    btnSummaryApproveRemaining.addEventListener("click", function() {
+      doApprove(true);
       resetTimer();
     });
   }

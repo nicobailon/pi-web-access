@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Added a Curator action to approve the current summary and use auto-summary for later default-workflow searches in the same prompt run without persisting the choice. Thanks to [@thomak-dev](https://github.com/thomak-dev) for issue #376.
 - Added an explicit-only SerpApi Google Search provider with `serpapiApiKey` / `SERPAPI_KEY`, domain filtering, recency filtering, routing, and Curator support. Thanks to [@tanysheng](https://github.com/tanysheng) for PR #363.
 - Added SOCKS4, SOCKS4A, SOCKS5, and SOCKS5H proxy support through config and per-call overrides. Thanks to [@phillipzink](https://github.com/phillipzink) for PR #365.
 - Added 1Password service-account support for credential resolver commands by forwarding `OP_SERVICE_ACCOUNT_TOKEN`. Thanks to PR author [@Avg8888](https://github.com/Avg8888) and commit author [@xapids](https://github.com/xapids) for [PR #364](https://github.com/nicobailon/pi-web-access/pull/364).

@@ -298,3 +298,35 @@ test("curator state replay keeps all-provider entries that share one slot", asyn
 		handle.close();
 	}
 });
+
+test("curator exposes and signals approve remaining searches for this prompt", async () => {
+	const { startCuratorServer } = await loadServer();
+	let resolveSubmit;
+	const submitPromise = new Promise((resolve) => { resolveSubmit = resolve; });
+	const callbacks = baseCallbacks(() => {});
+	callbacks.onSubmit = resolveSubmit;
+	const handle = await startCuratorServer(baseOptions(20), callbacks);
+
+	try {
+		const pageResponse = await fetch(handle.url);
+		assert.equal(pageResponse.status, 200);
+		assert.match(await pageResponse.text(), /Approve \+ auto-summary remaining searches for this prompt/);
+
+		const response = await fetch(new URL("/submit", handle.url), {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				token: "test-token",
+				selected: [0],
+				summary: "Approved draft",
+				autoApproveRemainingSearches: true,
+			}),
+		});
+		assert.equal(response.status, 200);
+		const payload = await withTimeout(submitPromise, "approve remaining submit");
+		assert.equal(payload.summary, "Approved draft");
+		assert.equal(payload.autoApproveRemainingSearches, true);
+	} finally {
+		handle.close();
+	}
+});

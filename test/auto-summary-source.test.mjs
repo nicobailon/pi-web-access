@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
+import { resolveWebSearchWorkflow } from "../curator-run.ts";
 
 const indexSrc = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
 const readmeSrc = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 
 test("web_search accepts auto-summary workflow in schema and config resolution", () => {
-	assert.match(indexSrc, /type WebSearchWorkflow = "none" \| "summary-review" \| "auto-summary"/);
 	assert.match(indexSrc, /StringEnum\(\["none", "summary-review", "auto-summary"\]/);
-	assert.match(indexSrc, /normalized === "auto-summary"/);
+	assert.equal(resolveWebSearchWorkflow("auto-summary", true), "auto-summary");
 	assert.match(indexSrc, /arg === "none" \|\| arg === "summary-review" \|\| arg === "auto-summary"/);
 });
 

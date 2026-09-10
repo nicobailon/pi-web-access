@@ -334,6 +334,8 @@ Open the search curator directly. Runs searches and lets you review, add, select
 
 Results get injected into the conversation when you approve the summary or click "Send selected results without summary". On timeout, the curator auto-submits and falls back to a deterministic summary if no approved draft is present.
 
+In summary review, **Approve + auto-summary remaining searches for this prompt** approves the current draft and makes later default `summary-review` calls in the same prompt run use `auto-summary`. Explicit per-call workflows still win. The choice survives internal model/tool turns, clears when the run settles or a new prompt/session starts, is not written to `web-search.json`, and does not affect already-open curator windows.
+
 ### /curator
 
 Toggle or configure the curator workflow at runtime.
