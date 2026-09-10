@@ -1,5 +1,5 @@
 import type { ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
-import type { complete, completeSimple, Api, Message, Model } from "@earendil-works/pi-ai/compat";
+import type { complete, Api, Message, Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns, splitThinkingSuffix, type SummaryThinkingLevel } from "./summary-model-scope.ts";
 import type { QueryResultData } from "./storage.ts";
@@ -296,26 +296,21 @@ export async function generateSummaryDraft(
 	if (!ctx || !ctx.modelRegistry) {
 		throw new Error("Summary generation context unavailable");
 	}
+	if (signal?.aborted) throw new Error("Aborted");
 
 	const registry = ctx.modelRegistry as SummaryModelRegistry;
 	const customCompleteFn = completeFn !== undefined;
 	const usesRegistryComplete = !customCompleteFn && typeof registry.complete === "function";
-	// 仅在没有自定义 complete 且 registry 未提供时才需要 pi-ai compat（barrel 较重，按需加载）
-	const piAiCompat = customCompleteFn || usesRegistryComplete
-		? undefined
-		: await import("@earendil-works/pi-ai/compat");
-	completeFn ??= usesRegistryComplete ? registry.complete!.bind(registry) as CompleteFunction : piAiCompat!.complete;
+	let piAiCompat: typeof import("@earendil-works/pi-ai/compat") | undefined;
 
 	const generationStartedAt = Date.now();
 	const deadlineController = new AbortController();
 	const deadlineMarker = Symbol("summary-generation-deadline");
 	let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
-	let resolveDeadline!: () => void;
 	const deadlinePromise = new Promise<typeof deadlineMarker>(resolve => {
-		resolveDeadline = () => resolve(deadlineMarker);
 		deadlineTimer = setTimeout(() => {
 			deadlineController.abort();
-			resolveDeadline();
+			resolve(deadlineMarker);
 		}, deadlineMs);
 	});
 
@@ -331,17 +326,24 @@ export async function generateSummaryDraft(
 		? AbortSignal.any([signal, deadlineController.signal])
 		: deadlineController.signal;
 
+	function checkSummaryDeadline(): void {
+		if (signal?.aborted) throw new Error("Aborted");
+		// Imports or synchronous providers can finish before an overdue timer runs.
+		if (deadlineController.signal.aborted || Date.now() - generationStartedAt >= deadlineMs) {
+			deadlineController.abort();
+			throw deadlineMarker;
+		}
+	}
+
 	async function raceSummaryOperation<T>(operation: Promise<T>): Promise<T> {
 		// A provider may ignore AbortSignal and never settle; observe it before racing so
 		// its eventual rejection cannot become an unhandled promise rejection.
 		void operation.then(() => undefined, () => undefined);
+		checkSummaryDeadline();
 		const contenders: Promise<unknown>[] = [operation, deadlinePromise];
 		if (callerAbortPromise) contenders.push(callerAbortPromise);
 		const result = await Promise.race(contenders);
-		if (result === deadlineMarker) {
-			if (signal?.aborted) throw new Error("Aborted");
-			throw deadlineMarker;
-		}
+		checkSummaryDeadline();
 		return result as T;
 	}
 
@@ -350,12 +352,14 @@ export async function generateSummaryDraft(
 		const prompt = buildSummaryPrompt(results, feedback);
 		let resolved: Awaited<ReturnType<typeof resolveSummaryModelCandidates>>;
 		try {
+			checkSummaryDeadline();
+			if (!customCompleteFn && !usesRegistryComplete) {
+				piAiCompat = await raceSummaryOperation(import("@earendil-works/pi-ai/compat"));
+			}
+			completeFn ??= usesRegistryComplete ? registry.complete!.bind(registry) as CompleteFunction : piAiCompat!.complete;
 			resolved = await raceSummaryOperation(resolveSummaryModelCandidates(ctx, modelOverride));
 		} catch (err) {
-			if (signal?.aborted) throw new Error("Aborted");
-			if (err === deadlineMarker || deadlineController.signal.aborted) {
-				return buildFallbackSummary(results, "summary-generation-timeout", Date.now() - generationStartedAt);
-			}
+			checkSummaryDeadline();
 			const message = err instanceof Error ? err.message : String(err);
 			return buildFallbackSummary(results, `summary-model-settings-error: ${message}`, Date.now() - generationStartedAt);
 		}
@@ -369,7 +373,7 @@ export async function generateSummaryDraft(
 					content: [{ type: "text", text: prompt }],
 					timestamp: Date.now(),
 				};
-				const requestedThinkingLevel = await resolveThinkingLevel(model, thinkingLevel);
+				const requestedThinkingLevel = await raceSummaryOperation(resolveThinkingLevel(model, thinkingLevel));
 				const enabledThinkingLevel = requestedThinkingLevel && requestedThinkingLevel !== "off"
 					? requestedThinkingLevel as ThinkingLevel
 					: undefined;
@@ -379,6 +383,7 @@ export async function generateSummaryDraft(
 					...(requestedThinkingLevel ? { reasoning: requestedThinkingLevel } : {}),
 					...(enabledThinkingLevel ? { reasoningEffort: enabledThinkingLevel } : {}),
 				};
+				checkSummaryDeadline();
 				const completion = thinkingLevel !== undefined && !customCompleteFn && !usesRegistryComplete
 					? piAiCompat!.completeSimple(model, { messages: [userMessage] }, { apiKey, headers, signal: completionSignal, ...(enabledThinkingLevel ? { reasoning: enabledThinkingLevel } : {}) })
 					: completeFn(model, { messages: [userMessage] }, completionOptions);
@@ -413,10 +418,7 @@ export async function generateSummaryDraft(
 					},
 				};
 			} catch (err) {
-				if (signal?.aborted) throw new Error("Aborted");
-				if (err === deadlineMarker || deadlineController.signal.aborted) {
-					return buildFallbackSummary(results, "summary-generation-timeout", Date.now() - generationStartedAt);
-				}
+				checkSummaryDeadline();
 				if (isAbortError(err)) throw err;
 				lastError = err instanceof Error ? err.message : String(err);
 			}
@@ -427,6 +429,12 @@ export async function generateSummaryDraft(
 			lastError ? `summary-model-unavailable: ${lastError}` : "summary-model-unavailable",
 			Date.now() - generationStartedAt,
 		);
+	} catch (err) {
+		if (signal?.aborted) throw new Error("Aborted");
+		if (err === deadlineMarker) {
+			return buildFallbackSummary(results, "summary-generation-timeout", Date.now() - generationStartedAt);
+		}
+		throw err;
 	} finally {
 		if (deadlineTimer) clearTimeout(deadlineTimer);
 		if (signal && callerAbortListener) signal.removeEventListener("abort", callerAbortListener);

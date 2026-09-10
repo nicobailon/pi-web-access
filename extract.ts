@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { parseHTML } from "linkedom";
+import type TurndownService from "turndown";
 import pLimit from "p-limit";
 import { activityMonitor } from "./activity.ts";
 import { extractRSCContent } from "./rsc-extract.ts";
@@ -286,18 +286,16 @@ function abortedResult(url: string): ExtractedContent {
 	return { url, title: "", content: "", error: "Aborted" };
 }
 
-// Turndown / linkedom / Readability 加载成本高（各数百 ms 的模块求值），
-// 且仅在真正解析 HTML 时才需要 —— 延迟到首次使用，缩短扩展加载时间。
-type TurndownCtor = typeof import("turndown");
-let turndownInstance: Promise<InstanceType<TurndownCtor>> | undefined;
-async function loadTurndown(): Promise<InstanceType<TurndownCtor>> {
-	const mod = (await import("turndown")) as unknown as { default: TurndownCtor };
-	return new mod.default({
+// Share first-use initialization without loading Turndown at extension startup.
+let turndownInstance: Promise<TurndownService> | undefined;
+async function loadTurndown(): Promise<TurndownService> {
+	const { default: TurndownService } = await import("turndown");
+	return new TurndownService({
 		headingStyle: "atx",
 		codeBlockStyle: "fenced",
 	});
 }
-function getTurndown(): Promise<InstanceType<TurndownCtor>> {
+function getTurndown(): Promise<TurndownService> {
 	turndownInstance ??= loadTurndown();
 	return turndownInstance;
 }
