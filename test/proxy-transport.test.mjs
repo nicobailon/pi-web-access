@@ -529,12 +529,39 @@ test("configured socks5h proxy is accepted and routed to curl", async (t) => {
 		assert.equal(child.status, 0, child.stderr);
 		const output = JSON.parse(child.stdout.trim());
 
-		assert.equal(output.active, "socks5h://proxy.example:9050/");
+		assert.equal(output.active, "socks5h://proxy.example:9050");
 		assert.equal(output.body, "through socks proxy");
 
 		const calls = await readCurlCalls(logPath);
 		const pageCall = calls.find((args) => args.at(-1) === "https://example.com/page");
 		assert.ok(pageCall);
-		assert.ok(["socks5h://proxy.example:9050", "socks5h://proxy.example:9050/"].includes(proxyArg(pageCall)));
+		assert.equal(proxyArg(pageCall), "socks5h://proxy.example:9050");
+	});
+});
+
+for (const scheme of ["socks4", "socks4a", "socks5", "socks5h"]) {
+	test(`per-call ${scheme} proxy is routed unchanged to curl`, async (t) => {
+		await withFakeCurl(t, {
+			"https://example.com/page": { status: 200, statusText: "OK", body: "through socks proxy" },
+		}, async (logPath) => {
+			const proxy = `${scheme}://proxy.example:9050`;
+			const response = await runWithProxy(proxy, () => fetch("https://example.com/page"));
+			assert.equal(await response.text(), "through socks proxy");
+			const calls = await readCurlCalls(logPath);
+			assert.equal(calls.length, 1);
+			assert.equal(proxyArg(calls[0]), proxy);
+		});
+	});
+}
+
+test("generic socks proxy is rejected before transport runs", async (t) => {
+	await withFakeCurl(t, {}, async (logPath) => {
+		let called = false;
+		assert.throws(() => runWithProxy("socks://proxy.example:9050", () => {
+			called = true;
+			return fetch("https://example.com/page");
+		}), /proxy.*must use the http:\/\/, https:\/\/, or socks scheme/);
+		assert.equal(called, false);
+		await assert.rejects(readFile(logPath, "utf8"), /ENOENT/);
 	});
 });

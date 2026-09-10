@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Added SOCKS4, SOCKS4A, SOCKS5, and SOCKS5H proxy support through config and per-call overrides. Thanks to [@phillipzink](https://github.com/phillipzink) for PR #365.
 - Added 1Password service-account support for credential resolver commands by forwarding `OP_SERVICE_ACCOUNT_TOKEN`. Thanks to PR author [@Avg8888](https://github.com/Avg8888) and commit author [@xapids](https://github.com/xapids) for [PR #364](https://github.com/nicobailon/pi-web-access/pull/364).
 
 ### Fixed
