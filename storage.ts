@@ -428,6 +428,11 @@ function readCachedFetchData(data: StoredSearchData, now = Date.now()): StoredSe
 
 export function pruneExpiredFetchCache(now = Date.now(), requestedLimits?: Partial<FetchCacheLimits>): void {
 	const limits = cacheLimits(requestedLimits);
+	for (const [id, data] of storedResults) {
+		if (data.type === "fetch" && now - data.timestamp >= CACHE_TTL_MS) {
+			storedResults.set(id, unavailableFetchData(data, "Cached fetched content is missing or expired"));
+		}
+	}
 	try { pruneFetchCache(now, limits); } catch {}
 }
 
