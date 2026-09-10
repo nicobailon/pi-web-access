@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added 1Password service-account support for credential resolver commands by forwarding `OP_SERVICE_ACCOUNT_TOKEN`. Thanks to PR author [@Avg8888](https://github.com/Avg8888) and commit author [@xapids](https://github.com/xapids) for [PR #364](https://github.com/nicobailon/pi-web-access/pull/364).
+
 ### Fixed
 
 - Refuse to send Pi-resolved OpenAI credentials to the default official Responses endpoint when their effective provider `baseUrl` is custom; configure `openaiResponsesUrl` explicitly for gateway search. Thanks to [@projectkite](https://github.com/projectkite) for issue #367.
