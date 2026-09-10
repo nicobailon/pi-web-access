@@ -1,5 +1,6 @@
 import type { complete, Api, Model, ProviderHeaders } from "@earendil-works/pi-ai/compat";
 import type { SummaryGenerationContext } from "./summary-review.ts";
+import { awaitWithAbort } from "./abortable.ts";
 import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
 
 async function resolveFirstAvailableModel(
@@ -28,7 +29,9 @@ export async function rewriteSearchQuery(
 	]);
 	const registry = ctx.modelRegistry as typeof ctx.modelRegistry & { complete?: typeof complete };
 	const usesRegistryComplete = typeof registry.complete === "function";
-	const completeFn = usesRegistryComplete ? registry.complete!.bind(registry) : (await import("@earendil-works/pi-ai/compat")).complete;
+	if (signal.aborted) throw new Error("Aborted");
+	const completeFn = usesRegistryComplete ? registry.complete!.bind(registry) : (await awaitWithAbort(import("@earendil-works/pi-ai/compat"), signal)).complete;
+	if (signal.aborted) throw new Error("Aborted");
 	const response = await completeFn(
 		model,
 		{

@@ -1125,6 +1125,7 @@ async function extractViaHttp(
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
 
 	const controller = new AbortController();
+	const startedAt = Date.now();
 	const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
 	const onAbort = () => controller.abort();
@@ -1397,6 +1398,13 @@ async function extractViaHttp(
 	} finally {
 		clearTimeout(timeoutId);
 		signal?.removeEventListener("abort", onAbort);
+		// Imports and CPU-bound processing need not observe the fetch signal, and
+		// can finish before an expired timer gets a turn. Guard every exit, with
+		// caller cancellation taking precedence over the internal deadline.
+		if (signal?.aborted) return abortedResult(url);
+		if (controller.signal.aborted || Date.now() - startedAt >= timeoutMs) {
+			return { url, title: "", content: "", error: "The operation was aborted." };
+		}
 	}
 }
 

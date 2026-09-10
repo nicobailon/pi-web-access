@@ -3,6 +3,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
 import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
+import { awaitWithAbort } from "./abortable.ts";
 
 const OUTPUT_TOKENS = 2_000;
 const INPUT_CONTEXT_FRACTION = 0.6;
@@ -111,7 +112,9 @@ export async function answerFromPage(
 	if (!auth.ok || !auth.apiKey) throw new Error(`No API key available for answer model ${model.provider}/${model.id}`);
 	const registry = ctx.modelRegistry as typeof ctx.modelRegistry & { complete?: typeof complete };
 	const usesRegistryComplete = typeof registry.complete === "function";
-	const completeFn = usesRegistryComplete ? registry.complete!.bind(registry) : (await import("@earendil-works/pi-ai/compat")).complete;
+	if (signal?.aborted) throw new Error("Aborted");
+	const completeFn = usesRegistryComplete ? registry.complete!.bind(registry) : (await awaitWithAbort(import("@earendil-works/pi-ai/compat"), signal)).complete;
+	if (signal?.aborted) throw new Error("Aborted");
 
 	const contextTokens = model.contextWindow > 0 ? model.contextWindow : FALLBACK_CONTEXT_TOKENS;
 	const maximumInputTokens = Math.max(1, Math.min(
