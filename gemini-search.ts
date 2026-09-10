@@ -312,7 +312,7 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 		kind = "unsupported";
 	} else if (status === 400 || status === 422) {
 		kind = "invalid-request";
-	} else if (status === 402 || status === 429) {
+	} else if (status === 402 || status === 429 || (provider === "tavily" && status === 432)) {
 		kind = "quota";
 	} else if (status !== undefined && (status === 408 || status === 425 || status >= 500)) {
 		kind = "transient";

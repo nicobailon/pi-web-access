@@ -90,6 +90,36 @@ test("configured routing fails closed on quota errors not selected by fallbackOn
 	assert.deepEqual(output.calls, ["https://api.search.brave.com/res/v1/web/search?q=quota+route&count=5"]);
 });
 
+test("configured routing falls back from Tavily monthly plan exhaustion", async () => {
+	const home = await createConfig({
+		searchRouting: { providers: ["tavily", "brave"], fallbackOn: ["quota"] },
+	});
+	const child = runChild(`
+		const calls = [];
+		globalThis.fetch = async (url) => {
+			calls.push(String(url));
+			if (String(url) === "https://api.tavily.com/search") return new Response("Monthly plan usage limit exceeded", { status: 432 });
+			if (String(url).startsWith("https://api.search.brave.com/")) {
+				return new Response(JSON.stringify({ web: { results: [{ title: "Brave fallback", url: "https://example.com/brave", description: "Fallback answer" }] } }), { status: 200 });
+			}
+			throw new Error("Unexpected fetch " + url);
+		};
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const result = await search("tavily quota route", { provider: "auto" });
+		console.log(JSON.stringify({ provider: result.provider, answer: result.answer, calls }));
+	`, {
+		PI_CODING_AGENT_DIR: home,
+		TAVILY_API_KEY: "tavily-test-key",
+		BRAVE_API_KEY: "brave-test-key",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.provider, "brave");
+	assert.equal(output.answer, "Fallback answer\nSource: Brave fallback (https://example.com/brave)");
+	assert.deepEqual(output.calls, ["https://api.tavily.com/search", "https://api.search.brave.com/res/v1/web/search?q=tavily+quota+route&count=5"]);
+});
+
 test("auth status fails closed even when the response text looks like quota", async () => {
 	const home = await createConfig({
 		searchRouting: { providers: ["brave", "tavily"], fallbackOn: ["quota"] },
