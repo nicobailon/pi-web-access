@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Send the `x-opencode-session` / `x-opencode-client` attribution headers when `fetch_content` answer mode uses an `opencode` or `opencode-go` model. The answer path dispatches through the model registry, which bypasses the attribution headers Pi merges in the main agent loop, so those requests were rejected with `400 MissingSessionID`.
+
 ## [0.29.0] - 2026-09-10
 
 ### Highlights
