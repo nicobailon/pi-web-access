@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -109,6 +109,93 @@ test("SerpApi provider timeouts can fall through configured routing", async () =
 	assert.equal(output.provider, "brave");
 	assert.ok(output.calls[0].startsWith("https://serpapi.com/search.json?"));
 	assert.ok(output.calls[1].startsWith("https://api.search.brave.com/res/v1/web/search"));
+});
+
+for (const status of [200, 503]) {
+	for (const mode of ["deadline", "caller", "both"]) {
+		test(`SerpApi delayed ${status} body honors ${mode} cancellation routing`, async () => {
+			const home = await createHome({
+				serpapiApiKey: "serpapi-test-key",
+				braveApiKey: "brave-test-key",
+				searchRouting: { providers: ["serpapi", "brave"], fallbackOn: ["network"] },
+			});
+			try {
+				const child = runChild(`
+					import { createServer } from "node:http";
+					const server = createServer((_request, response) => {
+						response.writeHead(${status}, { "content-type": "application/json" });
+						response.write("{");
+					});
+					await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+					const caller = new AbortController();
+					const originalTimeout = AbortSignal.timeout;
+					AbortSignal.timeout = ms => {
+						const signal = originalTimeout(ms === 60000 ? 1000 : ms);
+						if (${JSON.stringify(mode)} === "both" && ms === 60000) {
+							signal.addEventListener("abort", () => caller.abort(), { once: true });
+						}
+						return signal;
+					};
+					const realFetch = globalThis.fetch;
+					const calls = [];
+					let headersReceived = false;
+					globalThis.fetch = async (url, init) => {
+						const host = new URL(url).hostname;
+						calls.push(host);
+						if (host === "serpapi.com") {
+							const response = await realFetch("http://127.0.0.1:" + server.address().port, init);
+							headersReceived = true;
+							if (${JSON.stringify(mode)} === "caller") setTimeout(() => caller.abort(), 20);
+							return response;
+						}
+						if (host === "api.search.brave.com") return new Response(JSON.stringify({ web: { results: [{ title: "Brave", url: "https://example.com", description: "fallback" }] } }));
+						throw new Error("Unexpected fetch " + host);
+					};
+					try {
+						const { search } = await import(${JSON.stringify(searchModuleUrl)});
+						try {
+							const result = await search("delayed body", { provider: "auto", signal: caller.signal });
+							console.log(JSON.stringify({ provider: result.provider, calls, headersReceived }));
+						} catch (error) {
+							console.log(JSON.stringify({ error: String(error), calls, headersReceived }));
+						}
+					} finally {
+						server.closeAllConnections();
+						await new Promise(resolve => server.close(resolve));
+					}
+				`, { PI_CODING_AGENT_DIR: home });
+				assert.equal(child.status, 0, child.stderr);
+				const output = JSON.parse(child.stdout.trim());
+				assert.equal(output.headersReceived, true, "must reach response-body consumption before cancellation");
+				if (mode === "deadline") {
+					assert.equal(output.provider, "brave", output.error);
+					assert.deepEqual(output.calls, ["serpapi.com", "api.search.brave.com"]);
+				} else {
+					assert.match(output.error, /serpapi search failed \(aborted\)/i);
+					assert.deepEqual(output.calls, ["serpapi.com"]);
+				}
+			} finally {
+				await rm(home, { recursive: true, force: true });
+			}
+		});
+	}
+}
+
+test("SerpApi redacts the resolved credential in JSON error envelopes", async () => {
+	const home = await createHome({ serpapiApiKey: "unused-config-key" });
+	try {
+		const child = runChild(`
+			globalThis.fetch = async () => new Response(JSON.stringify({ error: "invalid api_key resolved-serpapi-secret" }));
+			const { searchWithSerpApi } = await import(${JSON.stringify(serpApiModuleUrl)});
+			try { await searchWithSerpApi("redact envelope"); } catch (error) { console.log(JSON.stringify({ error: String(error) })); }
+		`, { PI_CODING_AGENT_DIR: home, SERPAPI_KEY: "resolved-serpapi-secret" });
+		assert.equal(child.status, 0, child.stderr);
+		const output = JSON.parse(child.stdout.trim());
+		assert.match(output.error, /SerpApi returned invalid response: invalid api_key \[redacted\]/);
+		assert.doesNotMatch(child.stdout + child.stderr, /resolved-serpapi-secret/);
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
 });
 
 test("SerpApi redacts API errors and appears in the Curator", async () => {

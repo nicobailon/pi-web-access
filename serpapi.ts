@@ -166,11 +166,24 @@ export async function searchWithSerpApi(query: string, options: SearchOptions = 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	let response: Response;
+	let entries: SerpApiOrganicResult[];
 	try {
 		response = await fetch(url, {
 			headers: { Accept: "application/json" },
 			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
 		});
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`SerpApi error ${response.status}: ${redactCredential(errorText, apiKey).slice(0, 300)}`);
+		}
+		let rawData: unknown;
+		try {
+			rawData = await response.json();
+		} catch (err) {
+			if (err instanceof Error && err.name === "TimeoutError") throw err;
+			throw new Error(`SerpApi returned invalid JSON: ${errorMessage(err)}`);
+		}
+		entries = parseResponse(rawData);
 	} catch (err) {
 		if (options.signal?.aborted) {
 			activityMonitor.logComplete(activityId, 0);
@@ -189,25 +202,6 @@ export async function searchWithSerpApi(query: string, options: SearchOptions = 
 			})();
 		activityMonitor.logError(activityId, redactCredential(errorMessage(outgoing), apiKey));
 		throw outgoing;
-	}
-	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
-		const errorText = redactCredential(await response.text(), apiKey);
-		throw new Error(`SerpApi error ${response.status}: ${errorText.slice(0, 300)}`);
-	}
-	let rawData: unknown;
-	try {
-		rawData = await response.json();
-	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
-		throw new Error(`SerpApi returned invalid JSON: ${errorMessage(err)}`);
-	}
-	let entries: SerpApiOrganicResult[];
-	try {
-		entries = parseResponse(rawData);
-	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
-		throw err;
 	}
 	activityMonitor.logComplete(activityId, response.status);
 	const results: SearchResponse["results"] = [];
