@@ -41,6 +41,8 @@ interface WebSearchConfig {
 
 type ProviderHeaders = Record<string, string | null>;
 
+class CustomOpenAIBaseUrlError extends Error {}
+
 interface OpenAIAuth {
 	provider: string;
 	apiKey: string;
@@ -215,7 +217,7 @@ function toRequestHeaders(headers: ProviderHeaders): Record<string, string> {
 	return requestHeaders;
 }
 
-async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, providers: readonly string[], modelOverride?: string): Promise<OpenAIAuth | undefined> {
+async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, providers: readonly string[], modelOverride?: string, hasExplicitResponsesUrl = false): Promise<OpenAIAuth | undefined> {
 	let models: ReturnType<typeof ctx.modelRegistry.getAll>;
 	try {
 		models = ctx.modelRegistry.getAll();
@@ -225,19 +227,34 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 	for (const provider of providers) {
 		const preferred = pickSearchModel(models.filter((model) => model.provider === provider));
 		if (!preferred) continue;
+		let resolved: Awaited<ReturnType<typeof ctx.modelRegistry.getApiKeyAndHeaders>>;
 		try {
-			const resolved = await ctx.modelRegistry.getApiKeyAndHeaders(preferred);
-			if (resolved.ok && resolved.apiKey) {
-				return {
-					provider,
-					apiKey: resolved.apiKey,
-					model: modelOverride ?? preferred.id,
-					headers: resolved.headers ?? {},
-					responsesUrl,
-				};
-			}
+			resolved = await ctx.modelRegistry.getApiKeyAndHeaders(preferred);
 		} catch {
+			continue;
 		}
+		if (!resolved.ok || !resolved.apiKey) continue;
+		// Auth can override the model's base URL. Do not guess Responses/web_search
+		// support from a gateway URL, or pair its credential with the official API.
+		const baseUrl = resolved.baseUrl ?? preferred.baseUrl;
+		const useCodexEndpoint = provider === "openai-codex" || isCodexJwt(resolved.apiKey);
+		if (!hasExplicitResponsesUrl && !useCodexEndpoint && baseUrl !== undefined) {
+			let isOfficial = false;
+			try {
+				isOfficial = new URL(baseUrl).toString().replace(/\/+$/u, "") === "https://api.openai.com/v1";
+			} catch {
+			}
+			if (!isOfficial) {
+				throw new CustomOpenAIBaseUrlError(`OpenAI web search cannot reuse Pi credentials with a custom baseUrl by default. Set openaiResponsesUrl in ${CONFIG_PATH} to the full Responses endpoint for this credential.`);
+			}
+		}
+		return {
+			provider,
+			apiKey: resolved.apiKey,
+			model: modelOverride ?? preferred.id,
+			headers: resolved.headers ?? {},
+			responsesUrl,
+		};
 	}
 	return undefined;
 }
@@ -248,7 +265,7 @@ export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSi
 	const modelOverride = resolveConfiguredSearchModel(config.openaiSearchModel);
 	const providers = resolveConfiguredSearchProviders(config.openaiSearchProviders);
 	if (ctx) {
-		const auth = await resolvePiAuth(ctx, responsesUrl, providers, modelOverride);
+		const auth = await resolvePiAuth(ctx, responsesUrl, providers, modelOverride, config.openaiResponsesUrl !== undefined);
 		if (auth) return auth;
 	}
 
@@ -273,7 +290,12 @@ export async function isOpenAISearchAvailable(ctx?: ExtensionContext): Promise<b
 	const config = loadConfig();
 	const responsesUrl = resolveConfiguredResponsesUrl(config.openaiResponsesUrl);
 	const providers = resolveConfiguredSearchProviders(config.openaiSearchProviders);
-	if (ctx && await resolvePiAuth(ctx, responsesUrl, providers)) return true;
+	try {
+		if (ctx && await resolvePiAuth(ctx, responsesUrl, providers, undefined, config.openaiResponsesUrl !== undefined)) return true;
+	} catch (err) {
+		if (err instanceof CustomOpenAIBaseUrlError) return false;
+		throw err;
+	}
 	return hasCredentialSource({
 		provider: "OpenAI",
 		configuredValue: config.openaiApiKey,

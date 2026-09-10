@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Refuse to send Pi-resolved OpenAI credentials to the default official Responses endpoint when their effective provider `baseUrl` is custom; configure `openaiResponsesUrl` explicitly for gateway search. Thanks to [@projectkite](https://github.com/projectkite) for issue #367.
 - Fixed expired fetched-content payloads remaining in memory after cache pruning, preserving the retrieval window and session history. Thanks to [@MDGChamomile](https://github.com/MDGChamomile) for issue #362.
 - Fixed no-environment web-search config lookup to use Pi's agent directory (`~/.pi/agent/web-search.json`) without implicitly falling back to the legacy `~/.pi/web-search.json`. Existing `PI_CODING_AGENT_DIR` and XDG compatibility behavior remain unchanged. Thanks to [@lJoublanc](https://github.com/lJoublanc) for issue #360.
 
