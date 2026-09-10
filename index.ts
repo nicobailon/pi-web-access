@@ -1770,12 +1770,8 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
-		handleSessionChange(ctx);
-	});
-	pi.on("session_tree", async (_event, ctx) => {
-		handleSessionChange(ctx);
-	});
+	pi.on("session_start", async (_event, ctx) => handleSessionChange(ctx));
+	pi.on("session_tree", async (_event, ctx) => handleSessionChange(ctx));
 
 	pi.on("session_shutdown", () => {
 		sessionActive = false;

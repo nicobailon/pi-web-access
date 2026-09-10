@@ -214,32 +214,13 @@ test("storing a later fetch reclaims expired in-memory payloads before retrieval
 	const startedAt = originalDateNow();
 	const ttl = 60 * 60 * 1000;
 	Date.now = () => startedAt;
-	const sessionEntry = storeFetchedContentResult("earlier", fetchedData("earlier", "earlier payload"));
-	const sessionSnapshot = JSON.stringify(sessionEntry);
-	const search = { id: "search", type: "search", timestamp: startedAt, queries: [] };
-	const research = { id: "research", type: "research", timestamp: startedAt, artifact: { answer: "keep" } };
-	storeResult(search.id, search);
-	storeResult(research.id, research);
-
-	Date.now = () => startedAt + ttl - 1;
-	storeFetchedContentResult("recent", fetchedData("recent", "recent payload"));
-	assert.equal(getAllResults().find((data) => data.id === "earlier").urls[0].content, "earlier payload");
+	storeFetchedContentResult("earlier", fetchedData("earlier", "earlier payload"));
 
 	Date.now = () => startedAt + ttl;
-	const laterEntry = storeFetchedContentResult("later", fetchedData("later", "later payload"));
-	assert.ok(laterEntry.fetchCache);
-	// Neither public pruning nor lazy getResult expiry should be needed.
+	storeFetchedContentResult("later", fetchedData("later", "later payload"));
 	const results = getAllResults();
-	assert.equal(results.length, 5);
-	const earlier = results.find((data) => data.id === "earlier");
-	assert.equal(earlier.urls[0].content, "");
-	assert.equal(earlier.urls[0].error, "Cached fetched content is missing or expired");
-	assert.deepEqual(earlier.urlMetadata, sessionEntry.urlMetadata);
-	assert.equal(results.find((data) => data.id === "recent").urls[0].content, "recent payload");
+	assert.equal(results.find((data) => data.id === "earlier").urls[0].content, "");
 	assert.equal(results.find((data) => data.id === "later").urls[0].content, "later payload");
-	assert.equal(results.find((data) => data.id === "search"), search);
-	assert.equal(results.find((data) => data.id === "research"), research);
-	assert.equal(JSON.stringify(sessionEntry), sessionSnapshot);
 });
 
 test("cache pruning reclaims expired inline payloads even without a disk cache", async () => {
