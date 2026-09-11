@@ -1153,9 +1153,17 @@ async function extractViaHttp(
 
 	const controller = new AbortController();
 	const startedAt = Date.now();
-	const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+	// Pass an explicit reason and guard so abort() never constructs a
+	// DOMException or throws inside a timer/event callback. On runtimes where
+	// globalThis.DOMException is a throwing polyfill (e.g. node-domexception),
+	// a bare abort() would escape as an uncaughtException and crash the process.
+	const timeoutId = setTimeout(() => {
+		try { controller.abort("timeout"); } catch { /* never throw from timer */ }
+	}, timeoutMs);
 
-	const onAbort = () => controller.abort();
+	const onAbort = () => {
+		try { controller.abort("caller-aborted"); } catch { /* never throw */ }
+	};
 	signal?.addEventListener("abort", onAbort);
 
 	try {

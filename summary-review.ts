@@ -309,7 +309,16 @@ export async function generateSummaryDraft(
 	let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
 	const deadlinePromise = new Promise<typeof deadlineMarker>(resolve => {
 		deadlineTimer = setTimeout(() => {
-			deadlineController.abort();
+			// Pass an explicit reason so AbortController.abort() never constructs a
+			// DOMException internally. Some runtimes install a throwing/fake
+			// globalThis.DOMException (e.g. the node-domexception polyfill), and a
+			// throw inside this timer callback would escape as an uncaughtException
+			// and crash the host process. Guard defensively regardless.
+			try {
+				deadlineController.abort(deadlineMarker);
+			} catch {
+				// Never throw from the deadline timer callback.
+			}
 			resolve(deadlineMarker);
 		}, deadlineMs);
 	});
@@ -330,7 +339,11 @@ export async function generateSummaryDraft(
 		if (signal?.aborted) throw new Error("Aborted");
 		// Imports or synchronous providers can finish before an overdue timer runs.
 		if (deadlineController.signal.aborted || Date.now() - generationStartedAt >= deadlineMs) {
-			deadlineController.abort();
+			try {
+				deadlineController.abort(deadlineMarker);
+			} catch {
+				// Never let abort() throw here; the marker throw below is the control flow.
+			}
 			throw deadlineMarker;
 		}
 	}
