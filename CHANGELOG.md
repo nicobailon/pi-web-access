@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- List Crawl4AI in the README provider summary and the package description, which both still omitted it after the provider shipped in 0.29.0. Thanks to [@bergheim](https://github.com/bergheim) for [PR #382](https://github.com/nicobailon/pi-web-access/pull/382).
+
 ## [0.29.0] - 2026-09-10
 
 ### Highlights
