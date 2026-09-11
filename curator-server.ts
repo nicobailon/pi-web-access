@@ -584,7 +584,11 @@ export function startCuratorServer(
 					return;
 				}
 				const controller = new AbortController();
-				req.on("close", () => controller.abort());
+				// Guard + explicit reason so abort() never throws inside the "close"
+				// event callback (which would escape as an uncaughtException).
+				req.on("close", () => {
+					try { controller.abort("request-closed"); } catch { /* never throw */ }
+				});
 				touchHeartbeat();
 				try {
 					const rewritten = await callbacks.onRewriteQuery(query.trim(), controller.signal);
