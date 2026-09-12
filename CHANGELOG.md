@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - Added `fetch.defaultMode` and `fetch.allowedModes` configuration for choosing the default `fetch_content` mode and disabling unwanted modes. Thanks to [@Slooz](https://github.com/Slooz) for #395.
+- Added an explicit-only Serply Google Search provider with `serplyApiKey` / `SERPLY_API_KEY`, domain filtering, recency filtering, routing, and Curator support.
 
 ### Fixed
 
