@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added an explicit-only Serply Google Search provider with `serplyApiKey` / `SERPLY_API_KEY`, domain filtering, recency filtering, routing, and Curator support.
+
 ## [0.29.0] - 2026-09-10
 
 ### Highlights
