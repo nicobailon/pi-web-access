@@ -32,3 +32,11 @@ test("fetch_content renderCall falls back to url when urls is empty", () => {
 
 	assert.deepEqual(lines, ["fetch https://example.com/docs"]);
 });
+
+test("fetch_content renderCall tolerates invalid normalized parameters", () => {
+	const tool = getFetchTool();
+	for (const args of [{ auth: 1 }, { mode: "invalid" }, { proxy: null }]) {
+		const lines = tool.renderCall(args, theme).render(120).map(line => line.trimEnd());
+		assert.deepEqual(lines, ["fetch (invalid parameters)"]);
+	}
+});

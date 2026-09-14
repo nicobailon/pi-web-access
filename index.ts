@@ -2693,7 +2693,13 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderCall(args, theme) {
-			const { urlList, options } = normalizeFetchContentParams(args);
+			let normalized: ReturnType<typeof normalizeFetchContentParams>;
+			try {
+				normalized = normalizeFetchContentParams(args);
+			} catch {
+				return new Text(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("error", "(invalid parameters)"), 0, 0);
+			}
+			const { urlList, options } = normalized;
 			const { prompt, timestamp, frames, model, mode, answerModel, auth } = options;
 			if (urlList.length === 0) {
 				return new Text(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("error", "(no URL)"), 0, 0);
