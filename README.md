@@ -250,6 +250,8 @@ Requires `ffmpeg` (and `yt-dlp` for YouTube). Timestamps accept `H:MM:SS`, `MM:S
 
 ### PDFs
 
+With `mode: "answer"`, the answer model receives the extracted PDF Markdown rather than the saved-file notice. The Markdown file is still saved, and the original extracted content remains available through `get_search_content`; ordinary readable-mode PDF fetches continue to return the file path.
+
 PDF URLs are converted to Markdown and saved under the temporary `pi-web-pdf` directory by default so the agent can `read` specific sections without loading the full document into context. Three engines are available, selected with `pdf.provider` (`"auto"` is the default):
 
 | Provider | Engine | Trade-offs |

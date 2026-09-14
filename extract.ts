@@ -1275,7 +1275,9 @@ async function extractViaHttp(
 				return {
 					url,
 					title: result.title,
-					content: `PDF extracted and saved to: ${result.outputPath}\n\nPages: ${result.pages}\nCharacters: ${result.chars}`,
+					content: options?.mode === "answer"
+						? result.content
+						: `PDF extracted and saved to: ${result.outputPath}\n\nPages: ${result.pages}\nCharacters: ${result.chars}`,
 					error: null,
 				};
 			} catch (err) {
