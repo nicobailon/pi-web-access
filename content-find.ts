@@ -114,11 +114,13 @@ export function findContent(
 		const sections = [heading];
 		let formattedLength = heading.length;
 		let returnedMatches = 0;
+		const appended = new Set<Range>();
+		const covered = new Set<string>();
 		// Reserve room for complete notices when sampling an overflowing response.
 		const footerLength = [...missingNotice, `Showing ${matches.length} of ${matches.length} matches.`]
 			.reduce((length, section) => length + 2 + section.length, 0);
 		const budget = MAX_OUTPUT_CHARS - (overflow ? footerLength : 0);
-		for (const range of ranges) {
+		function appendRange(range: Range): boolean {
 			const prefix = range.start > 0 ? "…" : "";
 			const suffix = range.end < text.length ? "…" : "";
 			const snippet = `${prefix}${text.slice(range.start, range.end).replace(/\s+/g, " ").trim()}${suffix}`;
@@ -127,12 +129,28 @@ export function findContent(
 				.join(", ");
 			const section = `${sections.length}. ${counts}\n${snippet}`;
 			if (formattedLength + 2 + section.length > budget) {
-				if (overflow) continue; // A later, smaller excerpt may still fit.
-				break;
+				return false;
 			}
 			sections.push(section);
 			formattedLength += 2 + section.length;
 			returnedMatches += range.matches.length;
+			appended.add(range);
+			for (const match of range.matches) covered.add(match.query);
+			return true;
+		}
+		if (overflow) {
+			// Only count coverage once its representative excerpt fits. This leaves
+			// later, smaller occurrences eligible when an earlier range is too large.
+			for (const range of ranges) {
+				if (range.matches.some(match => !covered.has(match.query))) appendRange(range);
+			}
+			for (const range of ranges) {
+				if (!appended.has(range)) appendRange(range);
+			}
+		} else {
+			for (const range of ranges) {
+				if (!appendRange(range)) break;
+			}
 		}
 
 		const footer = [
@@ -153,16 +171,5 @@ export function findContent(
 	// Only overflowing responses change: bound merged excerpts and prioritize a
 	// representative range for each query before filling space with more hits.
 	const ranges = mergeRanges(text.length, matches, MAX_OVERFLOW_RANGE_CHARS);
-	const covered = new Set<string>();
-	const preferred: Range[] = [];
-	const remaining: Range[] = [];
-	for (const range of ranges) {
-		if (range.matches.some(match => !covered.has(match.query))) {
-			preferred.push(range);
-			for (const match of range.matches) covered.add(match.query);
-		} else {
-			remaining.push(range);
-		}
-	}
-	return formatRanges([...preferred, ...remaining], true);
+	return formatRanges(ranges, true);
 }

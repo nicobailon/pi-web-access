@@ -237,3 +237,39 @@ test("get_search_content returns bounded excerpts for dense and rare matches", a
 	assert.match(result.content[0].text, /Showing \d+ of 4001 matches\./);
 	assert.ok(result.content[0].text.length <= 20_000);
 });
+
+test("get_search_content represents every matching maximum-length query under overflow", async () => {
+	const tool = getContentTool();
+	const sequence = "a".repeat(499) + "0123456789";
+	const queries = Array.from({ length: 10 }, (_, index) => sequence.slice(index, index + 500));
+	const gap = "Z".repeat(1_000);
+	const occurrence = query => `${"x".repeat(500)}${query}${"x".repeat(500)}`;
+	const content = [
+		...queries.slice(0, 9).map(occurrence),
+		sequence,
+		occurrence(queries[0]),
+		occurrence(queries[1]),
+		occurrence(queries[9]),
+	].join(gap);
+	storeFetchedContent(content);
+
+	assert.equal(new Set(queries).size, 10);
+	assert.ok(queries.every(query => query.length === 500));
+	assert.equal(Value.Check(tool.parameters.properties.findText, queries), true);
+	const result = await tool.execute("call", {
+		responseId: "large-fetch",
+		urlIndex: 0,
+		findText: queries,
+		findMode: "exact",
+	});
+	const excerpts = result.content[0].text.split("\n\n").slice(1).join("\n\n");
+
+	assert.equal(result.details.matchCount, 22);
+	assert.ok(result.details.returnedMatches < result.details.matchCount);
+	for (const query of queries) {
+		assert.ok(excerpts.includes(`"${query}" ×`), "missing query count");
+		assert.ok(excerpts.split(query).length > 2, "missing representative occurrence");
+	}
+	assert.match(excerpts, /Showing \d+ of 22 matches\./);
+	assert.ok(excerpts.length <= 20_000);
+});
