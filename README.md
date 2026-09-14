@@ -435,6 +435,8 @@ Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_D
   },
   "fetch": {
     "timeout": 30,
+    "defaultMode": "readable",
+    "allowedModes": ["readable", "raw", "answer"],
     "answerProvider": "openai",
     "answerModel": "gpt-5.6"
   },
@@ -540,6 +542,8 @@ Set `braveBaseUrl`, `exaBaseUrl`, or `tavilyBaseUrl` to route those providers th
 `fetchContent.domainPolicy` is an optional hostname allow/deny policy for `fetch_content` target URLs. It is off when omitted. Each bare hostname matches itself and its subdomains; `deny` wins when a hostname matches both lists. The policy is checked before HTTP(S) target handling and before each redirect followed by this extension's own fetch path. Local file paths and non-HTTP sources are not subject to this policy. It is an additional restriction: the existing SSRF guard still blocks private and internal destinations. Remote extraction services can still perform their own DNS, redirects, and egress after this extension preflights the submitted target URL, so third-party hosted HTTP(S) fallbacks stay disabled unless `fetchRouting.allowRemoteHostedProviders` is enabled for separately isolated provider deployments.
 
 `fetch.timeout` is an optional positive finite number of seconds for direct HTTP fetches and the Jina Reader fallback. When omitted, both use a 30-second budget. Fractional values are supported and rounded up to at least 1 millisecond; values that cannot be converted to a finite safe integer delay from 1 through Node's 2,147,483,647 ms timer maximum are rejected. An invalid declared value fails closed with an error naming `web-search.json`. An internal/per-call `timeoutMs` override takes precedence over this setting. Other remote extraction fallbacks keep their own documented budgets.
+
+`fetch.defaultMode` sets the mode used when `fetch_content` omits `mode`, and `fetch.allowedModes` controls which modes the tool exposes and accepts. Valid modes are `readable`, `raw`, and `answer`. By default, the default mode is `readable` and all three modes are allowed. The default must be included in the non-empty allowed list. An explicitly requested disabled mode fails before fetching or invoking a model and is never replaced with another mode. Raw mode remains direct HTTP-only and never runs readability, specialized source handling, or hosted extraction fallbacks.
 
 `fetch.answerProvider` and `fetch.answerModel` are an optional pair that selects the model used by `fetch_content` answer mode when no per-call `answerModel` is supplied. Both values must be non-empty strings and must identify an enabled text-capable model available in Pi's model registry; invalid or partial configuration fails closed. This is opt-in: answering with the configured provider/model can send fetched page text outside the current session and may incur that provider's costs. A per-call `answerModel` override is resolved first and remains usable even when these configured defaults are malformed.
 

@@ -165,6 +165,10 @@ interface WebSearchConfig {
 	summaryModel?: string;
 	summaryGenerationDeadlineMs?: unknown;
 	maxInlineContentChars?: unknown;
+	fetch?: {
+		defaultMode?: unknown;
+		allowedModes?: unknown;
+	};
 	webSearch?: {
 		enabled?: boolean;
 	};
@@ -244,6 +248,26 @@ const DEFAULT_REMOTE_CURATOR_TIMEOUT_SECONDS = 60;
 const MAX_CURATOR_TIMEOUT_SECONDS = 600;
 const MAX_SUMMARY_GENERATION_DEADLINE_MS = 600_000;
 const SEARCH_QUERY_CONCURRENCY = 3;
+const FETCH_MODES = ["readable", "raw", "answer"] as const;
+type FetchMode = typeof FETCH_MODES[number];
+const FETCH_MODE_DESCRIPTIONS: Record<FetchMode, string> = {
+	readable: "extract readable content as markdown",
+	raw: "return the exact textual body using direct HTTP only",
+	answer: "answer a prompt using only fetched content",
+};
+
+function resolveFetchModeConfig(config: WebSearchConfig): { defaultMode: FetchMode; allowedModes: FetchMode[] } {
+	const configuredModes = config.fetch?.allowedModes ?? FETCH_MODES;
+	if (!Array.isArray(configuredModes) || configuredModes.length === 0 || configuredModes.some(mode => !FETCH_MODES.includes(mode as FetchMode))) {
+		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty array containing only "readable", "raw", or "answer"`);
+	}
+	const allowedModes = configuredModes as FetchMode[];
+	const defaultMode = config.fetch?.defaultMode ?? "readable";
+	if (!allowedModes.includes(defaultMode as FetchMode)) {
+		throw new Error(`fetch.defaultMode in ${WEB_SEARCH_CONFIG_PATH} must be one of fetch.allowedModes`);
+	}
+	return { defaultMode: defaultMode as FetchMode, allowedModes };
+}
 
 // Limit each batch independently so separate Pi tool calls can still run in parallel.
 function runSearchQueries<T>(queries: string[], run: (query: string, index: number) => Promise<T>): Promise<T[]> {
@@ -1063,6 +1087,7 @@ function handleSessionChange(ctx: ExtensionContext): void {
 
 export default function (pi: ExtensionAPI) {
 	const initConfig = loadConfigForExtensionInit();
+	const fetchModeConfig = resolveFetchModeConfig(initConfig);
 	const curatorRunState = registerCuratorRunLifecycle(pi);
 	installGlobalProxyFetch();
 	const toolNames = resolveToolNames(initConfig);
@@ -1087,6 +1112,9 @@ export default function (pi: ExtensionAPI) {
 	const fetchContentStorageNote = getSearchContentEnabled
 		? `Full original content is stored for retrieval with ${toolNames.getSearchContent}.`
 		: "Full original content is stored internally, but the retrieval tool is not registered.";
+	const fetchModeDescription = fetchModeConfig.allowedModes
+		.map(mode => `${mode}${mode === fetchModeConfig.defaultMode ? " (default)" : ""}: ${FETCH_MODE_DESCRIPTIONS[mode]}`)
+		.join("; ");
 	const curateKey = initConfig.shortcuts?.curate || DEFAULT_SHORTCUTS.curate;
 	const activityKey = initConfig.shortcuts?.activity || DEFAULT_SHORTCUTS.activity;
 
@@ -2488,9 +2516,9 @@ export default function (pi: ExtensionAPI) {
 	if (fetchContentEnabled) pi.registerTool({
 		name: toolNames.fetchContent,
 		label: "Fetch Content",
-		description: `Fetch URL(s) and extract readable content as markdown. Use mode "raw" for exact textual HTTP response bodies or mode "answer" with prompt to answer using only fetched content. Direct image URLs return resized image content. Supports YouTube transcripts, GitHub repositories, PDFs, and local videos. ${fetchContentStorageNote}`,
+		description: `Fetch URL(s). Available modes: ${fetchModeDescription}. Direct image URLs return resized image content when supported by the selected mode. Supports YouTube transcripts, GitHub repositories, PDFs, and local videos when supported by the selected mode. ${fetchContentStorageNote}`,
 		promptSnippet:
-			"Use to fetch readable or raw URL content, direct images, GitHub repos, and videos. Mode answer answers a prompt using only the fetched source.",
+			"Use to fetch URL content, direct images, GitHub repos, and videos.",
 		parameters: Type.Object({
 			url: Type.Optional(Type.String({ description: "Single URL to fetch" })),
 			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
@@ -2498,13 +2526,15 @@ export default function (pi: ExtensionAPI) {
 				description: "Force cloning large GitHub repositories that exceed the size threshold",
 			})),
 			prompt: Type.Optional(Type.String({
-				description: "Question or instruction for video analysis, or the page-local question required by mode answer.",
+				description: fetchModeConfig.allowedModes.includes("answer")
+					? "Question or instruction for video analysis, or the page-local question required by answer mode."
+					: "Question or instruction for video analysis.",
 			})),
-			mode: Type.Optional(StringEnum(["readable", "raw", "answer"], {
-				description: "Fetch mode: readable (default extraction), raw (exact textual HTTP body), or answer (answer prompt using only fetched content).",
+			mode: Type.Optional(StringEnum(fetchModeConfig.allowedModes, {
+				description: `Fetch mode. ${fetchModeDescription}.`,
 			})),
 			answerModel: Type.Optional(Type.String({
-				description: "Optional provider/model-id override for mode answer. Defaults to fetch.answerProvider + fetch.answerModel when configured, otherwise the current Pi model.",
+				description: "Optional provider/model-id override for answer mode. Defaults to fetch.answerProvider + fetch.answerModel when configured, otherwise the current Pi model.",
 			})),
 			timestamp: Type.Optional(Type.String({
 				description: "Extract video frame(s) at a timestamp or time range. Single: '1:23:45', '23:45', or '85' (seconds). Range: '23:41-25:00' extracts evenly-spaced frames across that span (default 6). Use frames with ranges to control density; single+frames uses a fixed 5s interval. YouTube requires yt-dlp + ffmpeg; local videos require ffmpeg. Use a range when you know the approximate area but not the exact moment — you'll get a contact sheet to visually identify the right frame.",
@@ -2534,8 +2564,12 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
 			}
 			const { urlList, options } = normalized;
+			const mode = options.mode ?? fetchModeConfig.defaultMode;
+			if (!fetchModeConfig.allowedModes.includes(mode)) {
+				const error = `Fetch mode "${mode}" is disabled by fetch.allowedModes.`;
+				return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
+			}
 			return runWithProxy(options.proxy, async () => {
-				const mode = options.mode ?? "readable";
 				if (mode === "answer" && !options.prompt) {
 					return { content: [{ type: "text", text: "Error: mode answer requires prompt." }], details: { error: "mode answer requires prompt" } };
 				}
@@ -2572,7 +2606,7 @@ export default function (pi: ExtensionAPI) {
 					details: { phase: "fetch", progress: 0 },
 				});
 
-				const { answerModel: _answerModel, auth: _auth, ...extractionOptions } = options;
+				const { answerModel: _answerModel, auth: _auth, ...extractionOptions } = { ...options, mode };
 				const fetchOptions = mode === "answer"
 					? (() => {
 						const { prompt: _prompt, ...rest } = extractionOptions;

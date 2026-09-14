@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Added `fetch.defaultMode` and `fetch.allowedModes` configuration for choosing the default `fetch_content` mode and disabling unwanted modes. Thanks to [@Slooz](https://github.com/Slooz) for #395.
+
 ### Fixed
 
 - Send OpenCode session attribution headers when generating summaries, preventing configured `opencode` and `opencode-go` summary models from silently falling through to another candidate. Thanks to [@damozhang](https://github.com/damozhang) for issue #385.
