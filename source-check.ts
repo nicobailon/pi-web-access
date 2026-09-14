@@ -1,4 +1,4 @@
-// Structured source checking and machine-readable research artifacts.
+// Structured source evidence and machine-readable research artifacts.
 import { createHash } from "node:crypto";
 import { generateId, getResult, storeResult } from "./storage.ts";
 import type { SearchResult } from "./perplexity.ts";
@@ -159,54 +159,18 @@ export function buildPassages(sources: ResearchSource[], fetched: ExtractedConte
 	return passages;
 }
 
-const CONTRADICTION_MARKERS = ["not true", "false", "incorrect", "debunked", "retracted", "no longer", "never", "denied", "contrary", "misleading"];
-const SUPPORT_MARKERS = ["yes", "true", "correct", "confirmed", "according to", "shows that", "demonstrates", "reported", "verified", "established"];
-
-function containsPhrase(value: string, phrase: string): boolean {
-	const escaped = phrase.trim().toLowerCase().split(/\s+/).map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
-	return new RegExp(`(?:^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`, "i").test(value);
-}
-
-function markerIsNegated(value: string, marker: string): boolean {
-	const escaped = marker.trim().toLowerCase().split(/\s+/).map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
-	const markerPattern = new RegExp(`(?:^|[^a-z0-9])${escaped}(?=$|[^a-z0-9])`, "i");
-	const match = markerPattern.exec(value);
-	if (!match || match.index === undefined) return false;
-	const matchedMarker = match[0].replace(/^[^a-z0-9]+/i, "");
-	const beforeMarker = value.slice(0, match.index + match[0].length - matchedMarker.length);
-	return /(?:^|[^a-z0-9])(?:not|no|never|without)\s+$/i.test(beforeMarker);
-}
-
-function hasPolarityMarker(value: string, markers: string[], allowNegated = false): boolean {
-	return markers.some((marker) => containsPhrase(value, marker) && (allowNegated || !markerIsNegated(value, marker)));
-}
-
 export function assessClaim(claim: string, passages: ResearchPassage[]): ClaimAssessment {
-	const terms = tokenize(claim);
-	if (terms.length === 0 || passages.length === 0) {
-		return { claim, status: "missing-evidence", supporting_passages: [], contradicting_passages: [], rationale: "No passages available that discuss the claim's terms.", confidence: 0.2 };
+	if (passages.length === 0) {
+		return { claim, status: "missing-evidence", supporting_passages: [], contradicting_passages: [], rationale: "No passages were retrieved for the claim.", confidence: 0.2 };
 	}
-	const supporting: string[] = [];
-	const contradicting: string[] = [];
-	for (const passage of passages) {
-		const lower = passage.text.toLowerCase();
-		const overlap = terms.filter((term) => containsPhrase(lower, term)).length;
-		if (overlap < Math.max(2, Math.ceil(terms.length / 4))) continue;
-		const contra = hasPolarityMarker(lower, CONTRADICTION_MARKERS);
-		const support = hasPolarityMarker(lower, SUPPORT_MARKERS);
-		if (contra && !support) contradicting.push(passage.passage_id);
-		else if (support && !contra) supporting.push(passage.passage_id);
-	}
-	if (contradicting.length > 0 && supporting.length === 0) {
-		return { claim, status: "contradicted", supporting_passages: [], contradicting_passages: contradicting, rationale: `${contradicting.length} passage(s) contradict the claim; none support it.`, confidence: Math.min(0.85, 0.5 + contradicting.length * 0.1) };
-	}
-	if (supporting.length > 0 && contradicting.length === 0) {
-		return { claim, status: "supported", supporting_passages: supporting, contradicting_passages: [], rationale: `${supporting.length} passage(s) support the claim; none contradict it.`, confidence: Math.min(0.85, 0.5 + supporting.length * 0.1) };
-	}
-	if (supporting.length > 0 || contradicting.length > 0) {
-		return { claim, status: "unclear", supporting_passages: supporting, contradicting_passages: contradicting, rationale: `${supporting.length} supporting and ${contradicting.length} contradicting passage(s); evidence is mixed.`, confidence: 0.4 };
-	}
-	return { claim, status: "unclear", supporting_passages: [], contradicting_passages: [], rationale: "Passages mention the claim's terms but contain no clear support or contradiction markers.", confidence: 0.3 };
+	return {
+		claim,
+		status: "unclear",
+		supporting_passages: [],
+		contradicting_passages: [],
+		rationale: "Passages were retrieved, but automated semantic support or contradiction assessment is unavailable; review the cited passages manually.",
+		confidence: 0.3,
+	};
 }
 
 interface RankedSearchResult extends SearchResult {

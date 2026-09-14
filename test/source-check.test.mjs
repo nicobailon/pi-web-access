@@ -51,7 +51,7 @@ test("artifact assembly handles omitted domain filters and failed fetches", () =
   assert.equal(typeof artifact.sources[0].fetch_timestamp, "number");
 });
 
-test("claim assessment references passage IDs and stores a non-empty artifact ID", () => {
+test("claim assessment preserves passages and storage without semantic passage labels", () => {
   clearResults();
   const artifact = buildResearchArtifact({
     query: "API claim",
@@ -61,22 +61,62 @@ test("claim assessment references passage IDs and stores a non-empty artifact ID
   storeResearchArtifact(assessed);
   assert.ok(assessed.id);
   assert.deepEqual(getResearchArtifact(assessed.id), assessed);
-  assert.deepEqual(assessed.claims[0].supporting_passages, ["p-1-0"]);
+  assert.equal(assessed.claims[0].status, "unclear");
+  assert.deepEqual(assessed.claims[0].supporting_passages, []);
+  assert.deepEqual(assessed.claims[0].contradicting_passages, []);
+  assert.deepEqual(assessed.passages.map((passage) => passage.passage_id), ["p-1-0"]);
 });
 
-test("claim assessment ignores polarity substrings, negated markers, and discourse words", () => {
-  const claim = "API supports streaming responses";
-  const passage = (passage_id, text) => ({ passage_id, source_url: "https://example.com/api", source_rank: 1, text });
-  for (const [passage_id, text] of [
-    ["p-yesterday", "Yesterday, the API documentation discussed streaming responses."],
-    ["p-unverified", "The API is unverified; documentation discusses streaming responses."],
-    ["p-however", "However, the API supports streaming responses."],
-  ]) {
-    const assessment = assessClaim(claim, [passage(passage_id, text)]);
-    assert.equal(assessment.status, "unclear", text);
-    assert.deepEqual(assessment.supporting_passages, [], text);
-    assert.deepEqual(assessment.contradicting_passages, [], text);
-  }
+test("claim assessment does not support the exact issue claim from an unrelated confirmed marker", () => {
+  const assessment = assessClaim(
+    "pi-goal-x is developed by Anthropic officially and only supports Claude models",
+    [{
+      passage_id: "p-5-1",
+      source_url: "fixture://fork",
+      source_rank: 1,
+      text: "The extension is designed around one rule: the user owns intent; the agent executes only after the goal is explicit and confirmed.",
+    }],
+  );
+  assert.equal(assessment.status, "unclear");
+  assert.equal(assessment.confidence, 0.3);
+  assert.deepEqual(assessment.supporting_passages, []);
+  assert.deepEqual(assessment.contradicting_passages, []);
+  assert.match(assessment.rationale, /review the cited passages manually/i);
+});
+
+test("duplicate marker passages cannot amplify a semantic verdict", () => {
+  const claim = "pi-goal-x is developed by Anthropic officially and only supports Claude models";
+  const passages = Array.from({ length: 6 }, (_, index) => ({
+    passage_id: `p-${index + 1}-1`,
+    source_url: `fixture://fork-${index + 1}`,
+    source_rank: index + 1,
+    text: "The extension is designed around one rule: the user owns intent; the agent executes only after the goal is explicit and confirmed.",
+  }));
+  const onePassage = assessClaim(claim, passages.slice(0, 1));
+  const duplicates = assessClaim(claim, passages);
+  assert.equal(duplicates.status, "unclear");
+  assert.equal(duplicates.confidence, onePassage.confidence);
+  assert.deepEqual(duplicates.supporting_passages, []);
+  assert.deepEqual(duplicates.contradicting_passages, []);
+});
+
+test("contradiction markers do not produce semantic passage labels", () => {
+  const claim = "The API supports streaming responses";
+  const assessment = assessClaim(claim, [{
+    passage_id: "p-1-1",
+    source_url: "fixture://denial",
+    source_rank: 1,
+    text: "The API supports streaming responses claim is false and incorrect.",
+  }]);
+  assert.equal(assessment.status, "unclear");
+  assert.deepEqual(assessment.supporting_passages, []);
+  assert.deepEqual(assessment.contradicting_passages, []);
+});
+
+test("claim assessment only uses missing-evidence when no passages were retrieved", () => {
+  const missing = assessClaim("API supports streaming responses", []);
+  assert.equal(missing.status, "missing-evidence");
+  assert.equal(missing.confidence, 0.2);
 });
 
 function registerSourceCheck() {

@@ -2387,10 +2387,10 @@ export default function (pi: ExtensionAPI) {
 	if (sourceCheckEnabled) pi.registerTool({
 		name: toolNames.sourceCheck,
 		label: "Source Check",
-		description: "Check a claim against web sources and return a bounded machine-readable research artifact with exact passage citations.",
-		promptSnippet: "Verify a claim with structured source evidence and passage-level citations.",
+		description: "Gather web sources for a claim and return a bounded machine-readable research artifact with exact passage citations for manual review.",
+		promptSnippet: "Gather structured source evidence and passage-level citations for manual semantic review of a claim.",
 		parameters: Type.Object({
-			claim: Type.String({ description: "The assertion to check against web sources." }),
+			claim: Type.String({ description: "The assertion to gather web sources for." }),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Search queries (default: the claim)." })),
 			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Results per query (default: 5, max: 20)." })),
 			fetchContent: Type.Optional(Type.Boolean({ description: "Fetch up to 5 result pages for exact passage extraction." })),
