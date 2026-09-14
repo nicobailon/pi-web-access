@@ -30,6 +30,14 @@ test("fetch mode config rejects a default outside the allowed modes", () => {
 	assert.match(child.stderr, /fetch\.defaultMode.*must be one of fetch\.allowedModes/);
 });
 
+test("fetch mode config rejects duplicate allowed modes", () => {
+	const child = runScenario({ fetch: { allowedModes: ["readable", "raw", "raw"] } }, `
+		initializeExtension({ registerTool() {}, registerCommand() {}, registerShortcut() {}, on() {} });
+	`);
+	assert.notEqual(child.status, 0);
+	assert.match(child.stderr, /fetch\.allowedModes.*must not contain duplicates: "raw"/);
+});
+
 test("absent config exposes all modes and defaults execution to readable", () => {
 	const child = runScenario(undefined, `
 		let fetchCalls = 0;
@@ -44,6 +52,7 @@ test("absent config exposes all modes and defaults execution to readable", () =>
 		console.log(JSON.stringify({
 			enum: tool.parameters.properties.mode.enum,
 			description: tool.parameters.properties.mode.description,
+			hasAnswerModel: Object.hasOwn(tool.parameters.properties, "answerModel"),
 			text: result.content[0].text,
 			mode: result.details.mode,
 			fetchCalls,
@@ -53,6 +62,7 @@ test("absent config exposes all modes and defaults execution to readable", () =>
 	const result = JSON.parse(child.stdout);
 	assert.deepEqual(result.enum, ["readable", "raw", "answer"]);
 	assert.match(result.description, /readable \(default\)/);
+	assert.equal(result.hasAnswerModel, true);
 	assert.deepEqual({ text: result.text, mode: result.mode, fetchCalls: result.fetchCalls }, { text: "plain readable body", mode: "readable", fetchCalls: 1 });
 });
 
@@ -74,6 +84,7 @@ test("configured modes align schema and execution and reject disabled modes befo
 		const disabled = await tool.execute("disabled", { url: "https://93.184.216.34/page", mode: "answer", prompt: "question", auth: "missing" }, undefined, () => { updateCalls++; }, ctx);
 		console.log(JSON.stringify({
 			enum: tool.parameters.properties.mode.enum,
+			hasAnswerModel: Object.hasOwn(tool.parameters.properties, "answerModel"),
 			description: tool.description,
 			promptSnippet: tool.promptSnippet,
 			modeDescription: tool.parameters.properties.mode.description,
@@ -90,6 +101,7 @@ test("configured modes align schema and execution and reject disabled modes befo
 	assert.equal(child.status, 0, child.stderr);
 	const result = JSON.parse(child.stdout);
 	assert.deepEqual(result.enum, ["raw"]);
+	assert.equal(result.hasAnswerModel, false);
 	assert.match(result.description, /raw \(default\): return the exact textual body using direct HTTP only/);
 	assert.doesNotMatch(result.description, /readable|answer/);
 	assert.doesNotMatch(result.promptSnippet, /readable|answer/);

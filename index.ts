@@ -262,6 +262,10 @@ function resolveFetchModeConfig(config: WebSearchConfig): { defaultMode: FetchMo
 		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty array containing only "readable", "raw", or "answer"`);
 	}
 	const allowedModes = configuredModes as FetchMode[];
+	const duplicateMode = allowedModes.find((mode, index) => allowedModes.indexOf(mode) !== index);
+	if (duplicateMode) {
+		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must not contain duplicates: "${duplicateMode}"`);
+	}
 	const defaultMode = config.fetch?.defaultMode ?? "readable";
 	if (!allowedModes.includes(defaultMode as FetchMode)) {
 		throw new Error(`fetch.defaultMode in ${WEB_SEARCH_CONFIG_PATH} must be one of fetch.allowedModes`);
@@ -2533,9 +2537,11 @@ export default function (pi: ExtensionAPI) {
 			mode: Type.Optional(StringEnum(fetchModeConfig.allowedModes, {
 				description: `Fetch mode. ${fetchModeDescription}.`,
 			})),
-			answerModel: Type.Optional(Type.String({
-				description: "Optional provider/model-id override for answer mode. Defaults to fetch.answerProvider + fetch.answerModel when configured, otherwise the current Pi model.",
-			})),
+			...(fetchModeConfig.allowedModes.includes("answer") ? {
+				answerModel: Type.Optional(Type.String({
+					description: "Optional provider/model-id override for answer mode. Defaults to fetch.answerProvider + fetch.answerModel when configured, otherwise the current Pi model.",
+				})),
+			} : {}),
 			timestamp: Type.Optional(Type.String({
 				description: "Extract video frame(s) at a timestamp or time range. Single: '1:23:45', '23:45', or '85' (seconds). Range: '23:41-25:00' extracts evenly-spaced frames across that span (default 6). Use frames with ranges to control density; single+frames uses a fixed 5s interval. YouTube requires yt-dlp + ffmpeg; local videos require ffmpeg. Use a range when you know the approximate area but not the exact moment — you'll get a contact sheet to visually identify the right frame.",
 			})),
