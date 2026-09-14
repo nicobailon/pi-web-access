@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { fetchWithCredentialRedirects, getWebSearchConfigPath } from "./utils.ts";
 
 const SERPLY_SEARCH_URL = "https://api.serply.io/v1/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -105,14 +105,9 @@ function parseDomainFilter(domainFilter: string[] | undefined): DomainFilters {
 	return filters;
 }
 
-function passesDomainFilters(url: string, filters: DomainFilters): boolean {
+function passesDomainFilters(url: URL, filters: DomainFilters): boolean {
 	if (filters.include.length === 0 && filters.exclude.length === 0) return true;
-	let hostname: string;
-	try {
-		hostname = new URL(url).hostname.toLowerCase();
-	} catch {
-		return false;
-	}
+	const hostname = url.hostname.toLowerCase();
 	const matches = (domain: string) => hostname === domain || hostname.endsWith(`.${domain}`);
 	if (filters.exclude.some(matches)) return false;
 	return filters.include.length === 0 || filters.include.some(matches);
@@ -166,10 +161,10 @@ export async function searchWithSerply(query: string, options: SearchOptions = {
 	let response: Response;
 	let entries: SerplyOrganicResult[];
 	try {
-		response = await fetch(url, {
+		response = await fetchWithCredentialRedirects(String(url), {
 			headers: { Accept: "application/json", "X-Api-Key": apiKey },
 			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
-		});
+		}, ["X-Api-Key"]);
 		if (!response.ok) {
 			const errorText = await response.text();
 			throw new Error(`Serply error ${response.status}: ${redactCredential(errorText, apiKey).slice(0, 300)}`);
@@ -206,10 +201,17 @@ export async function searchWithSerply(query: string, options: SearchOptions = {
 	for (const entry of entries) {
 		if (!entry || typeof entry !== "object") continue;
 		if (typeof entry.link !== "string" || !entry.link) continue;
-		if (!passesDomainFilters(entry.link, filters)) continue;
+		let resultUrl: URL;
+		try {
+			resultUrl = new URL(entry.link);
+		} catch {
+			continue;
+		}
+		if (resultUrl.protocol !== "http:" && resultUrl.protocol !== "https:") continue;
+		if (!passesDomainFilters(resultUrl, filters)) continue;
 		results.push({
 			title: typeof entry.title === "string" && entry.title.trim() ? entry.title.trim() : `Source ${results.length + 1}`,
-			url: entry.link,
+			url: resultUrl.href,
 			snippet: typeof entry.description === "string" ? entry.description : "",
 		});
 		if (results.length >= numResults) break;

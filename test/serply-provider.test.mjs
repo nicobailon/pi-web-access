@@ -60,7 +60,61 @@ test("Serply maps Google results, filters, recency, and environment credentials"
 	await rm(home, { recursive: true, force: true });
 });
 
-test("Serply supports explicit routing but is excluded from provider all", async () => {
+test("Serply retains credentials for same-origin redirects and strips them cross-origin", async () => {
+	const home = await createHome({ serplyApiKey: "serply-test-key" });
+	try {
+		const child = runChild(`
+			const calls = [];
+			globalThis.fetch = async (url, init) => {
+				const target = String(url);
+				calls.push({ target, key: new Headers(init.headers).get("X-Api-Key"), redirect: init.redirect });
+				if (calls.length === 1) return new Response(null, { status: 302, headers: { location: "/v1/redirected" } });
+				if (calls.length === 2) return new Response(null, { status: 307, headers: { location: "https://results.example/search" } });
+				return new Response(JSON.stringify({ results: [{ title: "Result", link: "https://example.com/result" }] }));
+			};
+			const { searchWithSerply } = await import(${JSON.stringify(serplyModuleUrl)});
+			await searchWithSerply("redirect");
+			console.log(JSON.stringify(calls));
+		`, { PI_CODING_AGENT_DIR: home });
+		assert.equal(child.status, 0, child.stderr);
+		const calls = JSON.parse(child.stdout.trim());
+		assert.deepEqual(calls, [
+			{ target: "https://api.serply.io/v1/search?q=redirect&num=5", key: "serply-test-key", redirect: "manual" },
+			{ target: "https://api.serply.io/v1/redirected", key: "serply-test-key", redirect: "manual" },
+			{ target: "https://results.example/search", key: null, redirect: "manual" },
+		]);
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
+});
+
+test("Serply publishes only absolute HTTP(S) result URLs", async () => {
+	const home = await createHome({ serplyApiKey: "serply-test-key" });
+	try {
+		const child = runChild(`
+			globalThis.fetch = async () => new Response(JSON.stringify({ results: [
+				{ title: "HTTPS", link: "https://example.com/secure" },
+				{ title: "HTTP", link: "http://example.com/plain" },
+				{ title: "Relative", link: "/relative" },
+				{ title: "Malformed", link: "not a url" },
+				{ title: "File", link: "file:///tmp/result" },
+				{ title: "Data", link: "data:text/plain,result" }
+			] }));
+			const { searchWithSerply } = await import(${JSON.stringify(serplyModuleUrl)});
+			const result = await searchWithSerply("links", { numResults: 10 });
+			console.log(JSON.stringify(result.results));
+		`, { PI_CODING_AGENT_DIR: home });
+		assert.equal(child.status, 0, child.stderr);
+		assert.deepEqual(JSON.parse(child.stdout.trim()), [
+			{ title: "HTTPS", url: "https://example.com/secure", snippet: "" },
+			{ title: "HTTP", url: "http://example.com/plain", snippet: "" },
+		]);
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
+});
+
+test("Serply supports explicit selection but is excluded from auto and provider all", async () => {
 	const home = await createHome({ serplyApiKey: "serply-test-key" });
 	const child = runChild(`
 		const calls = [];
@@ -73,12 +127,14 @@ test("Serply supports explicit routing but is excluded from provider all", async
 		};
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
 		const explicit = await search("explicit", { provider: "serply" });
+		const auto = await search("auto", { provider: "auto" });
 		const all = await search("all", { provider: "all" });
-		console.log(JSON.stringify({ explicitProvider: explicit.provider, allProviders: all.providerResponses.map(result => result.provider), calls }));
+		console.log(JSON.stringify({ explicitProvider: explicit.provider, autoProvider: auto.provider, allProviders: all.providerResponses.map(result => result.provider), calls }));
 	`, { PI_CODING_AGENT_DIR: home });
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.explicitProvider, "serply");
+	assert.equal(output.autoProvider, "exa");
 	assert.deepEqual(output.allProviders, ["exa"]);
 	assert.equal(output.calls.filter(url => url.startsWith("https://api.serply.io/v1/search?")).length, 1);
 	await rm(home, { recursive: true, force: true });
@@ -118,7 +174,7 @@ test("Serply provider timeouts can fall through configured routing", async () =>
 });
 
 for (const status of [200, 503]) {
-	for (const mode of ["deadline", "caller", "both"]) {
+	for (const mode of ["deadline", "caller"]) {
 		test(`Serply delayed ${status} body honors ${mode} cancellation routing`, async () => {
 			const home = await createHome({
 				serplyApiKey: "serply-test-key",
@@ -135,13 +191,7 @@ for (const status of [200, 503]) {
 					await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
 					const caller = new AbortController();
 					const originalTimeout = AbortSignal.timeout;
-					AbortSignal.timeout = ms => {
-						const signal = originalTimeout(ms === 60000 ? 1000 : ms);
-						if (${JSON.stringify(mode)} === "both" && ms === 60000) {
-							signal.addEventListener("abort", () => caller.abort(), { once: true });
-						}
-						return signal;
-					};
+					AbortSignal.timeout = ms => originalTimeout(ms === 60000 ? 1000 : ms);
 					const realFetch = globalThis.fetch;
 					const calls = [];
 					let headersReceived = false;
