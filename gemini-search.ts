@@ -379,7 +379,7 @@ async function searchWithResolvedProvider(
 	query: string,
 	options: FullSearchOptions,
 	useCurrentModel = false,
-): Promise<AttributedSearchResponse> {
+): Promise<ProviderSearchResponse> {
 	if (provider === "openai") {
 		const result = useCurrentModel
 			? await searchWithCurrentModelOpenAI(query, options, options.extensionContext)
@@ -507,7 +507,7 @@ async function searchWithAllProvider(
 	provider: ResolvedSearchProvider,
 	query: string,
 	options: FullSearchOptions,
-): Promise<AttributedSearchResponse> {
+): Promise<ProviderSearchResponse> {
 	if (provider !== "gemini") return searchWithResolvedProvider(provider, query, options);
 	const result = await searchWithGeminiApi(query, options);
 	if (result) return { ...result, provider };
@@ -537,7 +537,7 @@ async function searchWithProviders(
 	);
 	if (options.signal?.aborted) throw new Error("Aborted");
 
-	const successes: AttributedSearchResponse[] = [];
+	const successes: ProviderSearchResponse[] = [];
 	const failures: Array<{ provider: ResolvedSearchProvider; error: string }> = [];
 	for (let index = 0; index < settled.length; index++) {
 		const outcome = settled[index];
@@ -570,7 +570,7 @@ async function searchWithProviders(
 	}
 
 	const answerSections = successes.map((response) =>
-		`## ${providerLabel(response.provider as ResolvedSearchProvider)}\n\n${response.answer || "(No answer text returned.)"}`
+		`## ${providerLabel(response.provider)}\n\n${response.answer || "(No answer text returned.)"}`
 	);
 	if (failures.length > 0) {
 		answerSections.push(
@@ -582,7 +582,7 @@ async function searchWithProviders(
 		provider: "all",
 		answer: answerSections.join("\n\n"),
 		results,
-		providerResponses: successes as ProviderSearchResponse[],
+		providerResponses: successes,
 		...(failures.length > 0 ? { providerErrors: failures } : {}),
 		...(inlineContent.length > 0 ? { inlineContent } : {}),
 	};

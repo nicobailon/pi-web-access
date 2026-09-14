@@ -982,6 +982,7 @@ test("curator auto default follows the active model provider", async () => {
 	assert.equal(resolveCuratorDefaultProvider("auto", available, { model: { provider: "openai-codex" } }), "openai");
 	assert.equal(resolveCuratorDefaultProvider("auto", available, { model: { provider: "openai" } }), "exa");
 	assert.equal(resolveCuratorDefaultProvider("auto", { ...available, exa: false }, { model: { provider: "openai" } }), "openai");
+	assert.equal(resolveCuratorDefaultProvider("auto", { ...available, openai: false, exa: false, bocha: true, ollama: true }), "bocha");
 });
 
 test("auto search prefers Codex-backed OpenAI search when the selected model is openai-codex", async () => {

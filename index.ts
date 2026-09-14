@@ -196,7 +196,7 @@ type SummaryWorkflow = "summary-review" | "auto-summary";
 
 interface CuratorBootstrap {
 	availableProviders: ProviderAvailability;
-	defaultProvider: CuratorProvider;
+	defaultProvider: SearchProvider;
 	timeoutSeconds: number;
 }
 
@@ -370,7 +370,7 @@ function resolveRequestedProvider(requested: unknown): SearchProviderSelection {
 	return provider;
 }
 
-function toCuratorProvider(provider: SearchProviderSelection): CuratorProvider | undefined {
+function toCuratorProvider(provider: SearchProviderSelection): SearchProvider | undefined {
 	if (Array.isArray(provider)) return "all";
 	return provider === "auto" ? undefined : provider;
 }
@@ -490,9 +490,8 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		serply: allowedProviders.has("serply") && isSerplyAvailable(),
 		valyu: allowedProviders.has("valyu") && isValyuAvailable(),
 	};
-	const allSearchProviders = new Set<ResolvedSearchProvider>(ALL_SEARCH_PROVIDERS);
 	return {
-		all: Object.entries(providers).some(([provider, available]) => provider !== "gemini" && allSearchProviders.has(provider as ResolvedSearchProvider) && available) || geminiApiAvail,
+		all: ALL_SEARCH_PROVIDERS.some(provider => provider === "gemini" ? geminiApiAvail : providers[provider]),
 		...providers,
 	};
 }
@@ -537,7 +536,7 @@ export function resolveCuratorDefaultProvider(
 	available: ProviderAvailability,
 	ctx?: Pick<ExtensionContext, "model">,
 	options?: Pick<PendingCurate, "numResults" | "recencyFilter">,
-): CuratorProvider {
+): SearchProvider {
 	return resolveProvider(provider, available, options, shouldUseOpenAICodexDefault(ctx), ctx);
 }
 
@@ -545,24 +544,12 @@ function firstAvailableProvider(available: ProviderAvailability, preferOpenAI: b
 	if (available.searxng) return "searxng";
 	if (preferOpenAI && available.openai) return "openai";
 	if (available.exa) return "exa";
-	if (available.openai) return "openai";
-	if (available.brave) return "brave";
-	if (available.parallel) return "parallel";
-	if (available.tinyfish) return "tinyfish";
-	if (available.search1api) return "search1api";
-	if (available.searchinfinity) return "searchinfinity";
-	if (available.querit) return "querit";
-	if (available.tavily) return "tavily";
-	if (available.firecrawl) return "firecrawl";
-	if (available.jina) return "jina";
-	if (available.serpdive) return "serpdive";
-	if (available.kagi) return "kagi";
-	if (available.bocha) return "bocha";
-	if (available.ollama) return "ollama";
-	if (available.perplexity) return "perplexity";
-	if (available.gemini) return "gemini";
+	for (const provider of ALL_SEARCH_PROVIDERS) {
+		if (provider === "ollama" && available.bocha) return "bocha";
+		if (available[provider]) return provider;
+	}
 	const allowed = getAllowedSearchProviders();
-	return allowed.includes(fallback) && ALL_SEARCH_PROVIDERS.includes(fallback) ? fallback : "auto";
+	return allowed.includes(fallback) ? fallback : "auto";
 }
 
 function resolveProvider(
@@ -571,7 +558,7 @@ function resolveProvider(
 	options?: Pick<PendingCurate, "numResults" | "recencyFilter">,
 	preferOpenAICodexDefault = false,
 	ctx?: Pick<ExtensionContext, "model">,
-): CuratorProvider {
+): SearchProvider {
 	if (Array.isArray(provider)) return "all";
 	const preferOpenAI = shouldPreferOpenAI(options, preferOpenAICodexDefault);
 
@@ -586,62 +573,11 @@ function resolveProvider(
 		}
 		return firstAvailableProvider(available, preferOpenAI, "exa");
 	}
-	if (provider === "all" && !available.all) {
-		return firstAvailableProvider(available, preferOpenAI, "exa");
+	if (provider === "all") {
+		return available.all ? "all" : firstAvailableProvider(available, preferOpenAI, "exa");
 	}
-	if (provider === "openai" && !available.openai) {
-		return firstAvailableProvider(available, false, "openai");
-	}
-	if (provider === "brave" && !available.brave) {
-		return firstAvailableProvider(available, preferOpenAI, "brave");
-	}
-	if (provider === "parallel" && !available.parallel) {
-		return firstAvailableProvider(available, preferOpenAI, "parallel");
-	}
-	if (provider === "tinyfish" && !available.tinyfish) {
-		return firstAvailableProvider(available, preferOpenAI, "tinyfish");
-	}
-	if (provider === "search1api" && !available.search1api) {
-		return firstAvailableProvider(available, preferOpenAI, "search1api");
-	}
-	if (provider === "searchinfinity" && !available.searchinfinity) {
-		return firstAvailableProvider(available, preferOpenAI, "searchinfinity");
-	}
-	if (provider === "querit" && !available.querit) {
-		return firstAvailableProvider(available, preferOpenAI, "querit");
-	}
-	if (provider === "tavily" && !available.tavily) {
-		return firstAvailableProvider(available, preferOpenAI, "tavily");
-	}
-	if (provider === "firecrawl" && !available.firecrawl) {
-		return firstAvailableProvider(available, preferOpenAI, "firecrawl");
-	}
-	if (provider === "jina" && !available.jina) {
-		return firstAvailableProvider(available, preferOpenAI, "jina");
-	}
-	if (provider === "serpdive" && !available.serpdive) {
-		return firstAvailableProvider(available, preferOpenAI, "serpdive");
-	}
-	if (provider === "kagi" && !available.kagi) {
-		return firstAvailableProvider(available, preferOpenAI, "kagi");
-	}
-	if (provider === "bocha" && !available.bocha) {
-		return firstAvailableProvider(available, preferOpenAI, "bocha");
-	}
-	if (provider === "ollama" && !available.ollama) {
-		return firstAvailableProvider(available, preferOpenAI, "ollama");
-	}
-	if (provider === "searxng" && !available.searxng) {
-		return firstAvailableProvider(available, preferOpenAI, "searxng");
-	}
-	if (provider === "exa" && !available.exa) {
-		return firstAvailableProvider(available, preferOpenAI, "exa");
-	}
-	if (provider === "perplexity" && !available.perplexity) {
-		return firstAvailableProvider(available, preferOpenAI, "perplexity");
-	}
-	if (provider === "gemini" && !available.gemini) {
-		return firstAvailableProvider(available, preferOpenAI, "gemini");
+	if (ALL_SEARCH_PROVIDERS.includes(provider) && !available[provider]) {
+		return firstAvailableProvider(available, provider === "openai" ? false : preferOpenAI, provider);
 	}
 	return provider;
 }
@@ -667,7 +603,7 @@ interface PendingCurate {
 	recencyFilter?: "day" | "week" | "month" | "year";
 	domainFilter?: string[];
 	availableProviders: ProviderAvailability;
-	defaultProvider: CuratorProvider;
+	defaultProvider: SearchProvider;
 	searchProvider: SearchProviderSelection;
 	summaryModels: Array<{ value: string; label: string }>;
 	defaultSummaryModel: string | null;
@@ -2631,12 +2567,11 @@ export default function (pi: ExtensionAPI) {
 				});
 
 				const { answerModel: _answerModel, auth: _auth, ...extractionOptions } = { ...options, mode };
-				const fetchOptions = mode === "answer"
-					? (() => {
-						const { prompt: _prompt, ...rest } = extractionOptions;
-						return { ...rest, ...(authFetchProfile ? { authFetchProfile } : {}) };
-					})()
-					: { ...extractionOptions, ...(authFetchProfile ? { authFetchProfile } : {}) };
+				const { prompt: _prompt, ...answerExtractionOptions } = extractionOptions;
+				const fetchOptions = {
+					...(mode === "answer" ? answerExtractionOptions : extractionOptions),
+					...(authFetchProfile ? { authFetchProfile } : {}),
+				};
 				const fetchResults = await fetchAllContent(urlList, signal, withRegisteredFetchOptions(fetchOptions, registeredToolNames, options.proxy));
 				const presentedResults = mode === "answer"
 					? await Promise.all(fetchResults.map(async result => {
@@ -3250,7 +3185,7 @@ export default function (pi: ExtensionAPI) {
 			const availableProviders = bootstrap.availableProviders;
 			const initialProvider = bootstrap.defaultProvider;
 			const curatorTimeoutSeconds = bootstrap.timeoutSeconds;
-			let currentProvider: CuratorProvider = initialProvider;
+			let currentProvider: SearchProvider = initialProvider;
 			const commandConfig = loadConfig();
 			const rawSearchProvider = normalizeProviderInput(
 				commandConfig.searchProvider ?? commandConfig.provider ?? "auto",

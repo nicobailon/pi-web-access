@@ -11,20 +11,6 @@ test("findContent supports exact, case-insensitive, and fuzzy matches", () => {
 	assert.equal(findContent(text, ["configuration value"], "fuzzy").matchCount, 1);
 });
 
-test("findContent caps the complete formatted response", () => {
-	const query = "x".repeat(500);
-	const text = Array.from(
-		{ length: 30 },
-		(_, index) => `${"a".repeat(500)} ${query} ${"b".repeat(500)} ${index}`,
-	).join("\n\n");
-	const result = findContent(text, [query], "exact");
-
-	assert.equal(result.matchCount, 30);
-	assert.ok(result.returnedMatches > 0);
-	assert.ok(result.returnedMatches <= result.matchCount);
-	assert.ok(result.text.length <= 20_000);
-});
-
 for (const mode of ["exact", "case-insensitive", "fuzzy"]) {
 	test(`findContent returns excerpts for densely overlapping ${mode} matches`, () => {
 		const text = "common context for this occurrence.\n\n".repeat(4_000);

@@ -26,9 +26,9 @@ function editDistanceWithin(left: string, right: string, maximum: number): boole
 		let rowMinimum = i;
 		for (let j = 1; j <= right.length; j++) {
 			const value = Math.min(
-				(previous[j] ?? 0) + 1,
-				(current[j - 1] ?? 0) + 1,
-				(previous[j - 1] ?? 0) + (left[i - 1] === right[j - 1] ? 0 : 1),
+				previous[j] + 1,
+				current[j - 1] + 1,
+				previous[j - 1] + (left[i - 1] === right[j - 1] ? 0 : 1),
 			);
 			current[j] = value;
 			rowMinimum = Math.min(rowMinimum, value);
@@ -36,7 +36,7 @@ function editDistanceWithin(left: string, right: string, maximum: number): boole
 		if (rowMinimum > maximum) return false;
 		previous = current;
 	}
-	return (previous[right.length] ?? maximum + 1) <= maximum;
+	return previous[right.length] <= maximum;
 }
 
 function literalMatches(text: string, query: string, caseInsensitive: boolean): Match[] {
@@ -68,9 +68,9 @@ function fuzzyMatches(text: string, query: string): Match[] {
 		const first = tokens.find(token => matched.some(queryToken => {
 			const maximum = queryToken.length >= 9 ? 2 : queryToken.length >= 5 ? 1 : 0;
 			return editDistanceWithin(queryToken, normalize(token[0]), maximum);
-		}));
-		const start = paragraph.index + (first?.index ?? 0);
-		matches.push({ query, start, end: start + (first?.[0].length ?? query.length) });
+		}))!;
+		const start = paragraph.index + first.index;
+		matches.push({ query, start, end: start + first[0].length });
 	}
 	return matches;
 }
@@ -101,7 +101,7 @@ function lowerBound(values: number[], target: number): number {
 	let high = values.length;
 	while (low < high) {
 		const middle = (low + high) >>> 1;
-		if ((values[middle] ?? 0) < target) low = middle + 1;
+		if (values[middle] < target) low = middle + 1;
 		else high = middle;
 	}
 	return low;
@@ -112,7 +112,7 @@ function upperBound(values: number[], target: number): number {
 	let high = values.length;
 	while (low < high) {
 		const middle = (low + high) >>> 1;
-		if ((values[middle] ?? 0) <= target) low = middle + 1;
+		if (values[middle] <= target) low = middle + 1;
 		else high = middle;
 	}
 	return low;
@@ -142,24 +142,24 @@ export function findContent(
 	const whitespaceStarts = whitespaceRuns.map(run => run.start);
 	const whitespaceEnds = whitespaceRuns.map(run => run.end);
 	const whitespaceSavings = [0];
-	for (const run of whitespaceRuns) whitespaceSavings.push((whitespaceSavings.at(-1) ?? 0) + run.end - run.start - 1);
+	for (const run of whitespaceRuns) whitespaceSavings.push(whitespaceSavings.at(-1)! + run.end - run.start - 1);
 	function normalizedLength(start: number, end: number): number {
 		const firstRun = upperBound(whitespaceStarts, start) - 1;
-		if (firstRun >= 0 && (whitespaceEnds[firstRun] ?? 0) > start) start = whitespaceEnds[firstRun] ?? start;
+		if (firstRun >= 0 && whitespaceEnds[firstRun] > start) start = whitespaceEnds[firstRun];
 		if (start >= end) return 0;
 		const lastRun = upperBound(whitespaceStarts, end - 1) - 1;
-		if (lastRun >= 0 && (whitespaceEnds[lastRun] ?? 0) >= end) end = whitespaceStarts[lastRun] ?? end;
+		if (lastRun >= 0 && whitespaceEnds[lastRun] >= end) end = whitespaceStarts[lastRun];
 		if (start >= end) return 0;
 		const first = lowerBound(whitespaceStarts, start);
 		const last = upperBound(whitespaceEnds, end);
-		return end - start - ((whitespaceSavings[last] ?? 0) - (whitespaceSavings[first] ?? 0));
+		return end - start - (whitespaceSavings[last] - whitespaceSavings[first]);
 	}
 	function rangeCounts(range: Range) {
 		// Literal occurrences have fixed widths; fuzzy occurrences come from successive disjoint paragraphs.
 		return matchingQueries.flatMap(result => {
 			const first = lowerBound(result.starts, range.start);
 			const last = upperBound(result.ends, range.end);
-			return last > first ? [{ ...result, count: last - first, firstStart: result.starts[first] ?? 0 }] : [];
+			return last > first ? [{ ...result, count: last - first, firstStart: result.starts[first] }] : [];
 		}).sort((left, right) => left.firstStart - right.firstStart || left.order - right.order);
 	}
 	const legend = matchingQueries.length > 0

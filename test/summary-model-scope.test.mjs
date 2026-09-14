@@ -341,13 +341,15 @@ async function summaryGenerationDeadline(config) {
 			input: `
 				process.env.PI_CODING_AGENT_DIR = ${JSON.stringify(configDir)};
 				const { getSummaryGenerationDeadlineMs } = await import(${JSON.stringify(indexUrl)});
-				console.log(getSummaryGenerationDeadlineMs());
+				console.log("SUMMARY_DEADLINE=" + getSummaryGenerationDeadlineMs());
 			`,
 			encoding: "utf8",
 			env: { ...process.env, PI_CODING_AGENT_DIR: configDir },
 		});
 		assert.equal(child.status, 0, child.stderr);
-		return Number(child.stdout.trim());
+		const matches = [...child.stdout.matchAll(/^SUMMARY_DEADLINE=(\d+)$/gm)];
+		assert.equal(matches.length, 1, `Expected one summary deadline in stdout: ${JSON.stringify(child.stdout)}`);
+		return Number(matches[0][1]);
 	} finally {
 		await rm(configDir, { recursive: true, force: true });
 	}
