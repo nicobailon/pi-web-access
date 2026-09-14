@@ -26,6 +26,8 @@ import { getWebSearchConfigPath } from "./utils.ts";
 
 export interface PDFExtractResult {
 	title: string;
+	/** The same Markdown written to outputPath, retained for page answering. */
+	content: string;
 	pages: number;
 	chars: number;
 	outputPath: string;
@@ -333,6 +335,7 @@ async function writeMarkdownResult(options: {
 
 	return {
 		title: options.title,
+		content,
 		pages: options.pages,
 		chars: content.length,
 		outputPath,
