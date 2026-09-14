@@ -221,3 +221,19 @@ test("get_search_content finds bounded passages in stored fetched content", asyn
 	assert.match(result.content[0].text, /Installation requires Node 22/);
 	assert.ok(result.content[0].text.length < 1_000);
 });
+
+test("get_search_content returns bounded excerpts for dense and rare matches", async () => {
+	const tool = getContentTool();
+	storeFetchedContent("common context.\n\n".repeat(4_000) + "RareTarget has important context.");
+	const result = await tool.execute("call", {
+		responseId: "large-fetch", urlIndex: 0,
+		findText: ["common", "RareTarget"],
+	});
+	assert.equal(result.details.matchCount, 4_001);
+	assert.ok(result.details.returnedMatches > 1);
+	assert.ok(result.details.returnedMatches < 4_001);
+	assert.match(result.content[0].text, /common context/);
+	assert.match(result.content[0].text, /RareTarget has important context\./);
+	assert.match(result.content[0].text, /Showing \d+ of 4001 matches\./);
+	assert.ok(result.content[0].text.length <= 20_000);
+});

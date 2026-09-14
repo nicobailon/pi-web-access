@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Return bounded `get_search_content` excerpts instead of dropping oversized merged match ranges, and prioritize representative query ranges when results exceed the output budget.
+
 ## [0.29.0] - 2026-09-10
 
 ### Highlights
