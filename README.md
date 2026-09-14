@@ -442,7 +442,8 @@ Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_D
     "answerModel": "gpt-5.6"
   },
   "webSearch": {
-    "enabled": true
+    "enabled": true,
+    "allowedProviders": ["openai", "brave", "exa"]
   },
   "tools": {
     "webSearch": { "enabled": true },
@@ -514,6 +515,8 @@ Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_D
   }
 }
 ```
+
+`webSearch.allowedProviders` is an optional, non-empty search-provider allowlist with no duplicate entries. When omitted, every current search provider remains permitted. When present, explicit scalar and array requests for providers outside the list fail before any provider request, while `auto`, `all`, configured routing, `source_check`, and Curator use only listed providers. The allowlist does not make explicit-only or paid providers eligible for automatic fallback or `all`; they must still be named explicitly or included in `searchRouting.providers`. A configured `provider`/`searchProvider` or `searchRouting.providers` entry outside the allowlist is rejected as invalid configuration. This setting affects search only: it does not restrict `fetchRouting`, fetch answer models, or summary models.
 
 `summaryModel` accepts an optional thinking-level suffix, such as `anthropic/claude-haiku-4-5:low`. Supported suffixes are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
 

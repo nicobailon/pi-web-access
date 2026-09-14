@@ -10,7 +10,7 @@ import { findContent, type FindMode } from "./content-find.ts";
 import { answerFromPage } from "./page-query.ts";
 import { rewriteSearchQuery } from "./query-rewrite.ts";
 import { clearCloneCache } from "./github-extract.ts";
-import { ALL_SEARCH_PROVIDERS, getConfiguredSearchRouting, normalizeSearchProviderSelection, RESOLVED_SEARCH_PROVIDERS, SEARCH_PROVIDERS, search, type AttributedSearchResponse, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
+import { ALL_SEARCH_PROVIDERS, assertSearchProviderSelectionAllowed, getAllowedSearchProviders, getConfiguredSearchRouting, normalizeSearchProviderSelection, providerLabel, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
 import type { SearchResult } from "./perplexity.ts";
 import { formatSeconds, getWebSearchConfigDir, getWebSearchConfigPath, installGlobalProxyFetch, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
@@ -173,6 +173,7 @@ interface WebSearchConfig {
 	};
 	webSearch?: {
 		enabled?: boolean;
+		allowedProviders?: unknown;
 	};
 	tools?: Partial<Record<keyof ToolNames, { enabled?: boolean }>>;
 	commands?: Partial<Record<"websearch" | "curator" | "search" | "google-account", { enabled?: boolean }>>;
@@ -190,7 +191,7 @@ interface WebSearchConfig {
 }
 
 type CuratorWorkflow = "summary-review";
-export type CuratorProvider = Exclude<SearchProvider, "auto">;
+export type CuratorProvider = SearchProvider;
 type SummaryWorkflow = "summary-review" | "auto-summary";
 
 interface CuratorBootstrap {
@@ -291,10 +292,10 @@ function curatorResultIndexCapacity(queryCount: number): number {
 	return queryCount * RESOLVED_SEARCH_PROVIDERS.length;
 }
 
-function searchProviderSchema(description: string) {
+function searchProviderSchema(description: string, allowedProviders: readonly ResolvedSearchProvider[]) {
 	return Type.Union([
-		StringEnum([...SEARCH_PROVIDERS]),
-		Type.Array(StringEnum([...RESOLVED_SEARCH_PROVIDERS]), { minItems: 1 }),
+		StringEnum(["auto", "all", ...allowedProviders]),
+		Type.Array(StringEnum([...allowedProviders]), { minItems: 1 }),
 	], { description });
 }
 
@@ -359,9 +360,14 @@ function normalizeProviderInput(value: unknown, label = "provider"): SearchProvi
 
 function resolveRequestedProvider(requested: unknown): SearchProviderSelection {
 	const normalizedRequested = normalizeProviderInput(requested);
-	if (normalizedRequested && normalizedRequested !== "auto") return normalizedRequested;
+	if (normalizedRequested && normalizedRequested !== "auto") {
+		assertSearchProviderSelectionAllowed(normalizedRequested, "Requested provider");
+		return normalizedRequested;
+	}
 	const config = loadConfig();
-	return normalizeProviderInput(config.searchProvider ?? config.provider, `provider in ${WEB_SEARCH_CONFIG_PATH}`) ?? "auto";
+	const provider = normalizeProviderInput(config.searchProvider ?? config.provider, `provider in ${WEB_SEARCH_CONFIG_PATH}`) ?? "auto";
+	assertSearchProviderSelectionAllowed(provider, `configured provider in ${WEB_SEARCH_CONFIG_PATH}`);
+	return provider;
 }
 
 function toCuratorProvider(provider: SearchProviderSelection): CuratorProvider | undefined {
@@ -372,8 +378,7 @@ function toCuratorProvider(provider: SearchProviderSelection): CuratorProvider |
 function resolveCuratorSearchProvider(requested: unknown, current: SearchProviderSelection): SearchProviderSelection {
 	const normalized = normalizeProviderInput(requested);
 	if (!normalized || normalized === "auto") return current;
-	if (normalized === "all" && Array.isArray(current)) return current;
-	return normalized;
+	return normalized === "all" && Array.isArray(current) ? current : normalized;
 }
 
 function normalizeRecencyFilter(value: unknown): RecencyFilter | undefined {
@@ -449,40 +454,41 @@ function shouldAutoOpenCuratorBrowser(config: WebSearchConfig): boolean {
 }
 
 async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderAvailability> {
-	const geminiWebAvail = await getOptionalGeminiWebAvailability();
-	const geminiApiAvail = isGeminiApiAvailable();
+	const allowedProviders = new Set(getAllowedSearchProviders());
+	const geminiWebAvail = allowedProviders.has("gemini") ? await getOptionalGeminiWebAvailability() : null;
+	const geminiApiAvail = allowedProviders.has("gemini") && isGeminiApiAvailable();
 	const providers = {
-		openai: await isOpenAISearchAvailable(ctx),
-		brave: isBraveAvailable(),
-		parallel: isParallelAvailable(),
-		"parallel-mcp": isParallelMcpAvailable(),
-		tinyfish: isTinyFishAvailable(),
-		search1api: isSearch1APIAvailable(),
-		searchinfinity: isSearchinfinityAvailable(),
-		querit: isQueritAvailable(),
-		tavily: isTavilyAvailable(),
-		firecrawl: isFirecrawlAvailable(),
-		jina: isJinaSearchAvailable(),
-		serpdive: isSerpdiveAvailable(),
-		kagi: isKagiAvailable(),
-		bocha: isBochaAvailable(),
-		ollama: isOllamaAvailable(),
-		searxng: isSearXNGAvailable(),
-		duckduckgo: isDuckDuckGoAvailable(),
-		perplexity: isPerplexityAvailable(),
-		exa: isExaAvailable(),
+		openai: allowedProviders.has("openai") && await isOpenAISearchAvailable(ctx),
+		brave: allowedProviders.has("brave") && isBraveAvailable(),
+		parallel: allowedProviders.has("parallel") && isParallelAvailable(),
+		"parallel-mcp": allowedProviders.has("parallel-mcp") && isParallelMcpAvailable(),
+		tinyfish: allowedProviders.has("tinyfish") && isTinyFishAvailable(),
+		search1api: allowedProviders.has("search1api") && isSearch1APIAvailable(),
+		searchinfinity: allowedProviders.has("searchinfinity") && isSearchinfinityAvailable(),
+		querit: allowedProviders.has("querit") && isQueritAvailable(),
+		tavily: allowedProviders.has("tavily") && isTavilyAvailable(),
+		firecrawl: allowedProviders.has("firecrawl") && isFirecrawlAvailable(),
+		jina: allowedProviders.has("jina") && isJinaSearchAvailable(),
+		serpdive: allowedProviders.has("serpdive") && isSerpdiveAvailable(),
+		kagi: allowedProviders.has("kagi") && isKagiAvailable(),
+		bocha: allowedProviders.has("bocha") && isBochaAvailable(),
+		ollama: allowedProviders.has("ollama") && isOllamaAvailable(),
+		searxng: allowedProviders.has("searxng") && isSearXNGAvailable(),
+		duckduckgo: allowedProviders.has("duckduckgo") && isDuckDuckGoAvailable(),
+		perplexity: allowedProviders.has("perplexity") && isPerplexityAvailable(),
+		exa: allowedProviders.has("exa") && isExaAvailable(),
 		gemini: geminiApiAvail || !!geminiWebAvail,
-		kimi: await isKimiSearchAvailable(ctx),
-		anysearch: isAnySearchAvailable(),
-		xcrawl: isXcrawlAvailable(),
-		xai: await isXaiSearchAvailable(ctx),
-		mistral: isMistralAvailable(),
-		brightdata: isBrightDataAvailable(),
-		serpbase: isSerpBaseAvailable(),
-		serpapi: isSerpApiAvailable(),
-		serper: isSerperAvailable(),
-		serply: isSerplyAvailable(),
-		valyu: isValyuAvailable(),
+		kimi: allowedProviders.has("kimi") && await isKimiSearchAvailable(ctx),
+		anysearch: allowedProviders.has("anysearch") && isAnySearchAvailable(),
+		xcrawl: allowedProviders.has("xcrawl") && isXcrawlAvailable(),
+		xai: allowedProviders.has("xai") && await isXaiSearchAvailable(ctx),
+		mistral: allowedProviders.has("mistral") && isMistralAvailable(),
+		brightdata: allowedProviders.has("brightdata") && isBrightDataAvailable(),
+		serpbase: allowedProviders.has("serpbase") && isSerpBaseAvailable(),
+		serpapi: allowedProviders.has("serpapi") && isSerpApiAvailable(),
+		serper: allowedProviders.has("serper") && isSerperAvailable(),
+		serply: allowedProviders.has("serply") && isSerplyAvailable(),
+		valyu: allowedProviders.has("valyu") && isValyuAvailable(),
 	};
 	const allSearchProviders = new Set<ResolvedSearchProvider>(ALL_SEARCH_PROVIDERS);
 	return {
@@ -535,7 +541,7 @@ export function resolveCuratorDefaultProvider(
 	return resolveProvider(provider, available, options, shouldUseOpenAICodexDefault(ctx), ctx);
 }
 
-function firstAvailableProvider(available: ProviderAvailability, preferOpenAI: boolean, fallback: ResolvedSearchProvider): ResolvedSearchProvider {
+function firstAvailableProvider(available: ProviderAvailability, preferOpenAI: boolean, fallback: ResolvedSearchProvider): ResolvedSearchProvider | "auto" {
 	if (available.searxng) return "searxng";
 	if (preferOpenAI && available.openai) return "openai";
 	if (available.exa) return "exa";
@@ -555,7 +561,8 @@ function firstAvailableProvider(available: ProviderAvailability, preferOpenAI: b
 	if (available.ollama) return "ollama";
 	if (available.perplexity) return "perplexity";
 	if (available.gemini) return "gemini";
-	return fallback;
+	const allowed = getAllowedSearchProviders();
+	return allowed.includes(fallback) && ALL_SEARCH_PROVIDERS.includes(fallback) ? fallback : "auto";
 }
 
 function resolveProvider(
@@ -1095,6 +1102,14 @@ function handleSessionChange(ctx: ExtensionContext): void {
 export default function (pi: ExtensionAPI) {
 	const initConfig = loadConfigForExtensionInit();
 	const fetchModeConfig = resolveFetchModeConfig(initConfig);
+	const allowedSearchProviders = initConfig.webSearch?.allowedProviders === undefined ? RESOLVED_SEARCH_PROVIDERS : getAllowedSearchProviders();
+	const allEligibleProviders = allowedSearchProviders.filter(provider => ALL_SEARCH_PROVIDERS.includes(provider));
+	const allExcludedProviders = allowedSearchProviders.filter(provider => !ALL_SEARCH_PROVIDERS.includes(provider));
+	const allPolicyDescription = allEligibleProviders.length === 0
+		? `all has no eligible allowed providers; explicit-only allowed providers (${allExcludedProviders.map(providerLabel).join(", ")}) remain excluded`
+		: allExcludedProviders.length > 0
+		? `all searches eligible allowed providers (${allEligibleProviders.map(providerLabel).join(", ")}); explicit-only allowed providers (${allExcludedProviders.map(providerLabel).join(", ")}) remain excluded`
+		: `all searches every eligible allowed provider (${allEligibleProviders.map(providerLabel).join(", ")})`;
 	const curatorRunState = registerCuratorRunLifecycle(pi);
 	installGlobalProxyFetch();
 	const toolNames = resolveToolNames(initConfig);
@@ -1825,7 +1840,7 @@ export default function (pi: ExtensionAPI) {
 		name: toolNames.webSearch,
 		label: "Web Search",
 		description:
-			`Search the web using OpenAI, Brave, Parallel, Parallel MCP, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SERPdive, Kagi, Bocha, Ollama, SearXNG, DuckDuckGo, Exa, Perplexity, Gemini, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, or Serply. Pass a provider array to search only those providers simultaneously, or use provider "all" to search every eligible provider except Parallel MCP, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, and Serply. Returns an AI-synthesized answer with source citations. OpenAI search uses a Codex subscription or OpenAI API key; Kimi search uses a Kimi Code Plan authenticated through /login kimi-coding; xAI search uses a SuperGrok/X Premium subscription or xAI API key; Mistral search uses a Mistral API key. Parallel MCP, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, and Serply are available only when explicitly selected. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query — each query gets its own synthesized answer, so varying phrasing and scope gives much broader coverage. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation or "auto-summary" for a model-generated summary without the browser curator. The configured provider is used when provider is omitted or set to auto; omit provider unless explicitly overriding it. Without a configured provider, SearXNG is preferred first for local/private search. When the active Pi model is openai-codex, Codex-backed OpenAI search is preferred next. Otherwise Exa is preferred before OpenAI, then Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SERPdive, Kagi, Bocha, Ollama, Perplexity, Gemini API, or Gemini Web.`,
+			`Search the web with ${allowedSearchProviders.map(providerLabel).join(", ")}. Provider arrays run simultaneously; ${allPolicyDescription}. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation or "auto-summary" for a model-generated summary without the browser curator. The configured provider is used when provider is omitted or set to auto; omit provider unless explicitly overriding it.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
 		parameters: Type.Object({
@@ -1837,7 +1852,7 @@ export default function (pi: ExtensionAPI) {
 				StringEnum(["day", "week", "month", "year"], { description: "Filter by recency" }),
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
-			provider: Type.Optional(searchProviderSchema("Search provider or non-empty list of providers to search simultaneously; use all to search every eligible provider except Parallel MCP, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, and Serply, omit this field to use the configured provider, or use auto when none is configured")),
+			provider: Type.Optional(searchProviderSchema(`Search provider or non-empty list of allowed providers to search simultaneously; ${allPolicyDescription}; omit this field to use the configured provider, or use auto when none is configured`, allowedSearchProviders)),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review", "auto-summary"], {
 					description: "Search workflow mode: none = no curator, summary-review = open curator with auto summary draft (default), auto-summary = generate summary without opening curator",
@@ -2433,7 +2448,7 @@ export default function (pi: ExtensionAPI) {
 			fetchContent: Type.Optional(Type.Boolean({ description: "Fetch up to 5 result pages for exact passage extraction." })),
 			recencyFilter: Type.Optional(StringEnum(["day", "week", "month", "year"], { description: "Filter by recency." })),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains; prefix with - to exclude." })),
-			provider: Type.Optional(searchProviderSchema("Search provider or non-empty list of providers to search simultaneously; all searches every eligible provider except Parallel MCP, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, and Serply")),
+			provider: Type.Optional(searchProviderSchema(`Search provider or non-empty list of allowed providers to search simultaneously; ${allPolicyDescription}`, allowedSearchProviders)),
 			proxy: Type.Optional(Type.String({
 				description: "http(s) or socks proxy URL (e.g. http://host:port or socks5h://host:port) used for every outbound request in this call (search APIs and result-page fetches). Empty string forces direct access.",
 			})),

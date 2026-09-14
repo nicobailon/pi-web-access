@@ -117,6 +117,7 @@ type SearchConfig = {
 	searchProviderConfigured: boolean;
 	searchRouting?: SearchRoutingConfig;
 	searchModel?: string;
+	allowedProviders?: ResolvedSearchProvider[];
 };
 
 let cachedSearchConfig: SearchConfig | null = null;
@@ -142,12 +143,31 @@ function getSearchConfig(): SearchConfig {
 	}
 
 	const searchModel = normalizeSearchModel(raw.searchModel);
+	const webSearch = raw.webSearch;
+	if (webSearch !== undefined && (!webSearch || typeof webSearch !== "object" || Array.isArray(webSearch))) {
+		throw new Error(`webSearch in ${CONFIG_PATH} must be an object`);
+	}
+	const allowedProviders = webSearch && Object.hasOwn(webSearch, "allowedProviders")
+		? normalizeResolvedProviderList((webSearch as Record<string, unknown>).allowedProviders, `webSearch.allowedProviders in ${CONFIG_PATH}`)
+		: undefined;
 	const searchProviderConfigured = Object.hasOwn(raw, "searchProvider") || Object.hasOwn(raw, "provider");
+	const searchProvider = normalizeSearchProviderSelection(raw.searchProvider ?? raw.provider, `provider in ${CONFIG_PATH}`);
+	const searchRouting = Object.hasOwn(raw, "searchRouting") ? normalizeSearchRouting(raw.searchRouting) : undefined;
+	if (allowedProviders) {
+		if (Object.hasOwn(raw, "searchProvider")) {
+			assertSearchProviderSelectionAllowed(normalizeSearchProviderSelection(raw.searchProvider), `searchProvider in ${CONFIG_PATH}`, allowedProviders);
+		}
+		if (Object.hasOwn(raw, "provider")) {
+			assertSearchProviderSelectionAllowed(normalizeSearchProviderSelection(raw.provider), `provider in ${CONFIG_PATH}`, allowedProviders);
+		}
+		if (searchRouting) assertSearchProviderSelectionAllowed(searchRouting.providers, `searchRouting.providers in ${CONFIG_PATH}`, allowedProviders);
+	}
 	cachedSearchConfig = {
-		searchProvider: normalizeSearchProviderSelection(raw.searchProvider ?? raw.provider, `provider in ${CONFIG_PATH}`),
+		searchProvider,
 		searchProviderConfigured,
-		...(Object.hasOwn(raw, "searchRouting") ? { searchRouting: normalizeSearchRouting(raw.searchRouting) } : {}),
+		...(searchRouting ? { searchRouting } : {}),
 		...(searchModel ? { searchModel } : {}),
+		...(allowedProviders ? { allowedProviders } : {}),
 	};
 	return cachedSearchConfig;
 }
@@ -208,6 +228,25 @@ function normalizeResolvedProviderList(value: unknown, label: string): ResolvedS
 		providers.push(normalized as ResolvedSearchProvider);
 	}
 	return providers;
+}
+
+export function assertSearchProviderSelectionAllowed(
+	selection: SearchProviderSelection,
+	label = "provider",
+	allowedProviders = getSearchConfig().allowedProviders,
+): void {
+	if (!allowedProviders) return;
+	const requested = Array.isArray(selection)
+		? selection
+		: selection === "auto" || selection === "all" ? [] : [selection];
+	const disabled = requested.filter(provider => !allowedProviders.includes(provider));
+	if (disabled.length > 0) {
+		throw new Error(`${label} ${disabled.length === 1 ? `references disabled provider "${disabled[0]}"` : `references disabled providers: ${disabled.join(", ")}`}; allowed by webSearch.allowedProviders: ${allowedProviders.join(", ")}`);
+	}
+}
+
+export function getAllowedSearchProviders(): readonly ResolvedSearchProvider[] {
+	return getSearchConfig().allowedProviders ?? RESOLVED_SEARCH_PROVIDERS;
 }
 
 export function normalizeSearchProviderSelection(value: unknown, label = "provider"): SearchProviderSelection {
@@ -437,7 +476,7 @@ async function isGeminiWebOptionallyAvailable(): Promise<boolean> {
 	}
 }
 
-function providerLabel(provider: ResolvedSearchProvider): string {
+export function providerLabel(provider: ResolvedSearchProvider): string {
 	if (provider === "openai") return "OpenAI";
 	if (provider === "parallel-mcp") return "Parallel MCP";
 	if (provider === "tinyfish") return "TinyFish";
@@ -480,7 +519,8 @@ async function searchWithProviders(
 	options: FullSearchOptions,
 	selectedProviders?: ResolvedSearchProvider[],
 ): Promise<AttributedSearchResponse> {
-	const providers = selectedProviders ?? (await Promise.all(ALL_SEARCH_PROVIDERS.map(async (provider) => ({
+	const allowed = getAllowedSearchProviders();
+	const providers = selectedProviders ?? (await Promise.all(ALL_SEARCH_PROVIDERS.filter(provider => allowed.includes(provider)).map(async (provider) => ({
 		provider,
 		available: provider === "gemini"
 			? isGeminiApiAvailable()
@@ -578,6 +618,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	const provider = options.provider === undefined || options.provider === "auto"
 		? config.searchProvider
 		: options.provider;
+	assertSearchProviderSelectionAllowed(provider, "Requested provider");
 	if (Array.isArray(provider)) {
 		return searchWithProviders(query, options, normalizeResolvedProviderList(provider, "provider"));
 	}
@@ -588,8 +629,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	const fallbackErrors: string[] = [];
+	const allowed = new Set(config.allowedProviders ?? RESOLVED_SEARCH_PROVIDERS);
 
-	if (isSearXNGAvailable()) {
+	if (allowed.has("searxng") && isSearXNGAvailable()) {
 		try {
 			const result = await searchWithSearXNG(query, options);
 			return { ...result, provider: "searxng" };
@@ -600,13 +642,13 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	let triedOpenAI = false;
-	if (!options.extensionContext || isOpenAICodexSelected(options.extensionContext)) {
+	if (allowed.has("openai") && (!options.extensionContext || isOpenAICodexSelected(options.extensionContext))) {
 		triedOpenAI = true;
 		const result = await tryOpenAIInAuto(query, options, fallbackErrors);
 		if (result) return result;
 	}
 
-	if (isExaAvailable()) {
+	if (allowed.has("exa") && isExaAvailable()) {
 		try {
 			const result = await searchWithExa(query, options);
 			if (result) return { ...result, provider: "exa" };
@@ -616,12 +658,12 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (!triedOpenAI) {
+	if (allowed.has("openai") && !triedOpenAI) {
 		const result = await tryOpenAIInAuto(query, options, fallbackErrors);
 		if (result) return result;
 	}
 
-	if (isBraveAvailable()) {
+	if (allowed.has("brave") && isBraveAvailable()) {
 		try {
 			const result = await searchWithBrave(query, options);
 			return { ...result, provider: "brave" };
@@ -631,7 +673,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isParallelAvailable()) {
+	if (allowed.has("parallel") && isParallelAvailable()) {
 		try {
 			const result = await searchWithParallel(query, options);
 			return { ...result, provider: "parallel" };
@@ -641,7 +683,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isTinyFishAvailable()) {
+	if (allowed.has("tinyfish") && isTinyFishAvailable()) {
 		try {
 			const result = await searchWithTinyFish(query, options);
 			return { ...result, provider: "tinyfish" };
@@ -651,7 +693,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isSearch1APIAvailable()) {
+	if (allowed.has("search1api") && isSearch1APIAvailable()) {
 		try {
 			const result = await searchWithSearch1API(query, options);
 			return { ...result, provider: "search1api" };
@@ -661,7 +703,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isSearchinfinityAvailable()) {
+	if (allowed.has("searchinfinity") && isSearchinfinityAvailable()) {
 		try {
 			const result = await searchWithSearchinfinity(query, options);
 			return { ...result, provider: "searchinfinity" };
@@ -671,7 +713,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isQueritAvailable()) {
+	if (allowed.has("querit") && isQueritAvailable()) {
 		try {
 			const result = await searchWithQuerit(query, options);
 			return { ...result, provider: "querit" };
@@ -681,7 +723,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isTavilyAvailable()) {
+	if (allowed.has("tavily") && isTavilyAvailable()) {
 		try {
 			const result = await searchWithTavily(query, options);
 			return { ...result, provider: "tavily" };
@@ -691,7 +733,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isFirecrawlAvailable()) {
+	if (allowed.has("firecrawl") && isFirecrawlAvailable()) {
 		try {
 			const result = await searchWithFirecrawl(query, options);
 			return { ...result, provider: "firecrawl" };
@@ -701,7 +743,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isJinaSearchAvailable()) {
+	if (allowed.has("jina") && isJinaSearchAvailable()) {
 		try {
 			const result = await searchWithJina(query, options);
 			return { ...result, provider: "jina" };
@@ -711,7 +753,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isSerpdiveAvailable()) {
+	if (allowed.has("serpdive") && isSerpdiveAvailable()) {
 		try {
 			const result = await searchWithSerpdive(query, options);
 			return { ...result, provider: "serpdive" };
@@ -721,7 +763,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isKagiAvailable()) {
+	if (allowed.has("kagi") && isKagiAvailable()) {
 		try {
 			const result = await searchWithKagi(query, options);
 			return { ...result, provider: "kagi" };
@@ -731,7 +773,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isBochaAvailable()) {
+	if (allowed.has("bocha") && isBochaAvailable()) {
 		try {
 			const result = await searchWithBocha(query, options);
 			return { ...result, provider: "bocha" };
@@ -741,7 +783,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isOllamaAvailable()) {
+	if (allowed.has("ollama") && isOllamaAvailable()) {
 		try {
 			const result = await searchWithOllama(query, options);
 			return { ...result, provider: "ollama" };
@@ -751,7 +793,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	if (isPerplexityAvailable()) {
+	if (allowed.has("perplexity") && isPerplexityAvailable()) {
 		try {
 			const result = await searchWithPerplexity(query, options);
 			return { ...result, provider: "perplexity" };
@@ -761,7 +803,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		}
 	}
 
-	try {
+	if (allowed.has("gemini")) try {
 		const geminiResult = await searchWithGemini(query, options, false);
 		if (geminiResult) return { ...geminiResult, provider: "gemini" };
 	} catch (err) {
