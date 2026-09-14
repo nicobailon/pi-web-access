@@ -192,7 +192,7 @@ get_search_content({ responseId: "abc123", urlIndex: 0, findText: "installation"
 get_search_content({ responseId: "abc123", urlIndex: 0, findText: ["timeout", "retry"], findMode: "fuzzy" })
 ```
 
-`findMode` supports `exact`, `case-insensitive` (default), and `fuzzy`. Finder output is capped at 20,000 characters with match counts and nearby context. When all excerpts cannot fit, the finder bounds merged excerpts and prioritizes representative ranges across the matched queries before adding more occurrences. Responses that fit retain their original document order and formatting. `findText` cannot be combined with `offset` or `limit`. The default `limit` and maximum permitted `limit` use `maxInlineContentChars`.
+`findMode` supports `exact`, `case-insensitive` (default), and `fuzzy`. Finder output is capped at 20,000 characters with match counts and nearby context. Fitting responses retain their existing format and document order. Overflow responses identify queries as `Q1`, `Q2`, and so on, list each full query once, and reserve a representative excerpt for each query whose discovered match span fits the output budget. Queries with oversized spans are listed as having no representative excerpt. `findText` cannot be combined with `offset` or `limit`. The default `limit` and maximum permitted `limit` use `maxInlineContentChars`.
 
 ### source_check
 

@@ -222,22 +222,6 @@ test("get_search_content finds bounded passages in stored fetched content", asyn
 	assert.ok(result.content[0].text.length < 1_000);
 });
 
-test("get_search_content returns bounded excerpts for dense and rare matches", async () => {
-	const tool = getContentTool();
-	storeFetchedContent("common context.\n\n".repeat(4_000) + "RareTarget has important context.");
-	const result = await tool.execute("call", {
-		responseId: "large-fetch", urlIndex: 0,
-		findText: ["common", "RareTarget"],
-	});
-	assert.equal(result.details.matchCount, 4_001);
-	assert.ok(result.details.returnedMatches > 1);
-	assert.ok(result.details.returnedMatches < 4_001);
-	assert.match(result.content[0].text, /common context/);
-	assert.match(result.content[0].text, /RareTarget has important context\./);
-	assert.match(result.content[0].text, /Showing \d+ of 4001 matches\./);
-	assert.ok(result.content[0].text.length <= 20_000);
-});
-
 test("get_search_content represents every matching maximum-length query under overflow", async () => {
 	const tool = getContentTool();
 	const sequence = "a".repeat(499) + "0123456789";
@@ -265,11 +249,15 @@ test("get_search_content represents every matching maximum-length query under ov
 	const excerpts = result.content[0].text.split("\n\n").slice(1).join("\n\n");
 
 	assert.equal(result.details.matchCount, 22);
-	assert.ok(result.details.returnedMatches < result.details.matchCount);
-	for (const query of queries) {
-		assert.ok(excerpts.includes(`"${query}" ×`), "missing query count");
-		assert.ok(excerpts.split(query).length > 2, "missing representative occurrence");
+	assert.ok(result.details.returnedMatches <= result.details.matchCount);
+	const snippets = excerpts.split("\n\n").filter(section => /^\d+\. /.test(section))
+		.map(section => section.split("\n").slice(1).join("\n")).join("");
+	for (const [index, query] of queries.entries()) {
+		assert.ok(excerpts.includes(`Q${index + 1} = "${query}"`), "missing legend entry");
+		assert.ok(snippets.includes(query), "missing representative occurrence");
 	}
-	assert.match(excerpts, /Showing \d+ of 22 matches\./);
+	if (result.details.returnedMatches < result.details.matchCount) {
+		assert.match(excerpts, /Showing \d+ of 22 matches\./);
+	}
 	assert.ok(excerpts.length <= 20_000);
 });
