@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Send OpenCode session attribution headers when generating summaries, preventing configured `opencode` and `opencode-go` summary models from silently falling through to another candidate. Thanks to [@damozhang](https://github.com/damozhang) for issue #385.
 - Send the `x-opencode-session` / `x-opencode-client` attribution headers when `fetch_content` answer mode uses an `opencode` or `opencode-go` model. The answer path dispatches through the model registry, which bypasses the attribution headers Pi merges in the main agent loop, so those requests were rejected with `400 MissingSessionID`. Thanks to [@MrSerious0](https://github.com/MrSerious0) for PR #381.
 - Pass extracted PDF Markdown to `fetch_content` answer mode instead of the saved-file notice, while preserving readable-mode file output and stored-content retrieval. Thanks to [@MDGChamomile](https://github.com/MDGChamomile) for PR #390.
 - Prevent malformed `fetch_content` auth, mode, or proxy parameters from breaking tool-call rendering while preserving strict execution validation. Thanks to [@tekumara](https://github.com/tekumara) for issue #387.

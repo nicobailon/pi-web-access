@@ -1,6 +1,7 @@
 import type { ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { complete, Api, Message, Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { openCodeSessionHeaders } from "./opencode-session-headers.ts";
 import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns, splitThinkingSuffix, type SummaryThinkingLevel } from "./summary-model-scope.ts";
 import type { QueryResultData } from "./storage.ts";
 
@@ -29,7 +30,7 @@ export interface SummaryMeta {
 	edited?: boolean;
 }
 
-export type SummaryGenerationContext = Pick<ExtensionContext, "model" | "modelRegistry" | "cwd" | "isProjectTrusted">;
+export type SummaryGenerationContext = Pick<ExtensionContext, "model" | "modelRegistry" | "sessionManager" | "cwd" | "isProjectTrusted">;
 
 function estimateTokens(text: string): number {
 	const trimmed = text.trim();
@@ -368,6 +369,7 @@ export async function generateSummaryDraft(
 		for (const { model, apiKey, headers, thinkingLevel } of resolved.candidates) {
 			const startedAt = Date.now();
 			try {
+				const sessionHeaders = openCodeSessionHeaders(model, ctx.sessionManager);
 				const userMessage: Message = {
 					role: "user",
 					content: [{ type: "text", text: prompt }],
@@ -378,14 +380,16 @@ export async function generateSummaryDraft(
 					? requestedThinkingLevel as ThinkingLevel
 					: undefined;
 				const completionOptions = {
-					...(usesRegistryComplete ? {} : { apiKey, headers }),
+					...(usesRegistryComplete
+						? (sessionHeaders ? { transformHeaders: (requestHeaders: Record<string, string>) => ({ ...requestHeaders, ...sessionHeaders }) } : {})
+						: { apiKey, headers: sessionHeaders ? { ...headers, ...sessionHeaders } : headers }),
 					signal: completionSignal,
 					...(requestedThinkingLevel ? { reasoning: requestedThinkingLevel } : {}),
 					...(enabledThinkingLevel ? { reasoningEffort: enabledThinkingLevel } : {}),
 				};
 				checkSummaryDeadline();
 				const completion = thinkingLevel !== undefined && !customCompleteFn && !usesRegistryComplete
-					? piAiCompat!.completeSimple(model, { messages: [userMessage] }, { apiKey, headers, signal: completionSignal, ...(enabledThinkingLevel ? { reasoning: enabledThinkingLevel } : {}) })
+					? piAiCompat!.completeSimple(model, { messages: [userMessage] }, { apiKey, headers: sessionHeaders ? { ...headers, ...sessionHeaders } : headers, signal: completionSignal, ...(enabledThinkingLevel ? { reasoning: enabledThinkingLevel } : {}) })
 					: completeFn(model, { messages: [userMessage] }, completionOptions);
 
 				const response = await raceSummaryOperation(Promise.resolve(completion));

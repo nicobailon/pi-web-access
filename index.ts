@@ -1869,6 +1869,7 @@ export default function (pi: ExtensionAPI) {
 				const summaryContext: SummaryGenerationContext = {
 					model: ctx.model,
 					modelRegistry: ctx.modelRegistry,
+					sessionManager: ctx.sessionManager,
 					cwd: ctx.cwd,
 					isProjectTrusted: () => ctx.isProjectTrusted(),
 				};
@@ -2097,6 +2098,7 @@ export default function (pi: ExtensionAPI) {
 				const summaryContext: SummaryGenerationContext = {
 					model: ctx.model,
 					modelRegistry: ctx.modelRegistry,
+					sessionManager: ctx.sessionManager,
 					cwd: ctx.cwd,
 					isProjectTrusted: () => ctx.isProjectTrusted(),
 				};
@@ -3202,6 +3204,7 @@ export default function (pi: ExtensionAPI) {
 			const summaryContext: SummaryGenerationContext = {
 				model: ctx.model,
 				modelRegistry: ctx.modelRegistry,
+				sessionManager: ctx.sessionManager,
 				cwd: ctx.cwd,
 				isProjectTrusted: () => ctx.isProjectTrusted(),
 			};
