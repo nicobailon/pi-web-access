@@ -80,8 +80,8 @@ function writePasswordCommand(bin, countPath, targetPlatform = process.platform,
 	return { COUNT_FILE: countPath, ...(argsPath ? { ARGS_FILE: argsPath } : {}) };
 }
 
-function writeFailThenSucceedPasswordCommand(bin, countPath) {
-	const command = process.platform === "darwin" ? "security" : "secret-tool";
+function writeFailThenSucceedPasswordCommand(bin, countPath, targetPlatform = process.platform) {
+	const command = targetPlatform === "darwin" ? "security" : "secret-tool";
 	const script = `#!/bin/sh\nn=0\n[ -f "$COUNT_FILE" ] && n=$(cat "$COUNT_FILE")\nn=$((n + 1))\nprintf '%s' $n > "$COUNT_FILE"\n[ "$n" = 1 ] && exit 1\nprintf peanuts\n`;
 	writeFileSync(join(bin, command), script);
 	chmodSync(join(bin, command), 0o755);
@@ -344,30 +344,44 @@ test("browser encryption password is cached within a process", (t) => {
 	rmSync(bin, { recursive: true, force: true });
 });
 
-test("failed password lookups are retried instead of cached", (t) => {
-	skipWithoutPython(t);
-	const home = mkdtempSync(join(tmpdir(), "pi-cookie-cache-failure-"));
-	const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
-	createFixture(home, "Profile 2", [
-		["__Secure-1PSID", "one", ".google.com", null, 1],
-		["__Secure-1PSIDTS", "two", ".google.com", null, 2],
-	]);
-	const countPath = join(home, "password-count");
-	const env = makeEnvironment(home, bin);
-	Object.assign(env, writeFailThenSucceedPasswordCommand(bin, countPath));
-	const child = spawnSync(process.execPath, ["--experimental-strip-types", "--input-type=module"], {
-		encoding: "utf8",
-		env,
-		input: `const { getGoogleCookies } = await import(${JSON.stringify(moduleUrl)}); const options = { profile: 'Profile 2', requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] }; const first = await getGoogleCookies(options); const second = await getGoogleCookies(options); console.log(JSON.stringify({ first, second }));`,
+for (const targetPlatform of ["linux", "darwin"]) {
+	test(`failed password lookups are retried instead of cached (${targetPlatform})`, (t) => {
+		skipWithoutPython(t);
+		const home = mkdtempSync(join(tmpdir(), "pi-cookie-cache-failure-"));
+		const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
+		try {
+			createFixture(home, "Profile 2", [
+				["__Secure-1PSID", "one", ".google.com", null, 1],
+				["__Secure-1PSIDTS", "two", ".google.com", null, 2],
+			], { targetPlatform });
+			const countPath = join(home, "password-count");
+			const env = makeEnvironment(home, bin);
+			Object.assign(env, writeFailThenSucceedPasswordCommand(bin, countPath, targetPlatform));
+			const result = runCookieScript(env, `
+				const options = { profile: 'Profile 2', requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] };
+				const first = await m.getGoogleCookies(options);
+				const second = await m.getGoogleCookies(options);
+				const third = await m.getGoogleCookies(options);
+				console.log(JSON.stringify({ first, second, third }));
+			`, targetPlatform);
+			const cookies = { "__Secure-1PSIDTS": "two", "__Secure-1PSID": "one" };
+			if (targetPlatform === "darwin") {
+				assert.equal(result.first, null);
+			} else {
+				// Linux falls back to its basic-store password. These plaintext
+				// fixture cookies remain readable even when secret-tool fails.
+				assert.deepEqual(result.first.cookies, cookies);
+			}
+			assert.deepEqual(result.second.cookies, cookies);
+			assert.deepEqual(result.third.cookies, cookies);
+			// The failed lookup is retried; the subsequent success is cached.
+			assert.equal(readFileSync(countPath, "utf8"), "2");
+		} finally {
+			rmSync(home, { recursive: true, force: true });
+			rmSync(bin, { recursive: true, force: true });
+		}
 	});
-	assert.equal(child.status, 0, child.stderr);
-	const result = JSON.parse(child.stdout);
-	assert.equal(result.first, null);
-	assert.deepEqual(result.second.cookies, { "__Secure-1PSIDTS": "two", "__Secure-1PSID": "one" });
-	assert.equal(readFileSync(countPath, "utf8"), "2");
-	rmSync(home, { recursive: true, force: true });
-	rmSync(bin, { recursive: true, force: true });
-});
+}
 
 test("configured profile names cannot escape the browser profile root", (t) => {
 	skipWithoutPython(t);
