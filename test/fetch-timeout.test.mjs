@@ -123,11 +123,8 @@ test("malformed web-search.json fails closed with the config path", async () => 
 
 test("Jina receives the resolved configured timeout budget", async () => {
 	const output = await runJina(jinaConfig(1.25));
-	assert.deepEqual(output.calls, [
-		"https://example.com/routed",
-		"https://r.jina.ai/https://example.com/routed",
-	]);
-	assert.ok(output.httpTimeoutCalls.includes(1250));
+	assert.deepEqual(output.calls, ["https://r.jina.ai/https://example.com/routed"]);
+	assert.deepEqual(output.httpTimeoutCalls, []);
 	assert.deepEqual(output.timeoutCalls, [1250]);
 	assert.equal(output.result.error, null);
 });

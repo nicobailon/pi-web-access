@@ -810,11 +810,6 @@ export async function extractContent(
 	let parallelMcpError: string | null = null;
 	let brightdataError: string | null = null;
 
-	if (remoteUrl && providerOrder[0] !== "http") {
-		const httpGateResult = await runHttpProvider();
-		if (httpGateResult) return httpGateResult;
-	}
-
 	for (const provider of providerOrder) {
 		if (signal?.aborted) return abortedResult(url);
 

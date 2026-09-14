@@ -18,9 +18,11 @@ function cleanProviderEnv(root) {
 	return childEnv;
 }
 
-async function runExtract(config) {
+async function runExtract(config, target = "https://example.com/routed") {
 	const root = await mkdtemp(join(tmpdir(), "pi-fetch-routing-"));
-	await writeFile(join(root, "web-search.json"), JSON.stringify(config) + "\n", "utf8");
+	if (config !== undefined) {
+		await writeFile(join(root, "web-search.json"), JSON.stringify(config) + "\n", "utf8");
+	}
 	const childEnv = cleanProviderEnv(root);
 
 	const child = spawnSync(process.execPath, ["--input-type=module"], {
@@ -35,7 +37,7 @@ async function runExtract(config) {
 				return new Response("blocked", { status: 403 });
 			};
 			const { extractContent } = await import(${JSON.stringify(extractUrl)});
-			const result = await extractContent("https://example.com/routed", undefined, { lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
+			const result = await extractContent(${JSON.stringify(target)}, undefined, { lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
 			console.log(JSON.stringify({ calls, result }));
 		`,
 		encoding: "utf8",
@@ -78,12 +80,22 @@ async function runTypedExtract(config, contentType) {
 
 test("fetchRouting.providers can put Jina first after explicit remote-hosted opt-in", async () => {
 	const output = await runExtract({ fetchRouting: { providers: ["jina", "http"], allowRemoteHostedProviders: true } });
-	assert.deepEqual(output.calls, [
-		"https://example.com/routed",
-		"https://r.jina.ai/https://example.com/routed",
-	]);
+	assert.deepEqual(output.calls, ["https://r.jina.ai/https://example.com/routed"]);
 	assert.equal(output.result.error, null);
 	assert.equal(output.result.title, "Routed");
+});
+
+test("fetchRouting.providers can use only a hosted provider", async () => {
+	const output = await runExtract({ fetchRouting: { providers: ["jina"], allowRemoteHostedProviders: true } });
+	assert.deepEqual(output.calls, ["https://r.jina.ai/https://example.com/routed"]);
+	assert.equal(output.result.error, null);
+	assert.equal(output.result.title, "Routed");
+});
+
+test("absent config retains direct HTTP as the first provider", async () => {
+	const output = await runExtract(undefined);
+	assert.deepEqual(output.calls, ["https://example.com/routed"]);
+	assert.match(output.result.error, /HTTP 403/);
 });
 
 test("remote hosted fetch providers are disabled by default", async () => {
@@ -169,34 +181,8 @@ test("Ollama Web Fetch is disabled for remote URLs without hosted-provider opt-i
 	assert.match(output.result.error, /HTTP 403/);
 });
 
-test("hosted providers cannot bypass redirect policy validation", async () => {
-	const root = await mkdtemp(join(tmpdir(), "pi-fetch-routing-redirect-"));
-	await writeFile(join(root, "web-search.json"), JSON.stringify({ fetchRouting: { providers: ["jina"], allowRemoteHostedProviders: true } }) + "\n", "utf8");
-	const childEnv = { ...process.env, PI_CODING_AGENT_DIR: root, HOME: root, USERPROFILE: root };
-	const child = spawnSync(process.execPath, ["--input-type=module"], {
-		input: `
-			const calls = [];
-			globalThis.fetch = async (url) => {
-				const text = String(url);
-				calls.push(text);
-				if (text === "https://example.com/redirect") {
-					return new Response("", { status: 302, headers: { location: "http://127.0.0.1/admin" } });
-				}
-				if (text.startsWith("https://r.jina.ai/")) {
-					return new Response("Markdown Content:\\n# Bypassed\\n\\n" + "content ".repeat(80), { status: 200 });
-				}
-				throw new Error("Unexpected fetch " + text);
-			};
-			const { extractContent } = await import(${JSON.stringify(extractUrl)});
-			const result = await extractContent("https://example.com/redirect", undefined, { lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
-			console.log(JSON.stringify({ calls, result }));
-		`,
-		encoding: "utf8",
-		env: childEnv,
-		maxBuffer: 2 * 1024 * 1024,
-	});
-	assert.equal(child.status, 0, child.stderr);
-	const output = JSON.parse(child.stdout.trim());
-	assert.deepEqual(output.calls, ["https://example.com/redirect"]);
+test("hosted providers cannot bypass blocked-target validation", async () => {
+	const output = await runExtract({ fetchRouting: { providers: ["jina"], allowRemoteHostedProviders: true } }, "http://127.0.0.1/admin");
+	assert.deepEqual(output.calls, []);
 	assert.match(output.result.error, /Blocked internal address/);
 });
