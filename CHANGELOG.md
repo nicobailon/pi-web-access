@@ -18,7 +18,7 @@ All notable changes to this project will be documented in this file.
 - Prevent malformed `fetch_content` auth, mode, or proxy parameters from breaking tool-call rendering while preserving strict execution validation. Thanks to [@tekumara](https://github.com/tekumara) for issue #387.
 - Clarified that a negative `fetch_content` answer-mode result means the answer was not found in the extracted content, rather than asserting that it is absent from the whole page. Thanks to [@Slooz](https://github.com/Slooz) for issue #394.
 - Stop inferring claim support or contradiction from unrelated lexical markers in `source_check`; retrieved passages now require manual semantic review. Thanks to [@wayenchan](https://github.com/wayenchan) for issue #383.
-- Return bounded `get_search_content` excerpts instead of dropping oversized merged match ranges, and prioritize representative query ranges when results exceed the output budget.
+- Return bounded `get_search_content` excerpts instead of dropping oversized merged match ranges, and prioritize representative query ranges when results exceed the output budget. Thanks to [@MDGChamomile](https://github.com/MDGChamomile) for PR #391.
 
 ## [0.29.0] - 2026-09-10
 
