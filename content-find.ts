@@ -2,6 +2,7 @@ export type FindMode = "exact" | "case-insensitive" | "fuzzy";
 
 const CONTEXT_CHARS = 400;
 const MAX_OUTPUT_CHARS = 20_000;
+const MAX_OVERFLOW_RANGE_CHARS = 1_600;
 
 interface Match {
 	query: string;
@@ -76,13 +77,13 @@ function fuzzyMatches(text: string, query: string): Match[] {
 	return matches;
 }
 
-function mergeRanges(textLength: number, matches: Match[]): Range[] {
+function mergeRanges(textLength: number, matches: Match[], maximumChars = Infinity): Range[] {
 	const ranges: Range[] = [];
 	for (const match of [...matches].sort((left, right) => left.start - right.start)) {
 		const start = Math.max(0, match.start - CONTEXT_CHARS);
 		const end = Math.min(textLength, match.end + CONTEXT_CHARS);
 		const previous = ranges.at(-1);
-		if (previous && start <= previous.end) {
+		if (previous && start <= previous.end && Math.max(previous.end, end) - previous.start <= maximumChars) {
 			previous.end = Math.max(previous.end, end);
 			previous.matches.push(match);
 		} else {
@@ -107,33 +108,61 @@ export function findContent(
 	}));
 
 	const heading = matches.length > 0 ? `Text matches (${mode})` : `Text matches (${mode}): no matches`;
-	const sections = [heading];
-	let formattedLength = heading.length;
-	let returnedMatches = 0;
-	for (const range of mergeRanges(text.length, matches)) {
-		const prefix = range.start > 0 ? "…" : "";
-		const suffix = range.end < text.length ? "…" : "";
-		const snippet = `${prefix}${text.slice(range.start, range.end).replace(/\s+/g, " ").trim()}${suffix}`;
-		const counts = [...new Set(range.matches.map(match => match.query))]
-			.map(query => `\"${query}\" ×${range.matches.filter(match => match.query === query).length}`)
-			.join(", ");
-		const section = `${sections.length}. ${counts}\n${snippet}`;
-		if (formattedLength + 2 + section.length > MAX_OUTPUT_CHARS) break;
-		sections.push(section);
-		formattedLength += 2 + section.length;
-		returnedMatches += range.matches.length;
-	}
-
 	const missing = queryResults.filter(result => result.matchCount === 0).map(result => `\"${result.query}\"`);
-	const footer = [
-		...(missing.length > 0 ? [`No matches: ${missing.join(", ")}`] : []),
-		...(returnedMatches < matches.length ? [`Showing ${returnedMatches} of ${matches.length} matches.`] : []),
-	];
-	for (const section of footer) {
-		if (formattedLength + 2 + section.length > MAX_OUTPUT_CHARS) break;
-		sections.push(section);
-		formattedLength += 2 + section.length;
+	const missingNotice = missing.length > 0 ? [`No matches: ${missing.join(", ")}`] : [];
+	function formatRanges(ranges: Range[], overflow = false) {
+		const sections = [heading];
+		let formattedLength = heading.length;
+		let returnedMatches = 0;
+		// Reserve room for complete notices when sampling an overflowing response.
+		const footerLength = [...missingNotice, `Showing ${matches.length} of ${matches.length} matches.`]
+			.reduce((length, section) => length + 2 + section.length, 0);
+		const budget = MAX_OUTPUT_CHARS - (overflow ? footerLength : 0);
+		for (const range of ranges) {
+			const prefix = range.start > 0 ? "…" : "";
+			const suffix = range.end < text.length ? "…" : "";
+			const snippet = `${prefix}${text.slice(range.start, range.end).replace(/\s+/g, " ").trim()}${suffix}`;
+			const counts = [...new Set(range.matches.map(match => match.query))]
+				.map(query => `\"${query}\" ×${range.matches.filter(match => match.query === query).length}`)
+				.join(", ");
+			const section = `${sections.length}. ${counts}\n${snippet}`;
+			if (formattedLength + 2 + section.length > budget) {
+				if (overflow) continue; // A later, smaller excerpt may still fit.
+				break;
+			}
+			sections.push(section);
+			formattedLength += 2 + section.length;
+			returnedMatches += range.matches.length;
+		}
+
+		const footer = [
+			...missingNotice,
+			...(returnedMatches < matches.length ? [`Showing ${returnedMatches} of ${matches.length} matches.`] : []),
+		];
+		for (const section of footer) {
+			if (formattedLength + 2 + section.length > MAX_OUTPUT_CHARS) break;
+			sections.push(section);
+			formattedLength += 2 + section.length;
+		}
+		return { text: sections.join("\n\n"), matchCount: matches.length, returnedMatches, queryResults };
 	}
 
-	return { text: sections.join("\n\n"), matchCount: matches.length, returnedMatches, queryResults };
+	const full = formatRanges(mergeRanges(text.length, matches));
+	if (full.returnedMatches === matches.length) return full;
+
+	// Only overflowing responses change: bound merged excerpts and prioritize a
+	// representative range for each query before filling space with more hits.
+	const ranges = mergeRanges(text.length, matches, MAX_OVERFLOW_RANGE_CHARS);
+	const covered = new Set<string>();
+	const preferred: Range[] = [];
+	const remaining: Range[] = [];
+	for (const range of ranges) {
+		if (range.matches.some(match => !covered.has(match.query))) {
+			preferred.push(range);
+			for (const match of range.matches) covered.add(match.query);
+		} else {
+			remaining.push(range);
+		}
+	}
+	return formatRanges([...preferred, ...remaining], true);
 }
