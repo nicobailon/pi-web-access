@@ -1775,12 +1775,12 @@ export default function (pi: ExtensionAPI) {
 		name: toolNames.webSearch,
 		label: "Web Search",
 		description:
-			`Search the web with ${allowedSearchProviders.map(providerLabel).join(", ")}. Provider arrays run simultaneously; ${allPolicyDescription}. Returns an AI-synthesized answer with source citations. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. When includeContent is true, full page content is fetched in the background. Searches auto-open the interactive browser curator and stream results live; set workflow to "none" to skip curation or "auto-summary" for a model-generated summary without the browser curator. The configured provider is used when provider is omitted or set to auto; omit provider unless explicitly overriding it.`,
+			`Search the web with ${allowedSearchProviders.map(providerLabel).join(", ")}. Provider arrays run simultaneously; ${allPolicyDescription}. By default, returns source-linked search results or provider answers. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. When includeContent is true, full page content is fetched in the background. Searches return without the interactive browser curator by default; set workflow to "summary-review" to open the curator with an auto-generated summary draft or "auto-summary" to generate a summary without the browser curator. The configured provider is used when provider is omitted or set to auto; omit provider unless explicitly overriding it.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
 		parameters: Type.Object({
 			query: Type.Optional(Type.String({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched concurrently (up to three at a time), each returning its own synthesized answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
+			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched concurrently (up to three at a time), each returning source-linked search results or a provider answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
 			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Results per query (default: 5, max: 20)" })),
 			includeContent: Type.Optional(Type.Boolean({ description: "Fetch full page content (async)" })),
 			recencyFilter: Type.Optional(
@@ -1790,7 +1790,7 @@ export default function (pi: ExtensionAPI) {
 			provider: Type.Optional(searchProviderSchema(`Search provider or non-empty list of allowed providers to search simultaneously; ${allPolicyDescription}; omit this field to use the configured provider, or use auto when none is configured`, allowedSearchProviders)),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review", "auto-summary"], {
-					description: "Search workflow mode: none = no curator, summary-review = open curator with auto summary draft (default), auto-summary = generate summary without opening curator",
+					description: "Search workflow mode: none = no curator (default), summary-review = open curator with auto summary draft, auto-summary = generate summary without opening curator",
 				}),
 			),
 			proxy: Type.Optional(Type.String({

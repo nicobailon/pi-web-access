@@ -7,7 +7,8 @@ export function resolveWebSearchWorkflow(input: unknown, hasUI: boolean): WebSea
 	if (normalized === "auto-summary") return "auto-summary";
 	if (!hasUI) return "none";
 	if (normalized === "none") return "none";
-	return "summary-review";
+	if (normalized === "summary-review") return "summary-review";
+	return "none";
 }
 
 export class CuratorRunState {

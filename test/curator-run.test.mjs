@@ -3,11 +3,24 @@ import test from "node:test";
 
 import { CuratorRunState, registerCuratorRunLifecycle } from "../curator-run.ts";
 
+test("fresh installs default to no curator while configured and explicit workflows keep their meanings", () => {
+	const state = new CuratorRunState();
+
+	assert.equal(state.resolve(undefined, undefined, true), "none");
+	assert.equal(state.resolve(undefined, "invalid", true), "none");
+	for (const workflow of ["none", "auto-summary", "summary-review"]) {
+		assert.equal(state.resolve(undefined, workflow, true), workflow);
+		assert.equal(state.resolve(workflow, "none", true), workflow);
+	}
+	assert.equal(state.resolve(undefined, "summary-review", false), "none");
+	assert.equal(state.resolve("auto-summary", "summary-review", false), "auto-summary");
+});
+
 test("approval changes only inherited summary-review workflows for the current prompt", () => {
 	const state = new CuratorRunState();
 	state.approveRemainingSearches();
 
-	assert.equal(state.resolve(undefined, undefined, true), "auto-summary");
+	assert.equal(state.resolve(undefined, undefined, true), "none");
 	assert.equal(state.resolve(undefined, "summary-review", true), "auto-summary");
 	assert.equal(state.resolve(undefined, "none", true), "none");
 	assert.equal(state.resolve(undefined, "auto-summary", true), "auto-summary");
