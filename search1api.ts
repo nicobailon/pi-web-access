@@ -4,6 +4,7 @@ import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -197,13 +198,6 @@ function mapInlineContent(results: Search1APISearchResult[] | undefined): Extrac
 	});
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => {
-		if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-		return `Source: ${result.title} (${result.url})`;
-	}).join("\n\n");
-}
-
 export async function searchWithSearch1API(
 	query: string,
 	options: Search1APISearchOptions = {},
@@ -220,7 +214,7 @@ export async function searchWithSearch1API(
 			options.signal,
 		);
 		const results = mapSearchResults(data.results);
-		const response: SearchResponse = { answer: buildAnswer(results), results };
+		const response: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
 		if (options.includeContent) {
 			const inlineContent = mapInlineContent(data.results);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;

@@ -4,6 +4,7 @@ import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -255,13 +256,6 @@ function mapSearchResults(data: QueritSearchResponse): SearchResponse["results"]
 	});
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => {
-		if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-		return `Source: ${result.title} (${result.url})`;
-	}).join("\n\n");
-}
-
 function mapContentResult(result: QueritContentResult | undefined, requestedUrl: string): ExtractedContent | null {
 	if (!result || typeof result.content !== "string" || result.content.trim().length === 0) return null;
 	const metadata = result.extrasMeta;
@@ -347,7 +341,7 @@ export async function searchWithQuerit(
 		);
 		assertApiSuccess("Search", data);
 		const results = mapSearchResults(data);
-		const response: SearchResponse = { answer: buildAnswer(results), results };
+		const response: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
 		if (options.includeContent && results.length > 0) {
 			const inlineContent = await fetchInlineContent(results.map((result) => result.url), apiKey, options.signal);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;

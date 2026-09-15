@@ -4,6 +4,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { redactCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 
 const KIMI_SEARCH_URL = "https://api.kimi.com/coding/v1/search";
@@ -136,14 +137,6 @@ function parseResults(value: unknown, options: SearchOptions): SearchResult[] {
 	return results;
 }
 
-function formatAnswer(results: SearchResult[]): string {
-	return results
-		.map((result) => result.snippet
-			? `${result.snippet}\nSource: ${result.title} (${result.url})`
-			: `Source: ${result.title} (${result.url})`)
-		.join("\n\n");
-}
-
 export async function isKimiSearchAvailable(ctx?: ExtensionContext): Promise<boolean> {
 	try {
 		return !!(await resolveKimiAuth(ctx));
@@ -194,7 +187,7 @@ export async function searchWithKimi(
 		}
 
 		activityMonitor.logComplete(activityId, response.status);
-		return { answer: formatAnswer(results), results };
+		return { answer: formatSearchResultsAsAnswer(results), results };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		const redactedMessage = redactCredential(message, auth.apiKey);

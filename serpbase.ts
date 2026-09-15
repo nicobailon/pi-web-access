@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -148,12 +149,6 @@ function parseResponse(value: unknown): SerpBaseResponse {
 	return { ...envelope, organic_results: organic };
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => result.snippet
-		? `${result.snippet}\nSource: ${result.title} (${result.url})`
-		: `Source: ${result.title} (${result.url})`).join("\n\n");
-}
-
 export function isSerpBaseAvailable(): boolean {
 	return hasCredentialSource({ provider: "SerpBase", configuredValue: loadConfig().serpbaseApiKey, environmentValue: process.env.SERPBASE_API_KEY });
 }
@@ -210,5 +205,5 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 		});
 		if (results.length >= numResults) break;
 	}
-	return { answer: buildAnswer(results), results };
+	return { answer: formatSearchResultsAsAnswer(results), results };
 }

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type Lookup, type SsrfConfig } from "./ssrf-protection.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -122,12 +123,6 @@ function parseFetchResponse(value: unknown): OllamaFetchResponse {
 	return { title: envelope.title, content: envelope.content, links: envelope.links };
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => result.snippet
-		? `${result.snippet}\nSource: ${result.title} (${result.url})`
-		: `Source: ${result.title} (${result.url})`).join("\n\n");
-}
-
 export function isOllamaAvailable(): boolean {
 	return hasCredentialSource({ provider: "Ollama", configuredValue: loadConfig().ollamaApiKey, environmentValue: process.env.OLLAMA_API_KEY });
 }
@@ -172,7 +167,7 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 	const data = parseSearchResponse(rawData);
 	activityMonitor.logComplete(activityId, response.status);
 	const results = data.results.slice(0, numResults).map((result) => ({ title: result.title, url: result.url, snippet: result.content }));
-	const mapped: SearchResponse = { answer: buildAnswer(results), results };
+	const mapped: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
 	if (options.includeContent) {
 		const inlineContent: ExtractedContent[] = data.results.slice(0, numResults)
 			.filter(result => result.content.trim().length > 0)

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -124,12 +125,6 @@ function parseResponse(value: unknown): SerpApiOrganicResult[] {
 	return envelope.organic_results as SerpApiOrganicResult[];
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => result.snippet
-		? `${result.snippet}\nSource: ${result.title} (${result.url})`
-		: `Source: ${result.title} (${result.url})`).join("\n\n");
-}
-
 export function isSerpApiAvailable(): boolean {
 	return hasCredentialSource({ provider: "SerpApi", configuredValue: loadConfig().serpapiApiKey, environmentValue: process.env.SERPAPI_KEY });
 }
@@ -198,5 +193,5 @@ export async function searchWithSerpApi(query: string, options: SearchOptions = 
 		});
 		if (results.length >= numResults) break;
 	}
-	return { answer: buildAnswer(results), results };
+	return { answer: formatSearchResultsAsAnswer(results), results };
 }

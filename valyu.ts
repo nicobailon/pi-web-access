@@ -3,6 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -111,12 +112,6 @@ function parseResponse(value: unknown): ValyuResult[] {
 	return envelope.results as ValyuResult[];
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => result.snippet
-		? `${result.snippet}\nSource: ${result.title} (${result.url})`
-		: `Source: ${result.title} (${result.url})`).join("\n\n");
-}
-
 export function isValyuAvailable(): boolean {
 	return hasCredentialSource({ provider: "Valyu", configuredValue: loadConfig().valyuApiKey, environmentValue: process.env.VALYU_API_KEY });
 }
@@ -177,5 +172,5 @@ export async function searchWithValyu(query: string, options: SearchOptions & { 
 		if (options.includeContent && content) inlineContent.push({ url, title, content, error: null });
 		if (results.length >= numResults) break;
 	}
-	return { answer: buildAnswer(results), results, ...(inlineContent.length > 0 ? { inlineContent } : {}) };
+	return { answer: formatSearchResultsAsAnswer(results), results, ...(inlineContent.length > 0 ? { inlineContent } : {}) };
 }

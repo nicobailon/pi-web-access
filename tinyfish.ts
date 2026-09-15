@@ -3,6 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -215,13 +216,6 @@ function deduplicateResults(results: SearchResponse["results"], limit: number): 
 	return unique;
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => {
-		if (result.snippet) return `${result.snippet}\nSource: ${result.title} (${result.url})`;
-		return `Source: ${result.title} (${result.url})`;
-	}).join("\n\n");
-}
-
 function fetchPerUrlTimeout(value: number | undefined): number {
 	if (typeof value !== "number" || !Number.isFinite(value)) return MAX_FETCH_PER_URL_TIMEOUT_MS;
 	return Math.max(1, Math.min(Math.floor(value), MAX_FETCH_PER_URL_TIMEOUT_MS));
@@ -322,7 +316,7 @@ export async function searchWithTinyFish(query: string, options: TinyFishSearchO
 		}
 
 		const results = deduplicateResults(combined, numResults);
-		const response: SearchResponse = { answer: buildAnswer(results), results };
+		const response: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
 		if (options.includeContent && results.length > 0) {
 			const inlineContent = await fetchInlineContent(results.map(result => result.url), apiKey, options.signal);
 			if (inlineContent.length > 0) response.inlineContent = inlineContent;

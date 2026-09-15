@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
@@ -109,14 +110,6 @@ function parseResponse(value: unknown): AnySearchResponse {
 	return { code: 0, data: { results, metadata: data.metadata as Record<string, unknown> } };
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) => result.snippet
-			? `${result.snippet}\nSource: ${result.title} (${result.url})`
-			: `Source: ${result.title} (${result.url})`)
-		.join("\n\n");
-}
-
 export function isAnySearchAvailable(): boolean {
 	return true;
 }
@@ -179,7 +172,7 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 		url: result.url,
 		snippet: result.snippet,
 	}));
-	const mapped: SearchResponse = { answer: buildAnswer(results), results };
+	const mapped: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
 	if (options.includeContent) {
 		const inlineContent: ExtractedContent[] = data.data.results.slice(0, numResults)
 			.filter(result => result.content.length > 0)

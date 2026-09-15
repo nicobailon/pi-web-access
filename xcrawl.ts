@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -155,14 +156,6 @@ function parseResponse(value: unknown): SearchResponse["results"] {
 	return results;
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) => result.snippet
-			? `${result.snippet}\nSource: ${result.title} (${result.url})`
-			: `Source: ${result.title} (${result.url})`)
-		.join("\n\n");
-}
-
 export async function searchWithXCrawl(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
@@ -238,7 +231,7 @@ export async function searchWithXCrawl(query: string, options: SearchOptions = {
 	const filtered = (options.domainFilter?.length ? applyDomainFilter(results, options.domainFilter) : results).slice(0, numResults);
 
 	return {
-		answer: buildAnswer(filtered),
+		answer: formatSearchResultsAsAnswer(filtered),
 		results: filtered,
 	};
 }

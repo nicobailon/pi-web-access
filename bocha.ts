@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -144,12 +145,6 @@ function parseSearchResponse(value: unknown): { results: SearchResponse["results
 	return { results };
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => result.snippet
-		? `${result.snippet}\nSource: ${result.title} (${result.url})`
-		: `Source: ${result.title} (${result.url})`).join("\n\n");
-}
-
 export function isBochaAvailable(): boolean {
 	return hasCredentialSource({ provider: "Bocha", configuredValue: loadConfig().bochaApiKey, environmentValue: process.env.BOCHA_API_KEY });
 }
@@ -203,5 +198,5 @@ export async function searchWithBocha(query: string, options: SearchOptions = {}
 	}
 	activityMonitor.logComplete(activityId, response.status);
 	const results = parsed.results.filter((result) => passesDomainFilters(result.url, filters)).slice(0, numResults);
-	return { answer: buildAnswer(results), results };
+	return { answer: formatSearchResultsAsAnswer(results), results };
 }

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type SsrfConfig } from "./ssrf-protection.ts";
@@ -149,12 +150,6 @@ function parseExtractResponse(value: unknown, requestedUrl: string): ExtractedCo
 	return null;
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => result.snippet
-		? `${result.snippet}\nSource: ${result.title} (${result.url})`
-		: `Source: ${result.title} (${result.url})`).join("\n\n");
-}
-
 export function isKagiAvailable(): boolean {
 	return hasCredentialSource({ provider: "Kagi", configuredValue: loadConfig().kagiApiKey, environmentValue: process.env.KAGI_API_KEY });
 }
@@ -196,7 +191,7 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	const parsed = parseSearchResponse(rawData);
 	activityMonitor.logComplete(activityId, response.status);
 	const results = parsed.results.slice(0, numResults);
-	const mapped: SearchResponse = { answer: buildAnswer(results), results };
+	const mapped: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
 	if (options.includeContent) {
 		const urls = new Set(results.map(result => result.url));
 		const inlineContent = parsed.inlineContent.filter(content => urls.has(content.url));

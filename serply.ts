@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchWithCredentialRedirects, getWebSearchConfigPath } from "./utils.ts";
@@ -119,12 +120,6 @@ function parseResponse(value: unknown): SerplyOrganicResult[] {
 	return envelope.results as SerplyOrganicResult[];
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results.map((result) => result.snippet
-		? `${result.snippet}\nSource: ${result.title} (${result.url})`
-		: `Source: ${result.title} (${result.url})`).join("\n\n");
-}
-
 export function isSerplyAvailable(): boolean {
 	return hasCredentialSource({ provider: "Serply", configuredValue: loadConfig().serplyApiKey, environmentValue: process.env.SERPLY_API_KEY });
 }
@@ -198,5 +193,5 @@ export async function searchWithSerply(query: string, options: SearchOptions = {
 		});
 		if (results.length >= numResults) break;
 	}
-	return { answer: buildAnswer(results), results };
+	return { answer: formatSearchResultsAsAnswer(results), results };
 }

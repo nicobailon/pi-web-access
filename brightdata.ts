@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
@@ -418,16 +419,6 @@ function mapResults(
 	return mapped;
 }
 
-// A SERP zone returns ranked links, never a synthesized answer, so one is
-// assembled from the sources — the same shape brave.ts and searxng.ts produce.
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) => result.snippet
-			? `${result.snippet}\nSource: ${result.title} (${result.url})`
-			: `Source: ${result.title} (${result.url})`)
-		.join("\n\n");
-}
-
 // Both halves are required: a token with no zone cannot make a request, and a
 // zone with no token cannot either. Availability therefore checks the config this
 // surface actually needs rather than merely a key, the way firecrawl.ts's
@@ -542,5 +533,5 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 
 	activityMonitor.logComplete(activityId, response.status);
 	const results = mapResults(data.organic, numResults, filters);
-	return { answer: buildAnswer(results), results };
+	return { answer: formatSearchResultsAsAnswer(results), results };
 }

@@ -3,6 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -177,14 +178,6 @@ function mapItems(items: JinaSearchItem[], numResults: number, filters: ReturnTy
 	return { results, content };
 }
 
-function buildAnswer(results: SearchResponse["results"]): string {
-	return results
-		.map((result) => result.snippet
-			? `${result.snippet}\nSource: ${result.title} (${result.url})`
-			: `Source: ${result.title} (${result.url})`)
-		.join("\n\n");
-}
-
 function rethrowRequestError(
 	err: unknown,
 	apiKey: string,
@@ -272,7 +265,7 @@ export async function searchWithJina(query: string, options: JinaSearchOptions =
 	}
 	activityMonitor.logComplete(activityId, response.status);
 	const result: SearchResponse = {
-		answer: buildAnswer(mapped.results),
+		answer: formatSearchResultsAsAnswer(mapped.results),
 		results: mapped.results,
 	};
 	if (options.includeContent && mapped.content.length > 0) result.inlineContent = mapped.content;
