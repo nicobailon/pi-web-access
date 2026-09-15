@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
@@ -55,11 +56,6 @@ function getApiUrl(): string {
 		environmentKey: "BRAVE_BASE_URL",
 		environmentValue: process.env.BRAVE_BASE_URL,
 	})}/web/search`;
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters {
@@ -137,7 +133,7 @@ export async function searchWithBrave(
 		);
 	}
 
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const domainFilters = normalizeDomainFilters(options.domainFilter);
 	const searchQuery = buildBraveQuery(query, options.domainFilter);
 	const activityId = activityMonitor.logStart({ type: "api", query: searchQuery });

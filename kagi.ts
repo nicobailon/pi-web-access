@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type SsrfConfig } from "./ssrf-protection.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -66,11 +67,6 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 		);
 	}
 	return apiKey;
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function errorMessage(err: unknown): string {
@@ -165,7 +161,7 @@ export function isKagiAvailable(): boolean {
 
 export async function searchWithKagi(query: string, options: KagiSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {

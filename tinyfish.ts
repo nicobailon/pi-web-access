@@ -3,6 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -137,11 +138,6 @@ function recencyMinutes(filter: SearchOptions["recencyFilter"]): number | undefi
 		year: 525_600,
 	};
 	return minutes[filter];
-}
-
-function normalizeNumResults(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function buildSearchUrl(query: string, options: SearchOptions, page: number): string {
@@ -306,7 +302,7 @@ async function fetchInlineContent(
 
 export async function searchWithTinyFish(query: string, options: TinyFishSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
-	const numResults = normalizeNumResults(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const combined: SearchResponse["results"] = [];

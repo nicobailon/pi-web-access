@@ -4,6 +4,7 @@ import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const QUERIT_SEARCH_URL = "https://api.querit.ai/v1/search";
@@ -124,11 +125,6 @@ function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): Abor
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-function normalizeNumResults(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
 function mapDomainFilter(domainFilter: string[] | undefined): { include: string[]; exclude: string[] } {
 	const include: string[] = [];
 	const exclude: string[] = [];
@@ -162,7 +158,7 @@ function buildSearchBody(query: string, options: QueritSearchOptions): Record<st
 	if (date) filters.timeRange = { date };
 	return {
 		query,
-		count: normalizeNumResults(options.numResults),
+		count: normalizeSearchResultCount(options.numResults),
 		...(Object.keys(filters).length > 0 ? { filters } : {}),
 	};
 }

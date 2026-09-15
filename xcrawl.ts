@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -69,11 +70,6 @@ function errorMessage(err: unknown): string {
 
 function invalidResponse(message: string): Error {
 	return new Error(`XCrawl API returned invalid response: ${message}`);
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function hostnameOf(url: string): string {
@@ -169,7 +165,7 @@ function buildAnswer(results: SearchResponse["results"]): string {
 
 export async function searchWithXCrawl(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	if (!apiKey) {
 		throw new Error(
 			"XCrawl search requires an API key. Set xcrawlApiKey in " + CONFIG_PATH +

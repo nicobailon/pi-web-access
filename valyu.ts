@@ -3,6 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -68,11 +69,6 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	return apiKey;
 }
 
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
 function mapDomainFilter(domainFilter: string[] | undefined): { included_sources?: string[]; excluded_sources?: string[] } {
 	if (!domainFilter?.length) return {};
 	const included_sources: string[] = [];
@@ -127,7 +123,7 @@ export function isValyuAvailable(): boolean {
 
 export async function searchWithValyu(query: string, options: SearchOptions & { includeContent?: boolean } = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const startDate = recencyToStartDate(options.recencyFilter);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;

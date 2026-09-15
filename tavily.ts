@@ -3,6 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
 
@@ -82,11 +83,6 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 	return apiKey;
 }
 
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
 function mapDomainFilter(domainFilter: string[] | undefined): { include_domains?: string[]; exclude_domains?: string[] } {
 	if (!domainFilter?.length) return {};
 	const include_domains: string[] = [];
@@ -151,7 +147,7 @@ export function isTavilyAvailable(): boolean {
 export async function searchWithTavily(query: string, options: TavilySearchOptions = {}): Promise<SearchResponse> {
 	const apiUrl = getApiUrl();
 	const apiKey = await requireApiKey(options.signal);
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const body: Record<string, unknown> = {
 		query,
 		search_depth: "basic",

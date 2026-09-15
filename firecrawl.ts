@@ -5,6 +5,7 @@ import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { loadSsrfConfig, validateRemoteUrl, type Lookup } from "./ssrf-protection.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -243,11 +244,6 @@ function scrapeBody(url: string): Record<string, unknown> {
 	};
 }
 
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
 function parseDomainFilter(domainFilter: string[] | undefined): DomainFilters {
 	const filters: DomainFilters = { include: [], exclude: [] };
 	for (const raw of domainFilter ?? []) {
@@ -399,7 +395,7 @@ export function isFirecrawlAvailable(): boolean {
 
 export async function searchWithFirecrawl(query: string, options: FirecrawlSearchOptions = {}): Promise<SearchResponse> {
 	requireBaseUrl();
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
 	const envelope = await firecrawlFetch(
 		"search",

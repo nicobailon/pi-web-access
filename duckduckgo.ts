@@ -1,6 +1,7 @@
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 
 const SEARCH_URL = "https://html.duckduckgo.com/html/";
 const SEARCH_TIMEOUT_MS = 30_000;
@@ -8,11 +9,6 @@ const SEARCH_TIMEOUT_MS = 30_000;
 interface NormalizedDomainFilters {
 	allowed: string[];
 	blocked: string[];
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters {
@@ -89,7 +85,7 @@ export async function searchWithDuckDuckGo(query: string, options: SearchOptions
 			if (!matchesDomainFilters(resultUrl, filters)) continue;
 			const snippet = container.querySelector(".result__snippet")?.textContent?.trim() ?? "";
 			results.push({ title, url: resultUrl, snippet });
-			if (results.length >= normalizeCount(options.numResults)) break;
+			if (results.length >= normalizeSearchResultCount(options.numResults)) break;
 		}
 		if (parseableResults === 0) {
 			throw new Error("DuckDuckGo returned no parseable results (invalid response)");

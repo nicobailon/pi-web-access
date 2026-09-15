@@ -3,6 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
@@ -92,11 +93,6 @@ function resolveModel(): SerpdiveModel {
 	if (typeof raw !== "string") return DEFAULT_MODEL;
 	const value = raw.trim().toLowerCase();
 	return (MODELS as readonly string[]).includes(value) ? value as SerpdiveModel : DEFAULT_MODEL;
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 interface DomainFilters {
@@ -218,7 +214,7 @@ export function isSerpdiveAvailable(): boolean {
 
 export async function searchWithSerpdive(query: string, options: SerpdiveSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
 	const model = resolveModel();
 	const body: Record<string, unknown> = {

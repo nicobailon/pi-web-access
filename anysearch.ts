@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
@@ -65,11 +66,6 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	});
 }
 
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
@@ -127,7 +123,7 @@ export function isAnySearchAvailable(): boolean {
 
 export async function searchWithAnySearch(query: string, options: AnySearchSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const body = { query, max_results: numResults };
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;

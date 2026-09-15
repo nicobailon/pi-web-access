@@ -3,6 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { fetchRemoteUrl, loadSsrfConfig } from "./ssrf-protection.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -122,11 +123,6 @@ function requireBaseUrl(): string {
 	return baseUrl;
 }
 
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
 function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters {
 	const filters: NormalizedDomainFilters = { allowed: [], blocked: [] };
 	for (const raw of domainFilter ?? []) {
@@ -180,7 +176,7 @@ export function isSearXNGAvailable(): boolean {
 
 export async function searchWithSearXNG(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const baseUrl = requireBaseUrl();
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = normalizeDomainFilters(options.domainFilter);
 	const searchQuery = buildSearXNGQuery(query, filters);
 	const url = new URL(`${baseUrl}/search`);

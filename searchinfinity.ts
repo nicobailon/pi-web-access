@@ -3,6 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const SEARCHINFINITY_SEARCH_URL = "https://torchlight.byteintlapi.com/search_api/web_search";
@@ -110,11 +111,6 @@ function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): Abor
 	return signal ? AbortSignal.any([signal, timeout]) : timeout;
 }
 
-function normalizeNumResults(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
 function mapRecencyFilter(recency: SearchOptions["recencyFilter"]): string | undefined {
 	if (recency === "day") return "OneDay";
 	if (recency === "week") return "OneWeek";
@@ -139,7 +135,7 @@ function buildSearchBody(query: string, options: SearchinfinitySearchOptions): R
 	const timeRange = mapRecencyFilter(options.recencyFilter);
 	return {
 		Query: query,
-		Count: normalizeNumResults(options.numResults),
+		Count: normalizeSearchResultCount(options.numResults),
 		...(Object.keys(filter).length > 0 ? { Filter: filter } : {}),
 		...(timeRange ? { TimeRange: timeRange } : {}),
 	};

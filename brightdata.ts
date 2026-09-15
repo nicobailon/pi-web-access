@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
@@ -181,11 +182,6 @@ function requireSerpZone(): string {
 		"The zone must be of Bright Data type `serp`; a Web Unlocker zone is a different product and does not return SERP JSON.\n" +
 		"Create one at https://brightdata.com/cp/zones",
 	);
-}
-
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
 }
 
 interface DomainFilters {
@@ -463,7 +459,7 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 	// resolver, and must not reach a billable endpoint.
 	const zone = requireSerpZone();
 	const apiKey = await requireApiKey(options.signal);
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
 	const searchQuery = buildSearchQuery(query, filters);
 	const body: Record<string, unknown> = {

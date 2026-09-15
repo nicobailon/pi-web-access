@@ -4,6 +4,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { redactCredential } from "./credential-source.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 
 const KIMI_SEARCH_URL = "https://api.kimi.com/coding/v1/search";
 const KIMI_PROVIDERS = ["kimi-coding", "kimi-code"] as const;
@@ -67,11 +68,6 @@ async function resolveKimiAuth(ctx?: ExtensionContext): Promise<KimiAuth | undef
 	return undefined;
 }
 
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 5;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
 function normalizeDomainFilters(domainFilter: string[] | undefined): NormalizedDomainFilters {
 	const filters: NormalizedDomainFilters = { allowed: [], blocked: [] };
 	if (!domainFilter?.length) return filters;
@@ -123,7 +119,7 @@ function parseResults(value: unknown, options: SearchOptions): SearchResult[] {
 	}
 
 	const filters = normalizeDomainFilters(options.domainFilter);
-	const numResults = normalizeCount(options.numResults);
+	const numResults = normalizeSearchResultCount(options.numResults);
 	const results: SearchResult[] = [];
 	for (const item of (value as { search_results: unknown[] }).search_results) {
 		if (!item || typeof item !== "object") continue;
