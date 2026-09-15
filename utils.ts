@@ -22,7 +22,13 @@ export function getWebSearchConfigDir(): string {
 		if (existsSync(join(legacyDir, "web-search.json"))) return cachedWebSearchConfigDir = legacyDir;
 		return cachedWebSearchConfigDir = xdgDir;
 	}
-	return cachedWebSearchConfigDir = join(homedir(), ".pi", "agent");
+	const agentDir = join(homedir(), ".pi", "agent");
+	if (existsSync(join(agentDir, "web-search.json"))) return cachedWebSearchConfigDir = agentDir;
+
+	const legacyDir = join(homedir(), ".pi");
+	if (existsSync(join(legacyDir, "web-search.json"))) return cachedWebSearchConfigDir = legacyDir;
+
+	return cachedWebSearchConfigDir = agentDir;
 }
 
 export function getWebSearchConfigPath(): string {

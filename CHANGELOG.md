@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Preserve legacy `~/.pi/web-search.json` configuration when `~/.pi/agent/web-search.json` is absent in default environments without `XDG_CONFIG_HOME`. Thanks to [@fancyboi999](https://github.com/fancyboi999) for issue #411.
 - List Crawl4AI in the README provider summary and the package description, which both still omitted it after the provider shipped in 0.29.0. Thanks to [@bergheim](https://github.com/bergheim) for [PR #382](https://github.com/nicobailon/pi-web-access/pull/382).
 - Removed the unconditional global `fetch` replacement during extension initialization; proxy transport is now installed lazily when a proxied web-tool operation runs. Thanks to [@AdrianJ20](https://github.com/AdrianJ20) for [issue #388](https://github.com/nicobailon/pi-web-access/issues/388).
 - Send OpenCode session attribution headers when generating summaries, preventing configured `opencode` and `opencode-go` summary models from silently falling through to another candidate. Thanks to [@damozhang](https://github.com/damozhang) for issue #385.

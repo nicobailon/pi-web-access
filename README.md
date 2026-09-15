@@ -373,7 +373,7 @@ Toggle with **Ctrl+Shift+W** to see live request/response activity:
 
 ## Configuration
 
-Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_DIR` nor `XDG_CONFIG_HOME` is set. `PI_CODING_AGENT_DIR` takes precedence when set; with `XDG_CONFIG_HOME`, an existing `XDG_CONFIG_HOME/pi/web-search.json` is preferred, an existing legacy `~/.pi/web-search.json` remains usable for compatibility, and the XDG path is used as the new-config target when neither file exists. The no-environment default does not fall back to the legacy root. Every field is optional.
+Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_DIR` nor `XDG_CONFIG_HOME` is set. `PI_CODING_AGENT_DIR` takes precedence when set; with `XDG_CONFIG_HOME`, an existing `XDG_CONFIG_HOME/pi/web-search.json` is preferred, an existing legacy `~/.pi/web-search.json` remains usable for compatibility, and the XDG path is used as the new-config target when neither file exists. When neither environment variable is set, an existing `~/.pi/agent/web-search.json` is preferred, an existing legacy `~/.pi/web-search.json` remains usable for compatibility, and the agent directory is used as the new-config target when neither file exists. Every field is optional.
 
 ```json
 {

@@ -64,7 +64,7 @@ test("web-search config path uses PI_CODING_AGENT_DIR before XDG_CONFIG_HOME", a
 	});
 });
 
-test("web-search config path defaults to the Pi agent directory without a legacy fallback", async () => {
+test("web-search config path prefers the Pi agent directory over legacy config", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-web-access-agent-config-path-"));
 	const home = join(root, "home");
 	const agentDir = join(home, ".pi", "agent");
@@ -92,6 +92,59 @@ test("web-search config path defaults to the Pi agent directory without a legacy
 		dir: agentDir,
 		path: join(agentDir, "web-search.json"),
 		available: true,
+	});
+});
+
+test("web-search config path falls back to legacy ~/.pi when agent config is absent", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-web-access-legacy-fallback-"));
+	const home = join(root, "home");
+	await mkdir(join(home, ".pi"), { recursive: true });
+	await writeFile(join(home, ".pi", "web-search.json"), JSON.stringify({ perplexityApiKey: "pplx-from-legacy" }) + "\n", "utf8");
+
+	const child = runChild(`
+		const { getWebSearchConfigDir, getWebSearchConfigPath } = await import(${JSON.stringify(utilsUrl)});
+		const { isPerplexityAvailable } = await import(${JSON.stringify(perplexityUrl)});
+		console.log(JSON.stringify({
+			dir: getWebSearchConfigDir(),
+			path: getWebSearchConfigPath(),
+			available: isPerplexityAvailable(),
+		}));
+	`, {
+		PI_CODING_AGENT_DIR: undefined,
+		XDG_CONFIG_HOME: undefined,
+		HOME: home,
+		USERPROFILE: home,
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	assert.deepEqual(JSON.parse(child.stdout), {
+		dir: join(home, ".pi"),
+		path: join(home, ".pi", "web-search.json"),
+		available: true,
+	});
+});
+
+test("web-search config path defaults to the Pi agent directory when both files are absent", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-web-access-absent-config-"));
+	const home = join(root, "home");
+
+	const child = runChild(`
+		const { getWebSearchConfigDir, getWebSearchConfigPath } = await import(${JSON.stringify(utilsUrl)});
+		console.log(JSON.stringify({
+			dir: getWebSearchConfigDir(),
+			path: getWebSearchConfigPath(),
+		}));
+	`, {
+		PI_CODING_AGENT_DIR: undefined,
+		XDG_CONFIG_HOME: undefined,
+		HOME: home,
+		USERPROFILE: home,
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	assert.deepEqual(JSON.parse(child.stdout), {
+		dir: join(home, ".pi", "agent"),
+		path: join(home, ".pi", "agent", "web-search.json"),
 	});
 });
 
