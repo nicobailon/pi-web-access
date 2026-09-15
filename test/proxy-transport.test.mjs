@@ -119,6 +119,57 @@ function proxyArg(args) {
 	return index === -1 ? undefined : args[index + 1];
 }
 
+test("extension initialization preserves fetch identity and installs proxy transport on first proxied tool call", async (t) => {
+	await withFakeCurl(t, {
+		"https://example.com/page": {
+			status: 200,
+			statusText: "OK",
+			body: "<html><title>Proxy page</title><body>Fetched lazily through the requested proxy.</body></html>",
+		},
+	}, async (logPath) => {
+		const configDir = dirname(logPath);
+		const child = spawnSync(process.execPath, ["--input-type=module"], {
+			input: `
+				const hostFetch = globalThis.fetch;
+				const tools = [];
+				const initializeExtension = (await import(${JSON.stringify(indexUrl)})).default;
+				initializeExtension({
+					registerTool(tool) { tools.push(tool); },
+					registerCommand() {},
+					registerShortcut() {},
+					on() {},
+					appendEntry() {},
+				});
+				const unchangedAfterInit = globalThis.fetch === hostFetch;
+				const tool = tools.find((candidate) => candidate.name === "fetch_content");
+				const result = await tool.execute("call", {
+					url: "https://example.com/page",
+					proxy: "http://call-proxy.example:8080",
+				});
+				console.log(JSON.stringify({
+					unchangedAfterInit,
+					installedAfterProxyCall: globalThis.fetch !== hostFetch,
+					successful: result.details.successful,
+				}));
+			`,
+			encoding: "utf8",
+			env: { ...process.env, PI_CODING_AGENT_DIR: configDir },
+			maxBuffer: 2 * 1024 * 1024,
+		});
+
+		assert.equal(child.status, 0, child.stderr);
+		assert.deepEqual(JSON.parse(child.stdout.trim()), {
+			unchangedAfterInit: true,
+			installedAfterProxyCall: true,
+			successful: 1,
+		});
+		const calls = await readCurlCalls(logPath);
+		assert.equal(calls.length, 1);
+		assert.equal(calls[0].at(-1), "https://example.com/page");
+		assert.ok(["http://call-proxy.example:8080", "http://call-proxy.example:8080/"].includes(proxyArg(calls[0])));
+	});
+});
+
 test("proxy curl redirects strip caller headers across origins", async (t) => {
 	await withFakeCurl(t, {
 		"https://origin.example/start": { status: 302, statusText: "Found", location: "https://other.example/final" },

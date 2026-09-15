@@ -256,9 +256,11 @@ export function runWithProxy<T>(proxy: string | undefined, fn: () => T): T {
 	if (proxy === undefined) {
 		const configured = loadConfiguredProxy();
 		if (configured === null) return fn();
+		installGlobalProxyFetch();
 		return proxyStorage.run(configured, fn);
 	}
 	const normalized = normalizeProxyUrl(proxy, "proxy");
+	if (normalized !== null) installGlobalProxyFetch();
 	return proxyStorage.run(normalized, fn);
 }
 

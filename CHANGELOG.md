@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Removed the unconditional global `fetch` replacement during extension initialization; proxy transport is now installed lazily when a proxied web-tool operation runs. Thanks to [@AdrianJ20](https://github.com/AdrianJ20) for [issue #388](https://github.com/nicobailon/pi-web-access/issues/388).
 - Send OpenCode session attribution headers when generating summaries, preventing configured `opencode` and `opencode-go` summary models from silently falling through to another candidate. Thanks to [@damozhang](https://github.com/damozhang) for issue #385.
 - Send the `x-opencode-session` / `x-opencode-client` attribution headers when `fetch_content` answer mode uses an `opencode` or `opencode-go` model. The answer path dispatches through the model registry, which bypasses the attribution headers Pi merges in the main agent loop, so those requests were rejected with `400 MissingSessionID`. Thanks to [@MrSerious0](https://github.com/MrSerious0) for PR #381.
 - Pass extracted PDF Markdown to `fetch_content` answer mode instead of the saved-file notice, while preserving readable-mode file output and stored-content retrieval. Thanks to [@MDGChamomile](https://github.com/MDGChamomile) for PR #390.

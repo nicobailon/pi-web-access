@@ -13,7 +13,7 @@ import { clearCloneCache } from "./github-extract.ts";
 import { ALL_SEARCH_PROVIDERS, assertSearchProviderSelectionAllowed, getAllowedSearchProviders, getConfiguredSearchRouting, normalizeSearchProviderSelection, providerLabel, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
 import type { SearchResult } from "./perplexity.ts";
-import { formatSeconds, getWebSearchConfigDir, getWebSearchConfigPath, installGlobalProxyFetch, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
+import { formatSeconds, getWebSearchConfigDir, getWebSearchConfigPath, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
 import {
 	clearResults,
 	deleteResult,
@@ -1047,7 +1047,6 @@ export default function (pi: ExtensionAPI) {
 		? `all searches eligible allowed providers (${allEligibleProviders.map(providerLabel).join(", ")}); explicit-only allowed providers (${allExcludedProviders.map(providerLabel).join(", ")}) remain excluded`
 		: `all searches every eligible allowed provider (${allEligibleProviders.map(providerLabel).join(", ")})`;
 	const curatorRunState = registerCuratorRunLifecycle(pi);
-	installGlobalProxyFetch();
 	const toolNames = resolveToolNames(initConfig);
 	const webSearchEnabled = isToolEnabled(initConfig, "webSearch");
 	const sourceCheckEnabled = isToolEnabled(initConfig, "sourceCheck");
