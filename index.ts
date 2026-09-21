@@ -809,7 +809,7 @@ function boundSearchPresentation(
 		truncated: true,
 		originalChars,
 		returnedChars: bounded.length,
-		omittedChars: originalChars - prefixLength,
+		omittedChars: Math.max(0, text.length - prefixLength),
 	};
 }
 

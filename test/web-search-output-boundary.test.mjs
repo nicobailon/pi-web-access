@@ -124,9 +124,12 @@ test("default raw multi-query output is bounded, attributed, and stored without 
 	]);
 	assert.equal(out.details.truncated, true);
 	assert.equal(out.details.returnedChars, DEFAULT_CAP);
-	const retainedPrefix = out.text.indexOf("\n\n---\n[Output truncated.]");
+	const truncationLabel = "\n\n---\n[Output truncated.]";
+	const retainedPrefix = out.text.indexOf(truncationLabel);
 	assert.ok(retainedPrefix > 0);
-	assert.equal(out.details.originalChars - retainedPrefix, out.details.omittedChars);
+	const retainedGuidance = out.text.slice(retainedPrefix + truncationLabel.length);
+	assert.ok(retainedGuidance.length > 0);
+	assert.equal(out.details.originalChars - retainedGuidance.length - retainedPrefix, out.details.omittedChars);
 	assert.deepEqual(out.storedAnswers, [LARGE_ANSWER_LENGTH, LARGE_ANSWER_LENGTH]);
 	assert.equal(out.storedLate, true);
 });
