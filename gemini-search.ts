@@ -271,20 +271,11 @@ function isAbortError(err: unknown): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
 }
 
-function shouldTryOpenAIInAuto(options: SearchOptions): boolean {
-	if (options.recencyFilter) return false;
-	if (typeof options.numResults === "number" && Number.isFinite(options.numResults) && Math.floor(options.numResults) !== 5) {
-		return false;
-	}
-	return true;
-}
-
 function isOpenAICodexSelected(ctx?: ExtensionContext): boolean {
 	return ctx?.model?.provider === "openai-codex";
 }
 
 async function tryOpenAIInAuto(query: string, options: FullSearchOptions, fallbackErrors: string[]): Promise<AttributedSearchResponse | null> {
-	if (!shouldTryOpenAIInAuto(options)) return null;
 	try {
 		if (await isOpenAISearchAvailable(options.extensionContext)) {
 			const result = await searchWithOpenAI(query, options, options.extensionContext);

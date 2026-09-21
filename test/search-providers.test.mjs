@@ -1120,6 +1120,110 @@ test("auto search prefers Codex-backed OpenAI search when the selected model is 
 	assert.equal(output.capturedUrl, "https://chatgpt.com/backend-api/codex/responses");
 });
 
+test("auto search keeps selected Codex-backed OpenAI for result counts and recency filters", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-auto-codex-options-"));
+	const child = runChild(`
+		globalThis.fetch = async (url) => {
+			const requestUrl = String(url);
+			if (requestUrl === "https://chatgpt.com/backend-api/codex/responses") {
+				return new Response(JSON.stringify({
+					output: [
+						{ type: "web_search_call", action: { sources: [] } },
+						{ type: "message", content: [{ type: "output_text", text: "codex option answer" }] },
+					],
+				}), { status: 200, headers: { "content-type": "application/json" } });
+			}
+			if (requestUrl.startsWith("https://mcp.exa.ai/mcp")) {
+				const event = { result: { content: [{ type: "text", text: "Title: Exa Fallback\\nURL: https://exa.example/fallback\\nText: fallback answer" }] } };
+				return new Response("data: " + JSON.stringify(event) + "\\n\\n", {
+					status: 200,
+					headers: { "content-type": "text/event-stream" },
+				});
+			}
+			throw new Error("Unexpected fetch " + requestUrl);
+		};
+
+		const ctx = {
+			model: { provider: "openai-codex", id: "gpt-5.6-terra" },
+			modelRegistry: {
+				getAll: () => [{ provider: "openai-codex", id: "gpt-5.6-terra" }],
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "codex-token", headers: {} }),
+			},
+		};
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const results = [];
+		for (const numResults of [1, 20]) {
+			for (const recencyFilter of ["day", "week", "month", "year"]) {
+				const result = await search("current model search", {
+					provider: "auto",
+					extensionContext: ctx,
+					numResults,
+					recencyFilter,
+				});
+				results.push({ numResults, recencyFilter, provider: result.provider, answer: result.answer });
+			}
+		}
+		console.log(JSON.stringify(results));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		PI_CODING_AGENT_DIR: home,
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const results = JSON.parse(child.stdout.trim());
+	assert.equal(results.length, 8);
+	for (const result of results) {
+		assert.equal(result.provider, "openai", `${result.numResults}/${result.recencyFilter}`);
+		assert.equal(result.answer, "codex option answer", `${result.numResults}/${result.recencyFilter}`);
+	}
+});
+
+test("auto search falls through to Exa when selected Codex-backed OpenAI fails", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-auto-codex-failure-"));
+	const child = runChild(`
+		globalThis.fetch = async (url) => {
+			const requestUrl = String(url);
+			if (requestUrl === "https://chatgpt.com/backend-api/codex/responses") {
+				return new Response("Codex unavailable", { status: 503 });
+			}
+			if (requestUrl.startsWith("https://mcp.exa.ai/mcp")) {
+				const event = { result: { content: [{ type: "text", text: "Title: Exa Fallback\\nURL: https://exa.example/fallback\\nText: Exa after Codex failure" }] } };
+				return new Response("data: " + JSON.stringify(event) + "\\n\\n", {
+					status: 200,
+					headers: { "content-type": "text/event-stream" },
+				});
+			}
+			throw new Error("Unexpected fetch " + requestUrl);
+		};
+
+		const ctx = {
+			model: { provider: "openai-codex", id: "gpt-5.6-terra" },
+			modelRegistry: {
+				getAll: () => [{ provider: "openai-codex", id: "gpt-5.6-terra" }],
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "codex-token", headers: {} }),
+			},
+		};
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const result = await search("current model search", {
+			provider: "auto",
+			extensionContext: ctx,
+			numResults: 20,
+			recencyFilter: "week",
+		});
+		console.log(JSON.stringify({ provider: result.provider, answer: result.answer }));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		PI_CODING_AGENT_DIR: home,
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.provider, "exa");
+	assert.match(output.answer, /Exa after Codex failure/);
+});
+
 test("auto search uses Exa before OpenAI when the selected model is not openai-codex", async () => {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-auto-non-codex-selected-"));
 	const child = runChild(`
