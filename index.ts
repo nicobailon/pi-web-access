@@ -1443,7 +1443,6 @@ export default function (pi: ExtensionAPI) {
 		const isBackgroundFetch = fetchId !== null && !hasInlineReady;
 		const unboundedPresentation = output.trim();
 		const buildGuidance = (forTruncation: boolean): string => {
-			if (hasApprovedSummary) return "";
 			let value = "";
 			if (hasInlineReady && opts.inlineContent && fetchId) {
 				value += `\n---\nFull content for ${opts.inlineContent.length} sources is ready as responseId "${fetchId}". `;
@@ -1461,11 +1460,9 @@ export default function (pi: ExtensionAPI) {
 			}
 			return value;
 		};
-		const guidance = buildGuidance(false);
-		const truncationGuidance = buildGuidance(true);
 		const presentation = hasApprovedSummary
 			? { text: unboundedPresentation, truncated: false, originalChars: unboundedPresentation.length, returnedChars: unboundedPresentation.length, omittedChars: 0 }
-			: boundSearchPresentation(unboundedPresentation, guidance, truncationGuidance, maxInlineContentChars);
+			: boundSearchPresentation(unboundedPresentation, buildGuidance(false), buildGuidance(true), maxInlineContentChars);
 
 		return {
 			content: [{ type: "text", text: presentation.text }],
