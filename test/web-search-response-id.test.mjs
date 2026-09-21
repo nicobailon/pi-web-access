@@ -43,7 +43,7 @@ function runWebSearchThenRetrieve(config) {
 				const r = await retrieve.execute("t2", { responseId: id, queryIndex: 0 });
 				retrieved = { isError: r.isError ?? false, text: r.content[0].text };
 			}
-			console.log(JSON.stringify({ text, searchId: result.details.searchId, retrieved, hasRetrieveTool: Boolean(retrieve) }));
+			console.log(JSON.stringify({ text, details: result.details, searchId: result.details.searchId, retrieved, hasRetrieveTool: Boolean(retrieve) }));
 			`,
 			encoding: "utf8",
 			timeout: 30_000,
@@ -61,6 +61,10 @@ test("web_search output tells the model the responseId that get_search_content a
 	const out = runWebSearchThenRetrieve({ provider: "openai" });
 	assert.ok(out.hasRetrieveTool);
 	assert.match(out.text, /Results stored as responseId "[a-z0-9]+"\. Use get_search_content\(\{ responseId: "[a-z0-9]+", queryIndex: 0 \}\)/);
+	assert.match(out.text, /Provider:\*\* openai/);
+	assert.deepEqual(out.details.queryProviders, [{ query: "response id", providers: ["openai"] }]);
+	assert.equal(out.details.truncated, false);
+	assert.equal(out.details.omittedChars, 0);
 	assert.equal(out.text.match(/responseId "([^"]+)"/)[1], out.searchId, "printed id must be the stored searchId");
 	assert.equal(out.retrieved.isError, false, out.retrieved.text);
 	assert.match(out.retrieved.text, /Search answer|example\.com\/source/);

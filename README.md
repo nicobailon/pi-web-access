@@ -163,7 +163,7 @@ fetch_content({ url: "/path/to/recording.mp4", prompt: "What error appears on sc
 
 ### web_search
 
-Search the web via OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SERPdive, Kagi, Bocha, Ollama, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data SERP, SerpBase, SerpApi, Serper, Serply, self-hosted SearXNG, keyless DuckDuckGo, Exa, Perplexity AI, Gemini, or Kimi. By default, returns source-linked search results or provider answers.
+Search the web via OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SERPdive, Kagi, Bocha, Ollama, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data SERP, SerpBase, SerpApi, Serper, Serply, self-hosted SearXNG, keyless DuckDuckGo, Exa, Perplexity AI, Gemini, or Kimi. The default `none` workflow makes no summary, browser, or model call: it returns bounded raw results, identifies the provider used for each query, and stores the full results for retrieval by responseId.
 
 ```typescript
 web_search({ query: "rust async programming" })
@@ -226,12 +226,13 @@ Thanks to [@linuxtextadventurer](https://github.com/linuxtextadventurer) for PR 
 
 ### get_search_content
 
-Retrieve stored content from previous searches or fetches. Fetched URL content is stored in full in a private `web-search-cache` directory under the Pi config directory, not in the session JSONL. This includes `fetch_content` answer mode, which stores the original page content. The cache has a one-hour lifetime and fixed limits of 128 entries and 128 MiB; when either limit is reached, the oldest entries are removed first. On macOS and Linux the cache directory and files are kept at permissions `0700` and `0600`, respectively. Use `findText` to locate bounded matching passages without paging through a large page, or use `offset` and `limit` to retrieve slices intentionally.
+Retrieve stored content from previous searches or fetches. Search provider answers and every result remain available in full and can be paged with `offset` and `limit` or searched with `findText`. Fetched URL content is stored in full in a private `web-search-cache` directory under the Pi config directory, not in the session JSONL. This includes `fetch_content` answer mode, which stores the original page content. The cache has a one-hour lifetime and fixed limits of 128 entries and 128 MiB; when either limit is reached, the oldest entries are removed first. On macOS and Linux the cache directory and files are kept at permissions `0700` and `0600`, respectively. Use `findText` to locate bounded matching passages without paging through a large page, or use `offset` and `limit` to retrieve slices intentionally.
 
 ```typescript
 get_search_content({ responseId: "abc123", urlIndex: 0 })
 get_search_content({ responseId: "abc123", url: "https://...", offset: 30000 })
 get_search_content({ responseId: "abc123", query: "original query" })
+get_search_content({ responseId: "abc123", queryIndex: 0, offset: 30000 })
 get_search_content({ responseId: "abc123", urlIndex: 0, findText: "installation" })
 get_search_content({ responseId: "abc123", urlIndex: 0, findText: ["timeout", "retry"], findMode: "fuzzy" })
 ```

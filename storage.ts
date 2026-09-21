@@ -36,6 +36,7 @@ export interface QueryResultData {
 	results: SearchResult[];
 	error: string | null;
 	provider?: string;
+	providers?: string[];
 }
 
 interface FetchCacheRef {

@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Bounded raw `web_search` output while preserving full, pageable stored results and disclosing the providers used. Thanks to [@theSprog](https://github.com/theSprog) for [issue #423](https://github.com/nicobailon/pi-web-access/issues/423).
 - Added lazy web-tool activation so supported fresh sessions begin with a compact `web_enable` loader and expose configured web schemas only after activation. Thanks to [@Knimoms](https://github.com/Knimoms) for [PR #424](https://github.com/nicobailon/pi-web-access/pull/424).
 - Added an explicit-only Baizhi MCP search provider with credential-safe session handling, routing, and Curator support. Thanks to [@ct-jaryn](https://github.com/ct-jaryn) for [PR #422](https://github.com/nicobailon/pi-web-access/pull/422).
 

@@ -726,7 +726,7 @@ function formatSearchSummary(results: SearchResult[], answer: string): string {
 		return answer ? `${answer}\n\n---\n\n**Sources:**\nNo sources returned.` : "No results found.";
 	}
 	let output = answer ? `${answer}\n\n---\n\n**Sources:**\n` : "";
-	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n\n");
+	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ""}`).join("\n\n");
 	return output;
 }
 
@@ -777,13 +777,43 @@ function hasFullInlineCoverage(urls: string[], inlineContent: ExtractedContent[]
 
 function formatFullResults(queryData: QueryResultData): string {
 	let output = `## Results for: "${queryData.query}"\n\n`;
+	const providers = queryData.providers ?? (queryData.provider ? [queryData.provider] : []);
+	if (providers.length > 0) output += `**Provider${providers.length === 1 ? "" : "s"}:** ${providers.join(", ")}\n\n`;
 	if (queryData.answer) {
 		output += `${queryData.answer}\n\n---\n\n`;
 	}
 	for (const r of queryData.results) {
-		output += `### ${r.title}\n${r.url}\n\n`;
+		output += `### ${r.title}\n${r.url}${r.snippet ? `\n\n${r.snippet}` : ""}\n\n`;
 	}
 	return output;
+}
+
+function boundSearchPresentation(
+	text: string,
+	maxChars: number,
+	responseId: string,
+	queryCount: number,
+	retrievalTool: string,
+	retrievalEnabled: boolean,
+): { text: string; truncated: boolean; originalChars: number; returnedChars: number; omittedChars: number } {
+	const originalChars = text.length;
+	if (originalChars <= maxChars) {
+		return { text, truncated: false, originalChars, returnedChars: originalChars, omittedChars: 0 };
+	}
+	const retrieval = retrievalEnabled
+		? `Use ${retrievalTool}({ responseId: "${responseId}", queryIndex: 0, offset: 0, limit: ${maxChars} }) to retrieve the first bounded page${queryCount > 1 ? `; repeat with queryIndex 1 through ${queryCount - 1}` : ""}.`
+		: `Enable ${retrievalTool} to retrieve the full stored results.`;
+	const marker = `\n\n---\n[Output truncated. Full results are stored as responseId "${responseId}". ${retrieval}]`;
+	// Reserve marker space so the complete model-visible response never exceeds the configured ceiling.
+	const prefixLength = Math.max(0, maxChars - marker.length);
+	const bounded = `${text.slice(0, prefixLength)}${marker}`.slice(0, maxChars);
+	return {
+		text: bounded,
+		truncated: true,
+		originalChars,
+		returnedChars: bounded.length,
+		omittedChars: originalChars - bounded.length,
+	};
 }
 
 function abortPendingFetches(): void {
@@ -1377,6 +1407,13 @@ export default function (pi: ExtensionAPI) {
 			if (opts.curated) {
 				output += "[These results were manually curated by the user in the browser. Use them as-is — do not re-search or discard.]\n\n";
 			}
+			const providerNames = opts.results.map(result => {
+				const providers = result.providers ?? (result.provider ? [result.provider] : []);
+				return providers.join(", ") || "unknown";
+			});
+			output += opts.results.length === 1
+				? `**Provider:** ${providerNames[0]}\n\n`
+				: `**Providers used:** ${providerNames.map((name, index) => `Query ${index + 1}: ${name}`).join("; ")}\n\n`;
 			const duplicateQueries = opts.curated ? duplicateQuerySet(opts.results) : new Set<string>();
 			for (const { query, answer, results, error, provider } of opts.results) {
 				if (opts.queryList.length > 1) {
@@ -1417,9 +1454,13 @@ export default function (pi: ExtensionAPI) {
 		if (getSearchContentEnabled && !hasApprovedSummary) {
 			output += `\n---\nResults stored as responseId "${searchId}". Use ${toolNames.getSearchContent}({ responseId: "${searchId}", queryIndex: 0 }) to retrieve them.`;
 		}
+		const unboundedPresentation = output.trim();
+		const presentation = hasApprovedSummary
+			? { text: unboundedPresentation, truncated: false, originalChars: unboundedPresentation.length, returnedChars: unboundedPresentation.length, omittedChars: 0 }
+			: boundSearchPresentation(unboundedPresentation, getMaxInlineContentChars(initConfig), searchId, opts.results.length, toolNames.getSearchContent, getSearchContentEnabled);
 
 		return {
-			content: [{ type: "text", text: output.trim() }],
+			content: [{ type: "text", text: presentation.text }],
 			details: {
 				queries: opts.queryList,
 				queryCount: opts.queryList.length,
@@ -1429,6 +1470,14 @@ export default function (pi: ExtensionAPI) {
 				fetchId,
 				fetchUrls: isBackgroundFetch ? opts.urls : undefined,
 				searchId,
+				queryProviders: opts.results.map(result => ({
+					query: result.query,
+					providers: result.providers ?? (result.provider ? [result.provider] : []),
+				})),
+				truncated: presentation.truncated,
+				originalChars: presentation.originalChars,
+				returnedChars: presentation.returnedChars,
+				omittedChars: presentation.omittedChars,
 				...(opts.curated ? {
 					curated: true,
 					curatedFrom: opts.curatedFrom,
@@ -1780,7 +1829,7 @@ export default function (pi: ExtensionAPI) {
 		name: toolNames.webSearch,
 		label: "Web Search",
 		description:
-			`Search the web with ${allowedSearchProviders.map(providerLabel).join(", ")}. Provider arrays run simultaneously; ${allPolicyDescription}. By default, returns source-linked search results or provider answers. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. When includeContent is true, full page content is fetched in the background. Searches return without the interactive browser curator by default; set workflow to "summary-review" to open the curator with an auto-generated summary draft or "auto-summary" to generate a summary without the browser curator. The configured provider is used when provider is omitted or set to auto; omit provider unless explicitly overriding it.`,
+			`Search the web with ${allowedSearchProviders.map(providerLabel).join(", ")}. Provider arrays run simultaneously; ${allPolicyDescription}. The default workflow is none: it returns bounded source-linked search results or provider answers without a curator or generated summary, identifies the providers used, and stores full results for retrieval by responseId. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. When includeContent is true, full page content is fetched in the background. Set workflow to "summary-review" to open the curator with an auto-generated summary draft or "auto-summary" to generate a summary without the browser curator. The configured provider is used when provider is omitted or set to auto; omit provider unless explicitly overriding it.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
 		parameters: Type.Object({
@@ -2035,7 +2084,7 @@ export default function (pi: ExtensionAPI) {
 				});
 
 				try {
-					const { answer, results, inlineContent, provider } = await search(query, {
+					const { answer, results, inlineContent, provider, providerResponses } = await search(query, {
 						provider: resolvedProvider,
 						numResults: params.numResults,
 						recencyFilter,
@@ -2045,7 +2094,8 @@ export default function (pi: ExtensionAPI) {
 						extensionContext: ctx,
 					});
 
-					return { result: { query, answer, results, error: null, provider } satisfies QueryResultData, inlineContent };
+					const providers = providerResponses?.map(response => response.provider) ?? [provider];
+					return { result: { query, answer, results, error: null, provider, providers } satisfies QueryResultData, inlineContent };
 				} catch (err) {
 					if (signal?.aborted || isAbortError(err)) throw err;
 					const message = err instanceof Error ? err.message : String(err);
@@ -2835,7 +2885,7 @@ export default function (pi: ExtensionAPI) {
 		pi.registerTool({
 		name: toolNames.getSearchContent,
 		label: "Get Search Content",
-		description: `Retrieve bounded content slices or find matching passages in a previous ${storedContentSources} call.`,
+		description: `Retrieve bounded pages of full stored search results or fetched content, or find matching passages, from a previous ${storedContentSources} call.`,
 		promptSnippet:
 			`Use after ${storedContentSources} to retrieve stored content via responseId. Use findText to locate passages without paging through the full content.`,
 		parameters: Type.Object({
@@ -2844,8 +2894,8 @@ export default function (pi: ExtensionAPI) {
 			queryIndex: Type.Optional(Type.Integer({ minimum: 0, description: "Get content for query at index" })),
 			url: Type.Optional(Type.String({ description: "Get content for this URL" })),
 			urlIndex: Type.Optional(Type.Integer({ minimum: 0, description: "Get content for URL at index" })),
-			offset: Type.Optional(Type.Integer({ minimum: 0, description: "Character offset for fetched URL content slices (default 0). Ignored when findText is supplied." })),
-			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: maxInlineContentChars, description: "Maximum characters to return for fetched URL content slices (default and max are set by maxInlineContentChars). Ignored when findText is supplied." })),
+			offset: Type.Optional(Type.Integer({ minimum: 0, description: "Character offset for stored search or fetched URL content slices (default 0). Ignored when findText is supplied." })),
+			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: maxInlineContentChars, description: "Maximum characters to return for stored search or fetched URL content slices (default and max are set by maxInlineContentChars). Ignored when findText is supplied." })),
 			findText: Type.Optional(Type.Union([
 				Type.String({ minLength: 1, maxLength: 500 }),
 				Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 10 }),
@@ -2966,7 +3016,7 @@ export default function (pi: ExtensionAPI) {
 						const { text, ...findDetails } = found;
 						return {
 							content: [{ type: "text", text }],
-							details: { query: queryData.query, resultCount: queryData.results.length, findMode: params.findMode ?? "case-insensitive", ...findDetails },
+							details: { responseId: params.responseId, query: queryData.query, resultCount: queryData.results.length, contentLength: fullResults.length, findMode: params.findMode ?? "case-insensitive", ...findDetails },
 						};
 					} catch (err) {
 						const error = err instanceof Error ? err.message : String(err);
@@ -2977,9 +3027,47 @@ export default function (pi: ExtensionAPI) {
 					}
 				}
 
+				const offset = params.offset ?? 0;
+				const limit = params.limit ?? maxInlineContentChars;
+				if (!Number.isInteger(offset) || offset < 0) {
+					return {
+						content: [{ type: "text", text: `Invalid offset: received ${formatInputValue(offset)} for query ${formatInputValue(queryData.query)}; offset must be a non-negative integer. Use 0 or a larger integer.` }],
+						details: { error: "Invalid offset", offset },
+					};
+				}
+				if (!Number.isInteger(limit) || limit <= 0 || limit > maxInlineContentChars) {
+					return {
+						content: [{ type: "text", text: `Invalid limit: received ${formatInputValue(limit)} for query ${formatInputValue(queryData.query)}; limit must be an integer from 1 to ${maxInlineContentChars}. Use a value in that range.` }],
+						details: { error: "Invalid limit", limit, maxLimit: maxInlineContentChars },
+					};
+				}
+				if (offset > fullResults.length) {
+					return {
+						content: [{ type: "text", text: `Offset ${offset} is out of range for query ${formatInputValue(queryData.query)} in responseId ${formatInputValue(params.responseId)}. Received offset ${offset}; valid range is 0-${fullResults.length}. Use an offset within that range.` }],
+						details: { error: "Offset out of range", offset, contentLength: fullResults.length },
+					};
+				}
+				const endOffset = Math.min(offset + limit, fullResults.length);
+				const resultSlice = fullResults.slice(offset, endOffset);
+				const hasMore = endOffset < fullResults.length;
+				let text = resultSlice;
+				if (hasMore || offset > 0) {
+					text += `\n\n---\nShowing chars ${offset}-${endOffset} of ${fullResults.length}.`;
+					if (hasMore) text += ` Use ${toolNames.getSearchContent}({ responseId: "${params.responseId}", queryIndex: ${data.queries.indexOf(queryData)}, offset: ${endOffset}, limit: ${limit} }) for the next slice.`;
+				}
 				return {
-					content: [{ type: "text", text: fullResults }],
-					details: { query: queryData.query, resultCount: queryData.results.length },
+					content: [{ type: "text", text }],
+					details: {
+						responseId: params.responseId,
+						query: queryData.query,
+						resultCount: queryData.results.length,
+						contentLength: fullResults.length,
+						offset,
+						limit,
+						returnedChars: resultSlice.length,
+						nextOffset: hasMore ? endOffset : null,
+						truncated: hasMore,
+					},
 				};
 			}
 
