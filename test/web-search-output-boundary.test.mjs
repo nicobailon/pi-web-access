@@ -123,13 +123,13 @@ test("default raw multi-query output is bounded, attributed, and stored without 
 		{ query: "second", providers: ["openai"] },
 	]);
 	assert.equal(out.details.truncated, true);
-	assert.equal(out.details.returnedChars, DEFAULT_CAP);
 	const truncationLabel = "\n\n---\n[Output truncated.]";
 	const retainedPrefix = out.text.indexOf(truncationLabel);
 	assert.ok(retainedPrefix > 0);
+	assert.equal(out.details.returnedChars, retainedPrefix);
 	const retainedGuidance = out.text.slice(retainedPrefix + truncationLabel.length);
 	assert.ok(retainedGuidance.length > 0);
-	assert.equal(out.details.originalChars - retainedGuidance.length - retainedPrefix, out.details.omittedChars);
+	assert.equal(out.details.originalChars - out.details.returnedChars, out.details.omittedChars);
 	assert.deepEqual(out.storedAnswers, [LARGE_ANSWER_LENGTH, LARGE_ANSWER_LENGTH]);
 	assert.equal(out.storedLate, true);
 });
@@ -164,7 +164,7 @@ test("configured inline limit bounds the complete raw presentation", () => {
 	const configuredCap = 12_000;
 	const out = runBoundaryScenario({ maxInlineContentChars: configuredCap });
 	assert.equal(out.text.length, configuredCap);
-	assert.equal(out.details.returnedChars, configuredCap);
+	assert.ok(out.details.returnedChars < configuredCap);
 	assert.match(out.text, /limit: 12000/);
 	assert.ok(out.page1.details.returnedChars < configuredCap);
 });
@@ -193,7 +193,7 @@ test("truncated inline-ready search retains fetch and search retrieval guidance"
 test("truncated background-fetch search retains state, fetchId, and search retrieval guidance", () => {
 	const out = runIncludeContentScenario("background");
 	assert.equal(out.text.length, 1_000);
-	assert.match(out.text, new RegExp(`Content fetching is in background as responseId "${out.details.fetchId}"`));
+	assert.match(out.text, new RegExp(`Content fetching in background as responseId "${out.details.fetchId}"`));
 	assert.match(out.text, /Will notify when ready/);
 	assert.match(out.text, new RegExp(`Full search results are stored as responseId "${out.details.searchId}"`));
 	assert.match(out.text, new RegExp(`get_search_content\\(\\{ responseId: "${out.details.searchId}", queryIndex: 0, offset: 0, limit: 1000 \\}\\)`));

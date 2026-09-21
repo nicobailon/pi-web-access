@@ -796,9 +796,8 @@ function boundSearchPresentation(
 	maxChars: number,
 ): { text: string; truncated: boolean; originalChars: number; returnedChars: number; omittedChars: number } {
 	const fullText = `${text}${guidance}`;
-	const originalChars = fullText.length;
-	if (originalChars <= maxChars) {
-		return { text: fullText, truncated: false, originalChars, returnedChars: originalChars, omittedChars: 0 };
+	if (fullText.length <= maxChars) {
+		return { text: fullText, truncated: false, originalChars: text.length, returnedChars: text.length, omittedChars: 0 };
 	}
 	const marker = `\n\n---\n[Output truncated.]${truncationGuidance}`;
 	// Reserve marker space so the complete model-visible response never exceeds the configured ceiling.
@@ -807,9 +806,9 @@ function boundSearchPresentation(
 	return {
 		text: bounded,
 		truncated: true,
-		originalChars,
-		returnedChars: bounded.length,
-		omittedChars: Math.max(0, text.length - prefixLength),
+		originalChars: text.length,
+		returnedChars: prefixLength,
+		omittedChars: text.length - prefixLength,
 	};
 }
 
@@ -1450,7 +1449,7 @@ export default function (pi: ExtensionAPI) {
 					? `Use ${toolNames.getSearchContent}({ responseId: "${fetchId}", urlIndex: 0, offset: 0, limit: ${maxInlineContentChars} }) to retrieve the first bounded page.`
 					: forTruncation ? `Enable ${toolNames.getSearchContent} to retrieve the full stored content.` : "";
 			} else if (isBackgroundFetch && fetchId) {
-				value += `\n---\nContent fetching is in background as responseId "${fetchId}". Will notify when ready.`;
+				value += `\n---\nContent fetching in background as responseId "${fetchId}". Will notify when ready.`;
 			}
 			if (getSearchContentEnabled || forTruncation) {
 				value += `\n---\nFull search results are stored as responseId "${searchId}". `;

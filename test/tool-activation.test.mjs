@@ -29,7 +29,11 @@ function run(config = {}, options = {}) {
 				},
 			};
 			initializeExtension(pi);
-			const ctx = { sessionManager: { getBranch: () => [], buildSessionContext: () => ({ messages: options.messages ?? [] }) } };
+			const entries = (options.messages ?? []).map((message, index) => ({
+				type: "message", id: "message-" + index, parentId: index ? "message-" + (index - 1) : null,
+				timestamp: new Date(index).toISOString(), message,
+			}));
+			const ctx = { sessionManager: { getBranch: () => entries } };
 			for (const handler of handlers.get(options.event ?? "session_start") ?? []) await handler(options.eventPayload ?? {}, ctx);
 			const before = [...active];
 			let result;
@@ -100,6 +104,7 @@ test("activation reports unavailable and failed readback without false success",
 	const readback = run({}, { activate: true, dropOnReadback: "fetch_content" });
 	assert.equal(readback.result.isError, true);
 	assert.deepEqual(readback.result.details.missing, ["fetch_content"]);
+	assert.equal(readback.result.content[0].text, "Tools still inactive after activation: fetch_content.");
 
 	const thrown = run({}, { activate: true, throwOnSet: true });
 	assert.equal(thrown.result.isError, true);

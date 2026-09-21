@@ -1,5 +1,4 @@
 import { existsSync, readFileSync } from "node:fs";
-import net from "node:net";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
@@ -8,7 +7,7 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { loadSsrfConfig, validateRemoteUrl, type Lookup } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { getWebSearchConfigPath, isLoopbackHostname } from "./utils.ts";
 
 const CONFIG_PATH = getWebSearchConfigPath();
 const DEFAULT_API_VERSION = "v2";
@@ -188,13 +187,6 @@ function ssrfOptions(options?: FirecrawlExtractOptions | FirecrawlSearchOptions)
 	};
 }
 
-function isLoopbackApiUrl(url: URL): boolean {
-	const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-	if (hostname === "localhost" || hostname === "::1") return true;
-	if (net.isIP(hostname) !== 4) return false;
-	return hostname.split(".")[0] === "127";
-}
-
 function firecrawlApiSsrfOptions(
 	options: FirecrawlExtractOptions | FirecrawlSearchOptions | undefined,
 	allowLoopback: boolean,
@@ -218,7 +210,7 @@ async function fetchFirecrawlApi(
 	init: { method: string; headers: Record<string, string>; body: string; signal: AbortSignal },
 	options: FirecrawlExtractOptions | FirecrawlSearchOptions | undefined,
 ): Promise<Response> {
-	const allowLoopback = isLoopbackApiUrl(new URL(url));
+	const allowLoopback = isLoopbackHostname(new URL(url).hostname);
 	let current = await validateRemoteUrl(url, firecrawlApiSsrfOptions(options, allowLoopback));
 	let headers = init.headers;
 	for (let redirects = 0; redirects <= DEFAULT_MAX_REDIRECTS; redirects++) {

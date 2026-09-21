@@ -1,10 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import net from "node:net";
 import { activityMonitor } from "./activity.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { fetchRemoteUrl, loadSsrfConfig, validateRemoteUrl, type Lookup, type SsrfConfig } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { getWebSearchConfigPath, isLoopbackHostname } from "./utils.ts";
 
 const CONFIG_PATH = getWebSearchConfigPath();
 const EXTRACT_TIMEOUT_MS = 60_000;
@@ -113,13 +112,6 @@ function ssrfOptions(options?: Crawl4aiExtractOptions): SsrfConfig & { lookup?: 
 	};
 }
 
-function isLoopbackApiUrl(url: URL): boolean {
-	const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
-	if (hostname === "localhost" || hostname === "::1") return true;
-	if (net.isIP(hostname) !== 4) return false;
-	return hostname.split(".")[0] === "127";
-}
-
 function firstHeadingTitle(markdown: string): string {
 	return /^[ \t]*#[ \t]+(\S.*?)[ \t\r]*$/m.exec(markdown)?.[1] ?? "";
 }
@@ -151,7 +143,7 @@ export async function extractWithCrawl4ai(
 	try {
 		const response = await fetchRemoteUrl(requestUrl, init, {
 			...ssrf,
-			allowLoopback: isLoopbackApiUrl(requestUrl),
+			allowLoopback: isLoopbackHostname(requestUrl.hostname),
 			onRedirect: ({ to, init: redirectInit, response }) => {
 				if (to.origin !== requestUrl.origin) {
 					throw new Error(`Crawl4AI refused cross-origin redirect to ${to.origin}`);

@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { dirname, join } from "node:path";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -85,7 +85,7 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 			return missing.length > 0
 				? {
 					isError: true,
-					content: [{ type: "text" as const, text: `Activation failed: ${missing.join(", ")}.` }],
+					content: [{ type: "text" as const, text: `Tools still inactive after activation: ${missing.join(", ")}.` }],
 					details: { missing },
 				}
 				: {
@@ -102,8 +102,8 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 	let warned = false;
 	async function selectFromSession(ctx: ExtensionContext): Promise<void> {
 		if (!loaderAvailable()) return;
-		const messages = (ctx.sessionManager as unknown as { buildSessionContext(): { messages: unknown[] } }).buildSessionContext().messages;
 		try {
+			const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
 			const recorded = hasToolDeclarations(messages)
 				? new Set(await currentTranscriptToolNames(messages))
 				: messages.length > 0
@@ -128,7 +128,7 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 		try {
 			pi.setActiveTools([...pi.getActiveTools(), LOADER_NAME]);
 		} catch {
-			// Session lifecycle already retains eager tools when selection is unavailable.
+			// Best effort: preserve the current selection if Pi rejects the update.
 		}
 	});
 }

@@ -44,7 +44,7 @@ interface ApiBaseUrlOptions {
 	environmentValue: string | undefined;
 }
 
-function isLoopbackHostname(hostnameValue: string): boolean {
+export function isLoopbackHostname(hostnameValue: string): boolean {
 	const normalized = hostnameValue.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
 	return normalized === "localhost"
 		|| normalized === "::1"
