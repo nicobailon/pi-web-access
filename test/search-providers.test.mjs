@@ -315,6 +315,101 @@ test("Brave, keyed Exa, and Tavily honor base URL overrides without leaking cred
 	assert.match(output.plaintextError, /^BRAVE_BASE_URL must be an absolute HTTPS URL$/);
 });
 
+test("provider base URLs allow HTTP only on exact loopback hosts", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-loopback-base-url-"));
+	const child = runChild(`
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			const target = String(url);
+			const credential = new Headers(init.headers).get("x-subscription-token");
+			calls.push({ target, credential });
+			if (new URL(target).searchParams.get("q") === "redirect") {
+				return new Response(null, {
+					status: 307,
+					headers: { location: "https://remote.example.com/redirected" },
+				});
+			}
+			return new Response(JSON.stringify({ web: { results: [] } }), { status: 200 });
+		};
+
+		const { searchWithBrave } = await import(${JSON.stringify(braveModuleUrl)});
+		process.env.BRAVE_BASE_URL = "http://localhost:8080/api";
+		await searchWithBrave("redirect");
+
+		const accepted = [
+			"http://localhost:8080/api/",
+			"http://LOCALHOST:8080/api",
+			"http://localhost.:8080/api",
+			"http://127.0.0.1:8080/api",
+			"http://127.42.3.4:8080/api",
+			"http://[::1]:8080/api",
+			"http://[0:0:0:0:0:0:0:1]:8080/api",
+			"https://gateway.example.com/api",
+		];
+		for (const [index, baseUrl] of accepted.entries()) {
+			process.env.BRAVE_BASE_URL = baseUrl;
+			await searchWithBrave("accepted-" + index);
+		}
+
+		const rejected = [
+			"http://example.com/api",
+			"http://localhost.example/api",
+			"http://foo.localhost/api",
+			"http://10.0.0.1/api",
+			"http://169.254.169.254/api",
+			"http://0.0.0.0/api",
+			"http://[::]/api",
+			"http://[::ffff:127.0.0.1]/api",
+		];
+		const rejectedErrors = [];
+		for (const baseUrl of rejected) {
+			process.env.BRAVE_BASE_URL = baseUrl;
+			try {
+				await searchWithBrave("rejected");
+				rejectedErrors.push(null);
+			} catch (error) {
+				rejectedErrors.push(error.message);
+			}
+		}
+
+		const invalid = [
+			"http://user:secret@localhost:8080/api",
+			"http://localhost:8080/api?debug=true",
+			"http://localhost:8080/api#fragment",
+		];
+		const invalidErrors = [];
+		for (const baseUrl of invalid) {
+			process.env.BRAVE_BASE_URL = baseUrl;
+			try {
+				await searchWithBrave("invalid");
+				invalidErrors.push(null);
+			} catch (error) {
+				invalidErrors.push(error.message);
+			}
+		}
+		console.log(JSON.stringify({ calls, rejectedErrors, invalidErrors }));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		BRAVE_API_KEY: "brave-loopback-key",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.calls.slice(0, 2), [
+		{ target: "http://localhost:8080/api/web/search?q=redirect&count=5", credential: "brave-loopback-key" },
+		{ target: "https://remote.example.com/redirected", credential: null },
+	]);
+	assert.equal(output.calls.length, 10);
+	assert.ok(output.calls.slice(2).every((call) => call.credential === "brave-loopback-key"));
+	assert.deepEqual(output.rejectedErrors, Array(8).fill("BRAVE_BASE_URL must be an absolute HTTPS URL"));
+	assert.deepEqual(output.invalidErrors, [
+		"BRAVE_BASE_URL must not include credentials",
+		"BRAVE_BASE_URL must not include query parameters or fragments",
+		"BRAVE_BASE_URL must not include query parameters or fragments",
+	]);
+});
+
 test("SearXNG search is SSRF-guarded and preferred first when configured", async () => {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-searxng-"));
 	const child = runChild(`

@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import { homedir, hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -43,6 +44,13 @@ interface ApiBaseUrlOptions {
 	environmentValue: string | undefined;
 }
 
+function isLoopbackHostname(hostnameValue: string): boolean {
+	const normalized = hostnameValue.replace(/^\[|\]$/g, "").replace(/\.$/, "").toLowerCase();
+	return normalized === "localhost"
+		|| normalized === "::1"
+		|| (isIP(normalized) === 4 && normalized.split(".", 1)[0] === "127");
+}
+
 export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
 	const fromEnvironment = options.environmentValue !== undefined;
 	const value = fromEnvironment ? options.environmentValue : options.configuredValue;
@@ -61,7 +69,7 @@ export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
 	} catch {
 		throw new Error(`${source} must be an absolute HTTP(S) URL`);
 	}
-	if (url.protocol !== "https:") {
+	if (url.protocol !== "https:" && (url.protocol !== "http:" || !isLoopbackHostname(url.hostname))) {
 		throw new Error(`${source} must be an absolute HTTPS URL`);
 	}
 	if (url.username || url.password) {
