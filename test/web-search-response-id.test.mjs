@@ -60,7 +60,7 @@ test("web_search output tells the model the responseId that get_search_content a
 	// Parse the id out of the human-readable output, exactly as a model would.
 	const out = runWebSearchThenRetrieve({ provider: "openai" });
 	assert.ok(out.hasRetrieveTool);
-	assert.match(out.text, /Results stored as responseId "[a-z0-9]+"\. Use get_search_content\(\{ responseId: "[a-z0-9]+", queryIndex: 0 \}\)/);
+	assert.match(out.text, /Full search results are stored as responseId "[a-z0-9]+"\. Use get_search_content\(\{ responseId: "[a-z0-9]+", queryIndex: 0, offset: 0, limit: 30000 \}\)/);
 	assert.match(out.text, /Provider:\*\* openai/);
 	assert.deepEqual(out.details.queryProviders, [{ query: "response id", providers: ["openai"] }]);
 	assert.equal(out.details.truncated, false);

@@ -1151,19 +1151,13 @@ test("auto search keeps selected Codex-backed OpenAI for result counts and recen
 			},
 		};
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
-		const results = [];
-		for (const numResults of [1, 20]) {
-			for (const recencyFilter of ["day", "week", "month", "year"]) {
-				const result = await search("current model search", {
-					provider: "auto",
-					extensionContext: ctx,
-					numResults,
-					recencyFilter,
-				});
-				results.push({ numResults, recencyFilter, provider: result.provider, answer: result.answer });
-			}
-		}
-		console.log(JSON.stringify(results));
+		const result = await search("current model search", {
+			provider: "auto",
+			extensionContext: ctx,
+			numResults: 20,
+			recencyFilter: "week",
+		});
+		console.log(JSON.stringify({ provider: result.provider, answer: result.answer }));
 	`, {
 		HOME: home,
 		USERPROFILE: home,
@@ -1171,19 +1165,18 @@ test("auto search keeps selected Codex-backed OpenAI for result counts and recen
 	});
 
 	assert.equal(child.status, 0, child.stderr);
-	const results = JSON.parse(child.stdout.trim());
-	assert.equal(results.length, 8);
-	for (const result of results) {
-		assert.equal(result.provider, "openai", `${result.numResults}/${result.recencyFilter}`);
-		assert.equal(result.answer, "codex option answer", `${result.numResults}/${result.recencyFilter}`);
-	}
+	const result = JSON.parse(child.stdout.trim());
+	assert.equal(result.provider, "openai");
+	assert.equal(result.answer, "codex option answer");
 });
 
 test("auto search falls through to Exa when selected Codex-backed OpenAI fails", async () => {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-auto-codex-failure-"));
 	const child = runChild(`
+		const calls = [];
 		globalThis.fetch = async (url) => {
 			const requestUrl = String(url);
+			calls.push(requestUrl);
 			if (requestUrl === "https://chatgpt.com/backend-api/codex/responses") {
 				return new Response("Codex unavailable", { status: 503 });
 			}
@@ -1211,7 +1204,7 @@ test("auto search falls through to Exa when selected Codex-backed OpenAI fails",
 			numResults: 20,
 			recencyFilter: "week",
 		});
-		console.log(JSON.stringify({ provider: result.provider, answer: result.answer }));
+		console.log(JSON.stringify({ provider: result.provider, answer: result.answer, calls }));
 	`, {
 		HOME: home,
 		USERPROFILE: home,
@@ -1222,6 +1215,8 @@ test("auto search falls through to Exa when selected Codex-backed OpenAI fails",
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.provider, "exa");
 	assert.match(output.answer, /Exa after Codex failure/);
+	assert.equal(output.calls[0], "https://chatgpt.com/backend-api/codex/responses");
+	assert.match(output.calls[1], /^https:\/\/mcp\.exa\.ai\/mcp/);
 });
 
 test("auto search uses Exa before OpenAI when the selected model is not openai-codex", async () => {

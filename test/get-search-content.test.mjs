@@ -204,9 +204,10 @@ test("get_search_content pages complete search data and validates search ranges"
 	storeResult("oversized-search", { id: "oversized-search", type: "search", timestamp: Date.now(), queries: [source] });
 
 	const first = await tool.execute("call", { responseId: "oversized-search", queryIndex: 0, limit: 30_000 });
-	assert.equal(first.details.returnedChars, 30_000);
-	assert.equal(first.details.nextOffset, 30_000);
+	assert.ok(first.details.returnedChars < 30_000);
+	assert.equal(first.details.nextOffset, first.details.returnedChars);
 	assert.equal(first.details.truncated, true);
+	assert.ok(first.content[0].text.length <= 30_000);
 	assert.ok(first.details.contentLength > 156_000);
 	assert.match(first.content[0].text, /Provider:\*\* fixture-provider/);
 	assert.doesNotMatch(first.content[0].text, /LATE_SNIPPET/);
@@ -220,8 +221,18 @@ test("get_search_content pages complete search data and validates search ranges"
 	assert.equal(late.details.matchCount, 2);
 	assert.match(late.content[0].text, /OMITTED_ANSWER/);
 	assert.match(late.content[0].text, /LATE_SNIPPET/);
-	assert.equal(source.answer.length, 40_022);
-	assert.equal(source.results[1].snippet, lateSnippet);
+
+	const one = await tool.execute("call", { responseId: "oversized-search", queryIndex: 0, limit: 1 });
+	assert.equal(one.details.returnedChars, 1);
+	assert.equal(one.details.nextOffset, 1);
+	assert.ok(one.content[0].text.length <= 30_000);
+	assert.match(one.content[0].text, /offset: 1, limit: 1/);
+
+	const eof = await tool.execute("call", { responseId: "oversized-search", queryIndex: 0, offset: first.details.contentLength, limit: 1 });
+	assert.equal(eof.content[0].text, "");
+	assert.equal(eof.details.returnedChars, 0);
+	assert.equal(eof.details.nextOffset, null);
+	assert.equal(eof.details.truncated, false);
 
 	const invalidLimit = await tool.execute("call", { responseId: "oversized-search", queryIndex: 0, limit: 30_001 });
 	assert.equal(invalidLimit.details.error, "Invalid limit");

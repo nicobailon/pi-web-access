@@ -626,11 +626,12 @@ interface PendingCurate {
 
 
 const DEFAULT_MAX_INLINE_CONTENT_CHARS = 30_000;
+const MIN_INLINE_CONTENT_CHARS = 1_000;
 const MAX_INLINE_CONTENT_CHARS = 200_000;
 
 function getMaxInlineContentChars(config = loadConfig()): number {
 	const value = config.maxInlineContentChars;
-	if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value <= 0) {
+	if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value < MIN_INLINE_CONTENT_CHARS) {
 		return DEFAULT_MAX_INLINE_CONTENT_CHARS;
 	}
 	return Math.min(value, MAX_INLINE_CONTENT_CHARS);
@@ -726,7 +727,7 @@ function formatSearchSummary(results: SearchResult[], answer: string): string {
 		return answer ? `${answer}\n\n---\n\n**Sources:**\nNo sources returned.` : "No results found.";
 	}
 	let output = answer ? `${answer}\n\n---\n\n**Sources:**\n` : "";
-	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ""}`).join("\n\n");
+	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n\n");
 	return output;
 }
 
@@ -790,29 +791,25 @@ function formatFullResults(queryData: QueryResultData): string {
 
 function boundSearchPresentation(
 	text: string,
+	guidance: string,
+	truncationGuidance: string,
 	maxChars: number,
-	responseId: string,
-	queryCount: number,
-	retrievalTool: string,
-	retrievalEnabled: boolean,
 ): { text: string; truncated: boolean; originalChars: number; returnedChars: number; omittedChars: number } {
-	const originalChars = text.length;
+	const fullText = `${text}${guidance}`;
+	const originalChars = fullText.length;
 	if (originalChars <= maxChars) {
-		return { text, truncated: false, originalChars, returnedChars: originalChars, omittedChars: 0 };
+		return { text: fullText, truncated: false, originalChars, returnedChars: originalChars, omittedChars: 0 };
 	}
-	const retrieval = retrievalEnabled
-		? `Use ${retrievalTool}({ responseId: "${responseId}", queryIndex: 0, offset: 0, limit: ${maxChars} }) to retrieve the first bounded page${queryCount > 1 ? `; repeat with queryIndex 1 through ${queryCount - 1}` : ""}.`
-		: `Enable ${retrievalTool} to retrieve the full stored results.`;
-	const marker = `\n\n---\n[Output truncated. Full results are stored as responseId "${responseId}". ${retrieval}]`;
+	const marker = `\n\n---\n[Output truncated.]${truncationGuidance}`;
 	// Reserve marker space so the complete model-visible response never exceeds the configured ceiling.
-	const prefixLength = Math.max(0, maxChars - marker.length);
-	const bounded = `${text.slice(0, prefixLength)}${marker}`.slice(0, maxChars);
+	const prefixLength = maxChars - marker.length;
+	const bounded = `${text.slice(0, prefixLength)}${marker}`;
 	return {
 		text: bounded,
 		truncated: true,
 		originalChars,
 		returnedChars: bounded.length,
-		omittedChars: originalChars - bounded.length,
+		omittedChars: originalChars - prefixLength,
 	};
 }
 
@@ -1400,6 +1397,7 @@ export default function (pi: ExtensionAPI) {
 		const tr = opts.results.reduce((sum, r) => sum + r.results.length, 0);
 
 		const hasApprovedSummary = typeof opts.approvedSummary === "string" && opts.approvedSummary.trim().length > 0;
+		const maxInlineContentChars = getMaxInlineContentChars(initConfig);
 		let output = "";
 		if (hasApprovedSummary) {
 			output = opts.approvedSummary!.trim();
@@ -1437,27 +1435,37 @@ export default function (pi: ExtensionAPI) {
 				urls: opts.inlineContent,
 			} satisfies StoredSearchData & { type: "fetch"; urls: ExtractedContent[] };
 			pi.appendEntry("web-search-results", storeFetchedContentResult(fetchId, data));
-			if (!hasApprovedSummary) {
-				output += `---\nFull content for ${opts.inlineContent.length} sources available [${fetchId}].`;
-			}
 		} else if (opts.includeContent) {
 			fetchId = startBackgroundFetch(opts.urls, opts.proxy);
-			if (fetchId && !hasApprovedSummary) {
-				output += `---\nContent fetching in background [${fetchId}]. Will notify when ready.`;
-			}
 		}
 
 		const searchId = storeAndPublishSearch(opts.results);
 		const isBackgroundFetch = fetchId !== null && !hasInlineReady;
-		// The model only sees `content`, not `details`: surface the id it needs to
-		// call get_search_content, the same way fetch_content does.
-		if (getSearchContentEnabled && !hasApprovedSummary) {
-			output += `\n---\nResults stored as responseId "${searchId}". Use ${toolNames.getSearchContent}({ responseId: "${searchId}", queryIndex: 0 }) to retrieve them.`;
-		}
 		const unboundedPresentation = output.trim();
+		const buildGuidance = (forTruncation: boolean): string => {
+			if (hasApprovedSummary) return "";
+			let value = "";
+			if (hasInlineReady && opts.inlineContent && fetchId) {
+				value += `\n---\nFull content for ${opts.inlineContent.length} sources is ready as responseId "${fetchId}". `;
+				value += getSearchContentEnabled
+					? `Use ${toolNames.getSearchContent}({ responseId: "${fetchId}", urlIndex: 0, offset: 0, limit: ${maxInlineContentChars} }) to retrieve the first bounded page.`
+					: forTruncation ? `Enable ${toolNames.getSearchContent} to retrieve the full stored content.` : "";
+			} else if (isBackgroundFetch && fetchId) {
+				value += `\n---\nContent fetching is in background as responseId "${fetchId}". Will notify when ready.`;
+			}
+			if (getSearchContentEnabled || forTruncation) {
+				value += `\n---\nFull search results are stored as responseId "${searchId}". `;
+				value += getSearchContentEnabled
+					? `Use ${toolNames.getSearchContent}({ responseId: "${searchId}", queryIndex: 0, offset: 0, limit: ${maxInlineContentChars} }) to retrieve the first bounded page${opts.results.length > 1 ? `; repeat with queryIndex 1 through ${opts.results.length - 1}` : ""}.`
+					: `Enable ${toolNames.getSearchContent} to retrieve the full stored results.`;
+			}
+			return value;
+		};
+		const guidance = buildGuidance(false);
+		const truncationGuidance = buildGuidance(true);
 		const presentation = hasApprovedSummary
 			? { text: unboundedPresentation, truncated: false, originalChars: unboundedPresentation.length, returnedChars: unboundedPresentation.length, omittedChars: 0 }
-			: boundSearchPresentation(unboundedPresentation, getMaxInlineContentChars(initConfig), searchId, opts.results.length, toolNames.getSearchContent, getSearchContentEnabled);
+			: boundSearchPresentation(unboundedPresentation, guidance, truncationGuidance, maxInlineContentChars);
 
 		return {
 			content: [{ type: "text", text: presentation.text }],
@@ -2894,8 +2902,8 @@ export default function (pi: ExtensionAPI) {
 			queryIndex: Type.Optional(Type.Integer({ minimum: 0, description: "Get content for query at index" })),
 			url: Type.Optional(Type.String({ description: "Get content for this URL" })),
 			urlIndex: Type.Optional(Type.Integer({ minimum: 0, description: "Get content for URL at index" })),
-			offset: Type.Optional(Type.Integer({ minimum: 0, description: "Character offset for stored search or fetched URL content slices (default 0). Ignored when findText is supplied." })),
-			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: maxInlineContentChars, description: "Maximum characters to return for stored search or fetched URL content slices (default and max are set by maxInlineContentChars). Ignored when findText is supplied." })),
+			offset: Type.Optional(Type.Integer({ minimum: 0, description: "Character offset in stored search or fetched URL content (default 0). Ignored when findText is supplied." })),
+			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: maxInlineContentChars, description: "Requested maximum stored-content characters (default and max use maxInlineContentChars). Search-page continuation guidance shares the global output cap and may reduce returnedChars. Ignored when findText is supplied." })),
 			findText: Type.Optional(Type.Union([
 				Type.String({ minLength: 1, maxLength: 500 }),
 				Type.Array(Type.String({ minLength: 1, maxLength: 500 }), { minItems: 1, maxItems: 10 }),
@@ -3047,14 +3055,20 @@ export default function (pi: ExtensionAPI) {
 						details: { error: "Offset out of range", offset, contentLength: fullResults.length },
 					};
 				}
-				const endOffset = Math.min(offset + limit, fullResults.length);
+				const queryIndex = data.queries.indexOf(queryData);
+				let returnedChars = Math.min(limit, fullResults.length - offset);
+				let endOffset = offset + returnedChars;
+				let continuation = "";
+				while (endOffset < fullResults.length) {
+					continuation = `\n\n---\nShowing chars ${offset}-${endOffset} of ${fullResults.length}. Use ${toolNames.getSearchContent}({ responseId: "${params.responseId}", queryIndex: ${queryIndex}, offset: ${endOffset}, limit: ${limit} }) for the next slice.`;
+					const overflow = returnedChars + continuation.length - maxInlineContentChars;
+					if (overflow <= 0) break;
+					returnedChars -= overflow;
+					endOffset = offset + returnedChars;
+				}
 				const resultSlice = fullResults.slice(offset, endOffset);
 				const hasMore = endOffset < fullResults.length;
-				let text = resultSlice;
-				if (hasMore || offset > 0) {
-					text += `\n\n---\nShowing chars ${offset}-${endOffset} of ${fullResults.length}.`;
-					if (hasMore) text += ` Use ${toolNames.getSearchContent}({ responseId: "${params.responseId}", queryIndex: ${data.queries.indexOf(queryData)}, offset: ${endOffset}, limit: ${limit} }) for the next slice.`;
-				}
+				const text = `${resultSlice}${hasMore ? continuation : ""}`;
 				return {
 					content: [{ type: "text", text }],
 					details: {
@@ -3064,7 +3078,7 @@ export default function (pi: ExtensionAPI) {
 						contentLength: fullResults.length,
 						offset,
 						limit,
-						returnedChars: resultSlice.length,
+						returnedChars,
 						nextOffset: hasMore ? endOffset : null,
 						truncated: hasMore,
 					},
