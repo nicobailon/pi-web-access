@@ -20,13 +20,17 @@ const CAPABILITY_LABELS: Record<WebCapability, string> = {
 };
 
 function supportsDynamicTools(pi: ExtensionAPI): boolean {
-	if (typeof pi.getAllTools !== "function" || typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return false;
+	const hasToolApi = typeof pi.getAllTools === "function" && typeof pi.getActiveTools === "function" && typeof pi.setActiveTools === "function";
+	if (!hasToolApi) return false;
 	try {
 		const packagePath = join(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..", "package.json");
 		const [major, minor, patch] = JSON.parse(readFileSync(packagePath, "utf8")).version.split(".").map(Number);
 		return major > 0 || minor > 86 || minor === 86 && patch >= 1;
 	} catch {
-		return false;
+		// Pi's bundled runtime provides @earendil-works/pi-coding-agent as an
+		// in-memory virtual module; import.meta.resolve() cannot see it and
+		// throws. The API probe above already gated the 0.86.1+ surface.
+		return true;
 	}
 }
 
