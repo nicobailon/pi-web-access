@@ -1,7 +1,4 @@
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { dirname, join } from "node:path";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 
 export type WebCapability = "search" | "source-check" | "fetch" | "stored-content";
@@ -20,14 +17,14 @@ const CAPABILITY_LABELS: Record<WebCapability, string> = {
 };
 
 function supportsDynamicTools(pi: ExtensionAPI): boolean {
-	if (typeof pi.getAllTools !== "function" || typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return false;
-	try {
-		const packagePath = join(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..", "package.json");
-		const [major, minor, patch] = JSON.parse(readFileSync(packagePath, "utf8")).version.split(".").map(Number);
-		return major > 0 || minor > 86 || minor === 86 && patch >= 1;
-	} catch {
-		return false;
-	}
+	// The tool-management APIs only exist on Pi >= 0.86.1, so their presence is
+	// the authoritative capability check. Resolving Pi's package.json via
+	// `import.meta.resolve` fails under Pi's jiti extension loader (jiti aliases
+	// apply to import() but not to import.meta.resolve, and pi-coding-agent is a
+	// peerDependency with no copy under this package's node_modules), which made
+	// this function return false and print a spurious "requires Pi 0.86.1 or
+	// newer" warning on current Pi versions.
+	return typeof pi.getAllTools === "function" && typeof pi.getActiveTools === "function" && typeof pi.setActiveTools === "function";
 }
 
 function hasToolDeclarations(messages: unknown[]): boolean {
