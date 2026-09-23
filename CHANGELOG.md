@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop showing a false "Dynamic tool activation requires Pi 0.86.1 or newer" warning on supported Pi versions. The version check now reads Pi's exported `VERSION`, because Pi provides its package to extensions as a virtual module that cannot be found on disk from the extension's install directory.
+
 ## [0.31.0] - 2026-09-22
 
 ### Highlights

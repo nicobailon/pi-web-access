@@ -1,3 +1,4 @@
+import * as piCodingAgent from "@earendil-works/pi-coding-agent";
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { dirname, join } from "node:path";
 import { readFileSync } from "node:fs";
@@ -19,15 +20,32 @@ const CAPABILITY_LABELS: Record<WebCapability, string> = {
 	"stored-content": "stored-result retrieval",
 };
 
-function supportsDynamicTools(pi: ExtensionAPI): boolean {
-	if (typeof pi.getAllTools !== "function" || typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return false;
+export function isDynamicToolsVersion(version: unknown): boolean {
+	if (typeof version !== "string") return false;
+	const match = /^(\d+)\.(\d+)\.(\d+)/.exec(version.trim());
+	if (!match) return false;
+	const [major, minor, patch] = match.slice(1).map(Number);
+	return major > 0 || minor > 86 || minor === 86 && patch >= 1;
+}
+
+// Pi serves @earendil-works/pi-coding-agent to extensions as a jiti virtual
+// module, so it usually cannot be resolved from the extension's install
+// directory. Prefer the host's exported VERSION and only fall back to
+// resolving package.json for hosts that do not export it.
+function hostPiVersion(): string | undefined {
+	const exported = (piCodingAgent as { VERSION?: unknown }).VERSION;
+	if (typeof exported === "string" && exported !== "0.0.0") return exported;
 	try {
 		const packagePath = join(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..", "package.json");
-		const [major, minor, patch] = JSON.parse(readFileSync(packagePath, "utf8")).version.split(".").map(Number);
-		return major > 0 || minor > 86 || minor === 86 && patch >= 1;
+		return JSON.parse(readFileSync(packagePath, "utf8")).version;
 	} catch {
-		return false;
+		return undefined;
 	}
+}
+
+function supportsDynamicTools(pi: ExtensionAPI): boolean {
+	if (typeof pi.getAllTools !== "function" || typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return false;
+	return isDynamicToolsVersion(hostPiVersion());
 }
 
 function hasToolDeclarations(messages: unknown[]): boolean {
@@ -45,7 +63,7 @@ async function currentTranscriptToolNames(messages: unknown[]): Promise<string[]
 export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray<WebActivationTool>): void {
 	if (tools.length === 0) return;
 	if (!supportsDynamicTools(pi)) {
-		console.warn("[pi-web-access] Dynamic tool activation requires Pi 0.86.1 or newer; web tools remain eagerly available.");
+		console.warn(`[pi-web-access] Dynamic tool activation requires Pi 0.86.1 or newer (detected ${hostPiVersion() ?? "unknown"}); web tools remain eagerly available.`);
 		return;
 	}
 	const names = tools.map(tool => tool.name);
