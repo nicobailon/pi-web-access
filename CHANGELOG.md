@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Declare `typebox` as a host-provided peer dependency to avoid duplicate runtime modules and Pi startup warnings. Thanks to [@ksreenivasan](https://github.com/ksreenivasan) for [issue #442](https://github.com/nicobailon/pi-web-access/issues/442) and [PR #443](https://github.com/nicobailon/pi-web-access/pull/443).
+- Show complete search queries and fetch URLs in tool-call labels when the terminal has room, rather than truncating them at a fixed character count. Thanks to [@TheBestPessimist](https://github.com/TheBestPessimist) for [issue #440](https://github.com/nicobailon/pi-web-access/issues/440).
 - Detect the Pi version through the exported `VERSION` constant instead of resolving `@earendil-works/pi-coding-agent` on disk, and restore recorded tool selections without importing a Pi package at runtime. Dynamic tool activation no longer reports a false "requires Pi 0.86.1 or newer" warning for globally installed Pi, where the extension's own `node_modules` does not contain the Pi packages. Thanks to [@samsimsom](https://github.com/samsimsom) for [issue #428](https://github.com/nicobailon/pi-web-access/issues/428).
 
 ## [0.31.0] - 2026-09-22

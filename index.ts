@@ -2185,13 +2185,11 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (queryList.length === 1) {
 				const q = queryList[0];
-				const display = q.length > 60 ? q.slice(0, 57) + "..." : q;
-				return new Text(theme.fg("toolTitle", theme.bold("search ")) + theme.fg("accent", `"${display}"`), 0, 0);
+				return new Text(theme.fg("toolTitle", theme.bold("search ")) + theme.fg("accent", `"${q}"`), 0, 0);
 			}
 			const lines = [theme.fg("toolTitle", theme.bold("search ")) + theme.fg("accent", `${queryList.length} queries`)];
 			for (const q of queryList.slice(0, 5)) {
-				const display = q.length > 50 ? q.slice(0, 47) + "..." : q;
-				lines.push(theme.fg("muted", `  "${display}"`));
+				lines.push(theme.fg("muted", `  "${q}"`));
 			}
 			if (queryList.length > 5) {
 				lines.push(theme.fg("muted", `  ... and ${queryList.length - 5} more`));
@@ -2759,13 +2757,11 @@ export default function (pi: ExtensionAPI) {
 			}
 			const lines: string[] = [];
 			if (urlList.length === 1) {
-				const display = urlList[0].length > 60 ? urlList[0].slice(0, 57) + "..." : urlList[0];
-				lines.push(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", display));
+				lines.push(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", urlList[0]));
 			} else {
 				lines.push(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("accent", `${urlList.length} URLs`));
 				for (const u of urlList.slice(0, 5)) {
-					const display = u.length > 60 ? u.slice(0, 57) + "..." : u;
-					lines.push(theme.fg("muted", "  " + display));
+					lines.push(theme.fg("muted", "  " + u));
 				}
 				if (urlList.length > 5) {
 					lines.push(theme.fg("muted", `  ... and ${urlList.length - 5} more`));
