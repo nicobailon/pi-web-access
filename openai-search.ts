@@ -5,7 +5,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { fetchWithCredentialRedirects, getWebSearchConfigPath } from "./utils.ts";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -13,13 +13,16 @@ const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
 
 // The selected model runs the server-side web_search call and writes the cited summary.
-// Prefer the newest mid-tier ("terra") model, then the newest bare mainline id; price
+// Prefer the newest mid-tier ("terra") model, then the newest bare mainline id, then any
+// other versioned GPT id (gateway providers such as opencode-go list only suffixed GPT
+// ids next to non-OpenAI models; unversioned ids such as gpt-oss-* are skipped); price
 // tiers ("pro"/"ultra" id segments) are excluded, and the numeric-aware sort keeps
 // e.g. gpt-5.10 ahead of gpt-5.9.
 const EXCLUDED_MODEL_SEGMENTS = new Set(["pro", "ultra"]);
 const MODEL_PREFERENCE = [
 	(id: string) => id.includes("terra"),
 	(id: string) => /^gpt-\d+(\.\d+)?$/.test(id),
+	(id: string) => /^gpt-\d/.test(id),
 ];
 const DEFAULT_SEARCH_PROVIDERS: readonly string[] = ["openai-codex", "openai"];
 
@@ -182,6 +185,9 @@ function resolveConfiguredResponsesUrl(value: unknown): string {
 	if (url.protocol !== "https:" && url.protocol !== "http:") {
 		throw new Error(`openaiResponsesUrl in ${CONFIG_PATH} must use http or https`);
 	}
+	if (url.hostname.toLowerCase() === "opencode.ai" && url.protocol !== "https:") {
+		throw new Error(`openaiResponsesUrl in ${CONFIG_PATH} must use HTTPS for opencode.ai`);
+	}
 	return url.toString();
 }
 
@@ -203,6 +209,9 @@ function resolveProviderResponsesUrl(baseUrl: unknown, useCodexEndpoint: boolean
 		if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error();
 	} catch {
 		throw new CustomOpenAIBaseUrlError("OpenAI search configuration: openaiUseProviderBaseUrl requires an absolute http(s) provider baseUrl");
+	}
+	if (url.hostname.toLowerCase() === "opencode.ai" && url.protocol !== "https:") {
+		throw new CustomOpenAIBaseUrlError("OpenAI search configuration: opencode.ai provider baseUrl must use HTTPS");
 	}
 	const path = url.pathname.replace(/\/+$/u, "");
 	if (path.endsWith("/responses")) {
@@ -236,6 +245,23 @@ function toRequestHeaders(headers: ProviderHeaders): Record<string, string> {
 	for (const [name, value] of Object.entries(headers)) {
 		if (value !== null) requestHeaders[name] = value;
 	}
+	return requestHeaders;
+}
+
+function isOpenCodeUrl(url: string): boolean {
+	const parsed = new URL(url);
+	return parsed.protocol === "https:" && parsed.hostname.toLowerCase() === "opencode.ai";
+}
+
+function applyOpenCodeDestinationHeaders(headers: HeadersInit, requestUrl: string, ctx?: Pick<ExtensionContext, "sessionManager">): Headers {
+	const requestHeaders = new Headers(headers);
+	requestHeaders.delete("x-opencode-session");
+	requestHeaders.delete("x-opencode-client");
+	if (!isOpenCodeUrl(requestUrl)) return requestHeaders;
+	const sessionId = ctx?.sessionManager?.getSessionId?.();
+	if (!sessionId) return requestHeaders;
+	requestHeaders.set("x-opencode-session", sessionId);
+	requestHeaders.set("x-opencode-client", "pi");
 	return requestHeaders;
 }
 
@@ -643,6 +669,7 @@ async function runOpenAISearch(
 	query: string,
 	options: SearchOptions,
 	auth: OpenAIAuth,
+	ctx?: Pick<ExtensionContext, "sessionManager">,
 ): Promise<SearchResponse> {
 	const useAlphaSearch = isAlphaSearchEnabled();
 	if (useAlphaSearch) options.signal?.throwIfAborted();
@@ -672,16 +699,21 @@ async function runOpenAISearch(
 		if (accountId) headers["chatgpt-account-id"] = accountId;
 		headers.originator = "pi";
 	}
+	const requestHeaders = applyOpenCodeDestinationHeaders(
+		useAlphaSearch ? buildAlphaSearchHeaders(headers, auth.apiKey) : headers,
+		requestUrl,
+		ctx,
+	);
 
 	try {
-		const response = await fetch(requestUrl, {
+		const response = await fetchWithCredentialRedirects(requestUrl, {
 			method: "POST",
-			headers: useAlphaSearch ? buildAlphaSearchHeaders(headers, auth.apiKey) : headers,
+			headers: requestHeaders,
 			body: JSON.stringify(body),
 			signal: options.signal
 				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
 				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		});
+		}, ["Authorization", "x-opencode-session", "x-opencode-client", "chatgpt-account-id", ...Object.keys(auth.headers)]);
 
 		if (!response.ok) {
 			activityMonitor.logError(activityId, `HTTP ${response.status}`);
@@ -738,7 +770,7 @@ export async function searchWithOpenAI(
 			"  3. Set OPENAI_API_KEY environment variable",
 		);
 	}
-	return runOpenAISearch(query, options, auth);
+	return runOpenAISearch(query, options, auth, ctx);
 }
 
 export async function searchWithCurrentModelOpenAI(
@@ -748,5 +780,5 @@ export async function searchWithCurrentModelOpenAI(
 ): Promise<SearchResponse> {
 	if (!ctx) throw new Error("OpenAI current-model search requires an extension context");
 	const auth = await resolveCurrentModelAuth(ctx, options.signal);
-	return runOpenAISearch(query, options, auth);
+	return runOpenAISearch(query, options, auth, ctx);
 }

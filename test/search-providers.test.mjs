@@ -945,7 +945,7 @@ test("OpenAI search requires web_search and maps domain filters", async () => {
 		let capturedBody = null;
 		globalThis.fetch = async (url, init) => {
 			capturedUrl = String(url);
-			capturedHeaders = init.headers;
+			capturedHeaders = Object.fromEntries(new Headers(init.headers));
 			capturedBody = JSON.parse(init.body);
 			return new Response(JSON.stringify({
 				output: [
@@ -978,7 +978,7 @@ test("OpenAI search requires web_search and maps domain filters", async () => {
 		});
 		console.log(JSON.stringify({
 			url: capturedUrl,
-			authorization: capturedHeaders.Authorization,
+			authorization: capturedHeaders.authorization,
 			body: capturedBody,
 			results: result.results,
 			answer: result.answer,
@@ -1017,7 +1017,7 @@ test("OpenAI search uses configured Responses endpoint", async () => {
 		let capturedAuthorization = "";
 		globalThis.fetch = async (url, init) => {
 			capturedUrl = String(url);
-			capturedAuthorization = init.headers.Authorization;
+			capturedAuthorization = new Headers(init.headers).get("authorization");
 			return new Response(JSON.stringify({
 				output: [
 					{ type: "web_search_call", action: { sources: [] } },
@@ -1345,7 +1345,7 @@ test("OpenAI search honors configured provider priority", async () => {
 	const child = runChild(`
 		let capturedAuthorization = "";
 		globalThis.fetch = async (url, init) => {
-			capturedAuthorization = init.headers.Authorization;
+			capturedAuthorization = new Headers(init.headers).get("authorization");
 			return new Response(JSON.stringify({
 				output: [
 					{ type: "web_search_call", action: { sources: [] } },

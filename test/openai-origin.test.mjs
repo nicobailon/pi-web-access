@@ -47,7 +47,7 @@ for (const scenario of cases) {
 						getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "pi-gateway-test-key", headers: { "X-Gateway": "test" }, baseUrl: scenario.authBaseUrl }),
 					} };
 					globalThis.fetch = async (url, init) => {
-						requests.push({ url: String(url), headers: init.headers });
+						requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init.headers)) });
 						return new Response(JSON.stringify({ output: [
 							{ type: "web_search_call" },
 							{ type: "message", content: [{ type: "output_text", text: "Test answer" }] },
@@ -77,8 +77,8 @@ for (const scenario of cases) {
 				assert.equal(output.available, true);
 				assert.equal(output.requests.length, 1);
 				assert.equal(output.requests[0].url, scenario.expectedUrl);
-				assert.equal(output.requests[0].headers.Authorization, `Bearer ${scenario.standalone ? "standalone-test-key" : "pi-gateway-test-key"}`);
-				if (!scenario.standalone) assert.equal(output.requests[0].headers["X-Gateway"], "test");
+				assert.equal(output.requests[0].headers.authorization, `Bearer ${scenario.standalone ? "standalone-test-key" : "pi-gateway-test-key"}`);
+				if (!scenario.standalone) assert.equal(output.requests[0].headers["x-gateway"], "test");
 			}
 		} finally {
 			await rm(dir, { recursive: true, force: true });
