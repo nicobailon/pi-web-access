@@ -243,6 +243,14 @@ function toRequestHeaders(headers: ProviderHeaders): Record<string, string> {
 	return requestHeaders;
 }
 
+function isOpenCodeUrl(url: string): boolean {
+	try {
+		return new URL(url).hostname.toLowerCase() === "opencode.ai";
+	} catch {
+		return false;
+	}
+}
+
 async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, providers: readonly string[], modelOverride?: string, hasExplicitResponsesUrl = false, useProviderBaseUrl = false): Promise<OpenAIAuth | undefined> {
 	let models: ReturnType<typeof ctx.modelRegistry.getAll>;
 	let invalidProviderUrlError: CustomOpenAIBaseUrlError | undefined;
@@ -285,11 +293,16 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 				continue;
 			}
 		}
+		// OpenCode attribution follows the request destination: the provider's own base URL,
+		// or an explicit openaiResponsesUrl on OpenCode. Other gateways never get the session ID.
+		const sessionHeaders = useProviderBaseUrl || isOpenCodeUrl(providerResponsesUrl)
+			? openCodeSessionHeaders(preferred, ctx.sessionManager)
+			: undefined;
 		return {
 			provider,
 			apiKey: resolved.apiKey,
 			model: modelOverride ?? preferred.id,
-			headers: { ...resolved.headers, ...openCodeSessionHeaders(preferred, ctx.sessionManager) },
+			headers: { ...resolved.headers, ...sessionHeaders },
 			responsesUrl: providerResponsesUrl,
 			...(useProviderBaseUrl ? { useProviderBaseUrl: true } : {}),
 		};
