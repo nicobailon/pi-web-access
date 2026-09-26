@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Send the `x-opencode-session` / `x-opencode-client` attribution headers when OpenAI `web_search` uses credentials from an `opencode` or `opencode-go` provider. Summaries and answer mode already sent them; search requests were rejected with `400 MissingSessionID`.
+- Send the `x-opencode-session` / `x-opencode-client` attribution headers when OpenAI `web_search` sends a request to an `opencode` or `opencode-go` provider; an explicit `openaiResponsesUrl` pointing elsewhere does not receive them. Summaries and answer mode already sent them; search requests were rejected with `400 MissingSessionID`.
 - Prefer the newest versioned `gpt-<version>` id when automatic OpenAI search model selection finds no terra-tier or bare `gpt-N` / `gpt-N.N` id, so gateway providers such as `opencode-go` no longer pick a non-OpenAI model when `openaiSearchModel` is unset.
 
 ## [0.31.0] - 2026-09-22
