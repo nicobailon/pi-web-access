@@ -1,3 +1,4 @@
+import { getCurrentTools } from "@earendil-works/pi-ai";
 import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { dirname, join } from "node:path";
 import { readFileSync } from "node:fs";
@@ -34,12 +35,6 @@ function hasToolDeclarations(messages: unknown[]): boolean {
 	return messages.some(message => message && typeof message === "object" && (
 		"toolsAdded" in message || "toolsRemoved" in message
 	));
-}
-
-async function currentTranscriptToolNames(messages: unknown[]): Promise<string[]> {
-	const moduleName = "@earendil-works/pi-ai/utils/transcript";
-	const { getCurrentTools } = await import(moduleName);
-	return getCurrentTools(messages).map((tool: { name: string }) => tool.name);
 }
 
 export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray<WebActivationTool>): void {
@@ -105,7 +100,7 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 		try {
 			const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
 			const recorded = hasToolDeclarations(messages)
-				? new Set(await currentTranscriptToolNames(messages))
+				? new Set(getCurrentTools(messages).map(tool => tool.name))
 				: messages.length > 0
 					? new Set(names)
 					: new Set<string>();

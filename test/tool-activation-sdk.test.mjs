@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -9,7 +9,7 @@ import { createAgentSession, DefaultResourceLoader, SessionManager } from "@eare
 const extensionPath = new URL("../index.ts", import.meta.url).pathname;
 const root = mkdtempSync(join(tmpdir(), "pi-web-access-sdk-"));
 
-async function runNative(config = {}) {
+async function runNative(config = {}, options = {}) {
 	writeFileSync(join(root, "web-search.json"), JSON.stringify(config), "utf8");
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const previousFauxKey = process.env.FAUX_API_KEY;
@@ -43,15 +43,17 @@ async function runNative(config = {}) {
 				return fauxAssistantMessage("done");
 			},
 		]);
-		const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, additionalExtensionPaths: [extensionPath] });
+		const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, additionalExtensionPaths: [options.extensionPath ?? extensionPath] });
 		await loader.reload();
+		const sessionManager = SessionManager.inMemory(root);
+		for (const message of options.messages ?? []) sessionManager.appendMessage(message);
 		const { session, extensionsResult } = await createAgentSession({
 			cwd: root,
 			agentDir: root,
 			model: faux.getModel(),
 			modelRuntime,
 			resourceLoader: loader,
-			sessionManager: SessionManager.inMemory(root),
+			sessionManager,
 			sessionStartEvent: { type: "session_start", reason: "startup" },
 			noTools: "builtin",
 		});
@@ -83,4 +85,33 @@ test("native Pi sends configured web schemas on the request immediately after ac
 	const fetchOnly = await runNative({ tools: { webSearch: { enabled: false }, sourceCheck: { enabled: false }, getSearchContent: { enabled: false } } });
 	assert.deepEqual(fetchOnly[0].tools.map(tool => tool.name), ["web_enable"]);
 	assert.deepEqual(fetchOnly[1].tools.map(tool => tool.name), ["web_enable", "fetch_content"]);
+});
+
+test("restores a cold transcript when Pi AI is only available through the host loader", async () => {
+	const isolated = mkdtempSync(join(tmpdir(), "pi-web-access-hosted-"));
+	copyFileSync(new URL("../tool-activation.ts", import.meta.url), join(isolated, "tool-activation.ts"));
+	// Satisfy the existing version probe without making pi-ai's subpath resolvable to Node.
+	const peer = join(isolated, "node_modules", "@earendil-works", "pi-coding-agent");
+	mkdirSync(join(peer, "dist"), { recursive: true });
+	writeFileSync(join(peer, "package.json"), JSON.stringify({
+		name: "@earendil-works/pi-coding-agent", version: "0.86.1", type: "module", exports: "./dist/index.js",
+	}));
+	writeFileSync(join(peer, "dist", "index.js"), "export {};\n");
+	const hostedExtension = join(isolated, "index.ts");
+	writeFileSync(hostedExtension, `
+		import { registerWebToolActivation } from "./tool-activation.ts";
+		export default function (pi) {
+			pi.registerTool({ name: "web_search", label: "Web Search", description: "Search", parameters: { type: "object", properties: {} },
+				async execute() { return { content: [{ type: "text", text: "done" }], details: {} }; } });
+			registerWebToolActivation(pi, [{ name: "web_search", capability: "search" }]);
+		}
+	`);
+	const requests = await runNative({}, {
+		extensionPath: hostedExtension,
+		messages: [{ role: "system", content: "", timestamp: 1, toolsAdded: [
+			{ name: "web_enable", description: "Enable web", parameters: { type: "object", properties: {} } },
+		] }],
+	});
+	assert.deepEqual(requests[0].tools.map(tool => tool.name), ["web_enable"]);
+	assert.deepEqual(requests[1].tools.map(tool => tool.name), ["web_enable", "web_search"]);
 });
