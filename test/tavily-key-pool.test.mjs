@@ -126,12 +126,12 @@ test("TAVILY_API_KEY_INDEX skips empty numbered slots and wraps through the conf
 		};
 		const result = await searchWithTavily("tavily", { numResults: 1 });
 		console.log(JSON.stringify({ ok: true, keys: calls, results: result.results.length }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_5: "tavily-pool-key-5", TAVILY_API_KEY_INDEX: "2" });
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_25: "tavily-pool-key-25", TAVILY_API_KEY_INDEX: "2" });
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.ok, true);
-	assert.deepEqual(output.keys, ["tavily-pool-key-5", "tavily-pool-key-1"]);
+	assert.deepEqual(output.keys, ["tavily-pool-key-25", "tavily-pool-key-1"]);
 	assert.equal(output.results, 1);
 });
 

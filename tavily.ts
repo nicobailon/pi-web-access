@@ -60,29 +60,26 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	});
 }
 
-const TAVILY_KEY_POOL_MAX = 20;
 const TAVILY_KEY_POOL_RETRIES = new Set([401, 402, 403, 429, 432]);
 
 function tavilyKeyPool(): { keys: string[]; effective: string | null } {
-	const keys: string[] = [];
 	const keyBySlot = new Map<number, string>();
-	for (let slot = 1; slot <= TAVILY_KEY_POOL_MAX; slot += 1) {
-		const value = process.env[`TAVILY_API_KEY_${slot}`];
-		if (typeof value === "string" && value.trim().length > 0) {
-			const key = value.trim();
-			keys.push(key);
-			keyBySlot.set(slot, key);
-		}
+	for (const [name, value] of Object.entries(process.env)) {
+		const match = name.match(/^TAVILY_API_KEY_(\d+)$/);
+		if (!match || typeof value !== "string" || value.trim().length === 0) continue;
+		const slot = Number(match[1]);
+		if (!Number.isSafeInteger(slot) || slot < 1) continue;
+		keyBySlot.set(slot, value.trim());
 	}
+	const slots = [...keyBySlot.keys()].sort((a, b) => a - b);
+	const keys = slots.map((slot) => keyBySlot.get(slot)!);
 	if (keys.length === 0) return { keys, effective: null };
 	if (typeof process.env.TAVILY_API_KEY === "string" && process.env.TAVILY_API_KEY.trim().length > 0) {
 		const solo = process.env.TAVILY_API_KEY.trim();
 		if (!keys.includes(solo)) keys.push(solo);
 	}
-	const fallback = ((Math.max(1, Number.parseInt(process.env.TAVILY_API_KEY_INDEX ?? "", 10) || 1) - 1) % TAVILY_KEY_POOL_MAX) + 1;
-	const selectedSlot = keyBySlot.has(fallback)
-		? fallback
-		: [...keyBySlot.keys()].find((slot) => slot > fallback) ?? Math.min(...keyBySlot.keys());
+	const requestedSlot = Math.max(1, Number.parseInt(process.env.TAVILY_API_KEY_INDEX ?? "", 10) || 1);
+	const selectedSlot = slots.find((slot) => slot >= requestedSlot) ?? slots[0];
 	return { keys, effective: keyBySlot.get(selectedSlot) ?? keys[0] };
 }
 
