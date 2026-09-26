@@ -1,7 +1,4 @@
-import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { dirname, join } from "node:path";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { buildSessionContext, VERSION, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 export type WebCapability = "search" | "source-check" | "fetch" | "stored-content";
@@ -19,15 +16,21 @@ const CAPABILITY_LABELS: Record<WebCapability, string> = {
 	"stored-content": "stored-result retrieval",
 };
 
+export function versionAtLeast(version: string, minimum: readonly [number, number, number]): boolean {
+	const [major, minor, patch] = version.split(".").map(part => Number.parseInt(part, 10));
+	if (![major, minor, patch].every(Number.isFinite)) return false;
+	const [minMajor, minMinor, minPatch] = minimum;
+	if (major !== minMajor) return major > minMajor;
+	if (minor !== minMinor) return minor > minMinor;
+	return patch >= minPatch;
+}
+
 function supportsDynamicTools(pi: ExtensionAPI): boolean {
 	if (typeof pi.getAllTools !== "function" || typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return false;
-	try {
-		const packagePath = join(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "..", "package.json");
-		const [major, minor, patch] = JSON.parse(readFileSync(packagePath, "utf8")).version.split(".").map(Number);
-		return major > 0 || minor > 86 || minor === 86 && patch >= 1;
-	} catch {
-		return false;
-	}
+	// Read the version from the running Pi module. Resolving the package on disk fails
+	// for the single-file binary, which has no `@earendil-works/pi-coding-agent` install
+	// for extension imports to resolve against.
+	return typeof VERSION === "string" && versionAtLeast(VERSION, [0, 86, 1]);
 }
 
 function hasToolDeclarations(messages: unknown[]): boolean {
@@ -36,16 +39,21 @@ function hasToolDeclarations(messages: unknown[]): boolean {
 	));
 }
 
-async function currentTranscriptToolNames(messages: unknown[]): Promise<string[]> {
-	const moduleName = "@earendil-works/pi-ai/utils/transcript";
-	const { getCurrentTools } = await import(moduleName);
-	return getCurrentTools(messages).map((tool: { name: string }) => tool.name);
+function currentTranscriptToolNames(messages: unknown[]): string[] {
+	const tools = new Set<string>();
+	for (const message of messages) {
+		if (!message || typeof message !== "object") continue;
+		const declaration = message as { toolsAdded?: Array<{ name: string }>; toolsRemoved?: Array<{ name: string }> };
+		for (const tool of declaration.toolsRemoved ?? []) tools.delete(tool.name);
+		for (const tool of declaration.toolsAdded ?? []) tools.add(tool.name);
+	}
+	return [...tools];
 }
 
 export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray<WebActivationTool>): void {
 	if (tools.length === 0) return;
 	if (!supportsDynamicTools(pi)) {
-		console.warn("[pi-web-access] Dynamic tool activation requires Pi 0.86.1 or newer; web tools remain eagerly available.");
+		console.warn(`[pi-web-access] Dynamic tool activation requires Pi 0.86.1 or newer (running ${VERSION}); web tools remain eagerly available.`);
 		return;
 	}
 	const names = tools.map(tool => tool.name);
