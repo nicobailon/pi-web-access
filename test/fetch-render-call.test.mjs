@@ -44,6 +44,8 @@ test("fetch_content renderCall tolerates invalid normalized parameters", () => {
 test("search queries and fetch URLs remain complete in wide tool-call labels", () => {
 	const query = "Google Cloud API key best practices restrict HTTP referrers and APIs";
 	const url = "https://developers.google.com/maps/api-security-best-practices";
+	assert.deepEqual(getTool("web_search").renderCall({ query }, theme).render(200).map(line => line.trimEnd()), [`search "${query}"`]);
+	assert.deepEqual(getTool("fetch_content").renderCall({ url }, theme).render(200).map(line => line.trimEnd()), [`fetch ${url}`]);
 	assert.deepEqual(getTool("web_search").renderCall({ queries: [query, query] }, theme).render(200).map(line => line.trimEnd()), [
 		"search 2 queries", `  "${query}"`, `  "${query}"`,
 	]);
