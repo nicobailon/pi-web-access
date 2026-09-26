@@ -33,32 +33,21 @@ function supportsDynamicTools(pi: ExtensionAPI): boolean {
 	return typeof VERSION === "string" && versionAtLeast(VERSION, [0, 86, 1]);
 }
 
-async function loadCurrentToolsGetter(): Promise<(messages: unknown[]) => Array<{ name: string }>> {
-	// The package root re-exports `getCurrentTools`. Prefer it over the subpath export,
-	// which older and bundled Pi builds fail to resolve from extension code.
-	const candidates = ["@earendil-works/pi-ai", "@earendil-works/pi-ai/utils/transcript"];
-	const failures: string[] = [];
-	for (const specifier of candidates) {
-		try {
-			const module: { getCurrentTools?: (messages: unknown[]) => Array<{ name: string }> } = await import(specifier);
-			if (typeof module.getCurrentTools === "function") return module.getCurrentTools;
-			failures.push(`${specifier} exports no getCurrentTools`);
-		} catch (error) {
-			failures.push(`${specifier}: ${error instanceof Error ? error.message : String(error)}`);
-		}
-	}
-	throw new Error(`getCurrentTools is unavailable (${failures.join("; ")})`);
-}
-
 function hasToolDeclarations(messages: unknown[]): boolean {
 	return messages.some(message => message && typeof message === "object" && (
 		"toolsAdded" in message || "toolsRemoved" in message
 	));
 }
 
-async function currentTranscriptToolNames(messages: unknown[]): Promise<string[]> {
-	const getCurrentTools = await loadCurrentToolsGetter();
-	return getCurrentTools(messages).map(tool => tool.name);
+function currentTranscriptToolNames(messages: unknown[]): string[] {
+	const tools = new Set<string>();
+	for (const message of messages) {
+		if (!message || typeof message !== "object") continue;
+		const declaration = message as { toolsAdded?: Array<{ name: string }>; toolsRemoved?: Array<{ name: string }> };
+		for (const tool of declaration.toolsRemoved ?? []) tools.delete(tool.name);
+		for (const tool of declaration.toolsAdded ?? []) tools.add(tool.name);
+	}
+	return [...tools];
 }
 
 export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray<WebActivationTool>): void {

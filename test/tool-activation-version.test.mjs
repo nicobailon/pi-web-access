@@ -39,12 +39,7 @@ function hostRedirectHook(version) {
 	`;
 }
 
-// Bundled Pi builds (the single-file binary shipped by installers) provide
-// `@earendil-works/pi-coding-agent` and `@earendil-works/pi-ai` as virtual modules.
-// Static imports and the package root resolve, but deeper subpath exports such as
-// `@earendil-works/pi-ai/utils/transcript` fail with ERR_MODULE_NOT_FOUND from
-// extension code, and no `node_modules` exists on disk to fall back to.
-const unresolvableSubpathHook = `
+const unavailablePiAiSubpathHook = `
 	import { registerHooks } from "node:module";
 	registerHooks({
 		resolve(specifier, context, nextResolve) {
@@ -130,9 +125,9 @@ test("a host older than 0.86.1 falls back to eager web tools without crashing", 
 	assert.ok(state.active.includes("web_search"), `expected eager web_search, got ${state.active.join(", ")}`);
 });
 
-test("warm session tool restoration uses the pi-ai package root, not the transcript subpath", () => {
+test("warm session tool restoration does not resolve the pi-ai transcript helper at runtime", () => {
 	const messages = [{ role: "system", content: "", toolsAdded: [{ name: "web_search", description: "", parameters: { type: "object" } }], timestamp: 1 }];
-	const state = run({ messages, hook: unresolvableSubpathHook });
+	const state = run({ messages, hook: unavailablePiAiSubpathHook });
 	assert.deepEqual(state.warnings, []);
 	assert.ok(state.active.includes("web_search"), `expected restored web_search, got ${state.active.join(", ")}`);
 });

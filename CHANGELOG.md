@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Detect the Pi version through the exported `VERSION` constant instead of resolving `@earendil-works/pi-coding-agent` on disk, and read `getCurrentTools` from the `@earendil-works/pi-ai` package root rather than a subpath. Dynamic tool activation no longer reports a false "requires Pi 0.86.1 or newer" warning for globally installed Pi, where the extension's own `node_modules` does not contain the Pi packages. Thanks to [@samsimsom](https://github.com/samsimsom) for [issue #428](https://github.com/nicobailon/pi-web-access/issues/428).
+- Detect the Pi version through the exported `VERSION` constant instead of resolving `@earendil-works/pi-coding-agent` on disk, and restore recorded tool selections without importing a Pi package at runtime. Dynamic tool activation no longer reports a false "requires Pi 0.86.1 or newer" warning for globally installed Pi, where the extension's own `node_modules` does not contain the Pi packages. Thanks to [@samsimsom](https://github.com/samsimsom) for [issue #428](https://github.com/nicobailon/pi-web-access/issues/428).
 
 ## [0.31.0] - 2026-09-22
 
