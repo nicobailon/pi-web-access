@@ -79,8 +79,11 @@ function tavilyKeyPool(): { keys: string[]; effective: string | null } {
 		const solo = process.env.TAVILY_API_KEY.trim();
 		if (!keys.includes(solo)) keys.push(solo);
 	}
-	const fallback = Math.max(1, Number.parseInt(process.env.TAVILY_API_KEY_INDEX ?? "", 10) || 1);
-	return { keys, effective: keyBySlot.get(((fallback - 1) % TAVILY_KEY_POOL_MAX) + 1) ?? keys[0] };
+	const fallback = ((Math.max(1, Number.parseInt(process.env.TAVILY_API_KEY_INDEX ?? "", 10) || 1) - 1) % TAVILY_KEY_POOL_MAX) + 1;
+	const selectedSlot = keyBySlot.has(fallback)
+		? fallback
+		: [...keyBySlot.keys()].find((slot) => slot > fallback) ?? Math.min(...keyBySlot.keys());
+	return { keys, effective: keyBySlot.get(selectedSlot) ?? keys[0] };
 }
 
 function getApiUrl(): string {
