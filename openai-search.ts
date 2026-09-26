@@ -249,12 +249,8 @@ function toRequestHeaders(headers: ProviderHeaders): Record<string, string> {
 }
 
 function isOpenCodeUrl(url: string): boolean {
-	try {
-		const parsed = new URL(url);
-		return parsed.protocol === "https:" && parsed.hostname.toLowerCase() === "opencode.ai";
-	} catch {
-		return false;
-	}
+	const parsed = new URL(url);
+	return parsed.protocol === "https:" && parsed.hostname.toLowerCase() === "opencode.ai";
 }
 
 function applyOpenCodeDestinationHeaders(headers: HeadersInit, requestUrl: string, ctx?: Pick<ExtensionContext, "sessionManager">): Headers {

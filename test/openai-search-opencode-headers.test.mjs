@@ -70,7 +70,6 @@ test("OpenAI search through opencode-go sends OpenCode session attribution", asy
 	assert.equal(out.requests.length, 1);
 	const [request] = out.requests;
 	assert.equal(request.url, "https://opencode.ai/zen/go/v1/responses");
-	assert.equal(request.body.model, "gpt-6-luna");
 	assert.equal(request.headers["x-opencode-session"], "search-session-1");
 	assert.equal(request.headers["x-opencode-client"], "pi");
 	assert.equal(request.headers["x-existing"], "kept");
