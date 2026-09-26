@@ -295,7 +295,7 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 		}
 		// OpenCode attribution follows the request destination: the provider's own base URL,
 		// or an explicit openaiResponsesUrl on OpenCode. Other gateways never get the session ID.
-		const sessionHeaders = useProviderBaseUrl || isOpenCodeUrl(providerResponsesUrl)
+		const sessionHeaders = isOpenCodeUrl(providerResponsesUrl)
 			? openCodeSessionHeaders(preferred, ctx.sessionManager)
 			: undefined;
 		return {

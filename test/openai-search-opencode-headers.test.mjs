@@ -16,7 +16,7 @@ const openCodeGoModels = [
 	{ provider: "opencode-go", id: "space-bunny-free", api: "openai-completions", baseUrl: "https://opencode.ai/zen/go/v1" },
 ];
 
-async function runSearch(t, { config, models, sessionId }) {
+async function runSearch(t, { config, models, sessionId, resolvedBaseUrl }) {
 	const dir = await mkdtemp(join(tmpdir(), "pi-openai-opencode-headers-"));
 	t.after(() => rm(dir, { recursive: true, force: true }));
 	await writeFile(join(dir, "web-search.json"), JSON.stringify(config));
@@ -38,7 +38,7 @@ async function runSearch(t, { config, models, sessionId }) {
 			const ctx = {
 				modelRegistry: {
 					getAll: () => models,
-					getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: { "x-existing": "kept" } }),
+					getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: { "x-existing": "kept" }, ...(${JSON.stringify(resolvedBaseUrl)} ? { baseUrl: ${JSON.stringify(resolvedBaseUrl)} } : {}) }),
 				},
 				sessionManager: { getSessionId: () => sessionId ?? undefined },
 			};
@@ -79,6 +79,22 @@ test("OpenAI search through opencode-go omits attribution without a session id",
 
 	assert.equal(out.error, undefined);
 	const [request] = out.requests;
+	assert.equal(request.headers["x-opencode-session"], undefined);
+	assert.equal(request.headers["x-opencode-client"], undefined);
+	assert.equal(request.headers["x-existing"], "kept");
+});
+
+test("OpenAI search does not send OpenCode attribution when resolved auth overrides the provider base URL", async (t) => {
+	const out = await runSearch(t, {
+		config: openCodeGoConfig,
+		models: openCodeGoModels,
+		sessionId: "search-session-override",
+		resolvedBaseUrl: "https://resolved-gateway.example/v1",
+	});
+
+	assert.equal(out.error, undefined);
+	const [request] = out.requests;
+	assert.equal(request.url, "https://resolved-gateway.example/v1/responses");
 	assert.equal(request.headers["x-opencode-session"], undefined);
 	assert.equal(request.headers["x-opencode-client"], undefined);
 	assert.equal(request.headers["x-existing"], "kept");
