@@ -5,7 +5,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { fetchWithCredentialRedirects, getWebSearchConfigPath } from "./utils.ts";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
 const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
@@ -257,11 +257,16 @@ function isOpenCodeUrl(url: string): boolean {
 	}
 }
 
-function openCodeDestinationHeaders(responsesUrl: string, ctx?: Pick<ExtensionContext, "sessionManager">): ProviderHeaders | undefined {
-	if (!isOpenCodeUrl(responsesUrl)) return undefined;
+function applyOpenCodeDestinationHeaders(headers: HeadersInit, requestUrl: string, ctx?: Pick<ExtensionContext, "sessionManager">): Headers {
+	const requestHeaders = new Headers(headers);
+	requestHeaders.delete("x-opencode-session");
+	requestHeaders.delete("x-opencode-client");
+	if (!isOpenCodeUrl(requestUrl)) return requestHeaders;
 	const sessionId = ctx?.sessionManager?.getSessionId?.();
-	if (!sessionId) return undefined;
-	return { "x-opencode-session": sessionId, "x-opencode-client": "pi" };
+	if (!sessionId) return requestHeaders;
+	requestHeaders.set("x-opencode-session", sessionId);
+	requestHeaders.set("x-opencode-client", "pi");
+	return requestHeaders;
 }
 
 async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, providers: readonly string[], modelOverride?: string, hasExplicitResponsesUrl = false, useProviderBaseUrl = false): Promise<OpenAIAuth | undefined> {
@@ -306,14 +311,11 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 				continue;
 			}
 		}
-		// OpenCode attribution follows the request destination: the provider's own base URL,
-		// or an explicit openaiResponsesUrl on OpenCode. Other gateways never get the session ID.
-		const sessionHeaders = openCodeDestinationHeaders(providerResponsesUrl, ctx);
 		return {
 			provider,
 			apiKey: resolved.apiKey,
 			model: modelOverride ?? preferred.id,
-			headers: { ...resolved.headers, ...sessionHeaders },
+			headers: resolved.headers ?? {},
 			responsesUrl: providerResponsesUrl,
 			...(useProviderBaseUrl ? { useProviderBaseUrl: true } : {}),
 		};
@@ -349,7 +351,7 @@ export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSi
 		signal,
 	});
 	return apiKey
-		? { provider: "openai", apiKey, model: modelOverride ?? "gpt-5.6-terra", headers: openCodeDestinationHeaders(responsesUrl, ctx) ?? {}, responsesUrl }
+		? { provider: "openai", apiKey, model: modelOverride ?? "gpt-5.6-terra", headers: {}, responsesUrl }
 		: undefined;
 }
 
@@ -671,6 +673,7 @@ async function runOpenAISearch(
 	query: string,
 	options: SearchOptions,
 	auth: OpenAIAuth,
+	ctx?: Pick<ExtensionContext, "sessionManager">,
 ): Promise<SearchResponse> {
 	const useAlphaSearch = isAlphaSearchEnabled();
 	if (useAlphaSearch) options.signal?.throwIfAborted();
@@ -700,16 +703,21 @@ async function runOpenAISearch(
 		if (accountId) headers["chatgpt-account-id"] = accountId;
 		headers.originator = "pi";
 	}
+	const requestHeaders = applyOpenCodeDestinationHeaders(
+		useAlphaSearch ? buildAlphaSearchHeaders(headers, auth.apiKey) : headers,
+		requestUrl,
+		ctx,
+	);
 
 	try {
-		const response = await fetch(requestUrl, {
+		const response = await fetchWithCredentialRedirects(requestUrl, {
 			method: "POST",
-			headers: useAlphaSearch ? buildAlphaSearchHeaders(headers, auth.apiKey) : headers,
+			headers: requestHeaders,
 			body: JSON.stringify(body),
 			signal: options.signal
 				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
 				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		});
+		}, ["Authorization", "x-opencode-session", "x-opencode-client", "chatgpt-account-id", ...Object.keys(auth.headers)]);
 
 		if (!response.ok) {
 			activityMonitor.logError(activityId, `HTTP ${response.status}`);
@@ -766,7 +774,7 @@ export async function searchWithOpenAI(
 			"  3. Set OPENAI_API_KEY environment variable",
 		);
 	}
-	return runOpenAISearch(query, options, auth);
+	return runOpenAISearch(query, options, auth, ctx);
 }
 
 export async function searchWithCurrentModelOpenAI(
@@ -776,5 +784,5 @@ export async function searchWithCurrentModelOpenAI(
 ): Promise<SearchResponse> {
 	if (!ctx) throw new Error("OpenAI current-model search requires an extension context");
 	const auth = await resolveCurrentModelAuth(ctx, options.signal);
-	return runOpenAISearch(query, options, auth);
+	return runOpenAISearch(query, options, auth, ctx);
 }
