@@ -1836,9 +1836,10 @@ export default function (pi: ExtensionAPI) {
 			`Search the web with ${allowedSearchProviders.map(providerLabel).join(", ")}. Provider arrays run simultaneously; ${allPolicyDescription}. The default workflow is none: it returns bounded source-linked search results or provider answers without a curator or generated summary, identifies the providers used, and stores full results for retrieval by responseId. For comprehensive research, prefer queries (plural) with 2-4 varied angles over a single query. When includeContent is true, full page content is fetched in the background. Set workflow to "summary-review" to open the curator with an auto-generated summary draft or "auto-summary" to generate a summary without the browser curator. The configured provider is used when provider is omitted or set to auto; omit provider unless explicitly overriding it.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
-		parameters: Type.Object({
-			query: Type.Optional(Type.String({ description: "Single search query. For research tasks, prefer 'queries' with multiple varied angles instead." })),
-			queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched concurrently (up to three at a time), each returning source-linked search results or a provider answer. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
+		parameters: {
+			...Type.Object({
+				query: Type.Optional(Type.String({ description: "Single search query. Required unless 'queries' is provided. For research tasks, prefer 'queries' with multiple varied angles instead." })),
+				queries: Type.Optional(Type.Array(Type.String(), { description: "Multiple queries searched concurrently (up to three at a time), each returning source-linked search results or a provider answer. Required unless 'query' is provided. Prefer this for research — vary phrasing, scope, and angle across 2-4 queries to maximize coverage. Good: ['React vs Vue performance benchmarks 2026', 'React vs Vue developer experience comparison', 'React ecosystem size vs Vue ecosystem']. Bad: ['React vs Vue', 'React vs Vue comparison', 'React vs Vue review'] (too similar, redundant results)." })),
 			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Results per query (default: 5, max: 20)" })),
 			includeContent: Type.Optional(Type.Boolean({ description: "Fetch full page content (async)" })),
 			recencyFilter: Type.Optional(
@@ -1854,7 +1855,12 @@ export default function (pi: ExtensionAPI) {
 			proxy: Type.Optional(Type.String({
 				description: "http(s) or socks proxy URL (e.g. http://host:port or socks5h://host:port) used for every outbound request in this call (search APIs and content fetches). Node fetch ignores HTTP(S)_PROXY env vars, so set this (or `proxy` in web-search.json) when direct access is blocked; empty string forces direct access.",
 			})),
-		}),
+			}),
+			// Formalize the runtime requirement (previously only enforced inside execute()):
+			// a search call must provide at least one of query/queries. Models rely on the
+			// formal `required` array and omit parameters that are only described in prose.
+			anyOf: [{ required: ["query"] }, { required: ["queries"] }],
+		},
 
 		async execute(callId, params, signal, onUpdate, ctx) {
 			return runWithProxy(typeof params.proxy === "string" ? params.proxy : undefined, async () => {
@@ -2533,10 +2539,11 @@ export default function (pi: ExtensionAPI) {
 		description: `Fetch URL(s). Available modes: ${fetchModeDescription}. Direct image URLs return resized image content when supported by the selected mode. Supports YouTube transcripts, GitHub repositories, PDFs, and local videos when supported by the selected mode. ${fetchContentStorageNote}`,
 		promptSnippet:
 			"Use to fetch URL content, direct images, GitHub repos, and videos.",
-		parameters: Type.Object({
-			url: Type.Optional(Type.String({ description: "Single URL to fetch" })),
-			urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel)" })),
-			forceClone: Type.Optional(Type.Boolean({
+		parameters: {
+			...Type.Object({
+				url: Type.Optional(Type.String({ description: "Single URL to fetch. Required unless 'urls' is provided." })),
+				urls: Type.Optional(Type.Array(Type.String(), { description: "Multiple URLs (parallel). Required unless 'url' is provided." })),
+				forceClone: Type.Optional(Type.Boolean({
 				description: "Force cloning large GitHub repositories that exceed the size threshold",
 			})),
 			prompt: Type.Optional(Type.String({
@@ -2569,7 +2576,13 @@ export default function (pi: ExtensionAPI) {
 			proxy: Type.Optional(Type.String({
 				description: "http(s) or socks proxy URL (e.g. http://host:port or socks5h://host:port) used for this fetch. Needed when the target is unreachable directly; localhost and NO_PROXY hosts always bypass the proxy. Empty string forces direct access.",
 			})),
-		}),
+			}),
+			// Formalize the runtime requirement (previously only enforced inside execute()
+			// via normalizeFetchContentParams): a fetch must provide at least one of url/urls.
+			// Models rely on the formal `required` array and omit parameters that are only
+			// described in prose.
+			anyOf: [{ required: ["url"] }, { required: ["urls"] }],
+		},
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<Record<string, unknown>>> {
 			let normalized: ReturnType<typeof normalizeFetchContentParams>;

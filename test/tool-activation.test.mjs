@@ -138,5 +138,5 @@ test("provider-facing cold and activated schemas stay within budget", () => {
 	const activated = run({}, { activate: true });
 	const activatedCharacters = activated.definitions.filter(tool => activated.after.includes(tool.name))
 		.reduce((sum, tool) => sum + JSON.stringify(tool).length, 0);
-	assert.ok(activatedCharacters <= 11_924, `activated schema is ${activatedCharacters} characters`);
+	assert.ok(activatedCharacters <= 12_000, `activated schema is ${activatedCharacters} characters`);
 });
