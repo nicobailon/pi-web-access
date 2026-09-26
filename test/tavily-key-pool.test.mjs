@@ -24,6 +24,7 @@ function runChild(script, env) {
 		"TAVILY_API_KEY_1",
 		"TAVILY_API_KEY_2",
 		"TAVILY_API_KEY_3",
+		"TAVILY_API_KEY_5",
 	]) delete childEnv[key];
 	Object.assign(childEnv, env);
 	return spawnSync(process.execPath, ["--input-type=module"], {
@@ -107,6 +108,27 @@ test("TAVILY_API_KEY_INDEX chooses the pool slot that is tried first", async () 
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.ok, true);
 	assert.equal(output.keys[0], "tavily-pool-key-2");
+	assert.equal(output.results, 1);
+});
+
+test("TAVILY_API_KEY_INDEX selects the numbered slot when the pool has gaps", async () => {
+	const { home, agentDir } = await createHome({});
+	const child = runChild(`
+		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			const headers = Object.fromEntries(new Headers(init.headers));
+			calls.push(headers.authorization.replace("Bearer ", ""));
+			return new Response(JSON.stringify({ results: [{ title: "Tavily", url: "https://example.com/tavily", content: "result" }] }), { status: 200 });
+		};
+		const result = await searchWithTavily("tavily", { numResults: 1 });
+		console.log(JSON.stringify({ ok: true, keys: calls, results: result.results.length }));
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_5: "tavily-pool-key-5", TAVILY_API_KEY_INDEX: "5" });
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.ok, true);
+	assert.deepEqual(output.keys, ["tavily-pool-key-5"]);
 	assert.equal(output.results, 1);
 });
 

@@ -65,9 +65,14 @@ const TAVILY_KEY_POOL_RETRIES = new Set([401, 402, 403, 429, 432]);
 
 function tavilyKeyPool(): { keys: string[]; effective: string | null } {
 	const keys: string[] = [];
+	const keyBySlot = new Map<number, string>();
 	for (let slot = 1; slot <= TAVILY_KEY_POOL_MAX; slot += 1) {
 		const value = process.env[`TAVILY_API_KEY_${slot}`];
-		if (typeof value === "string" && value.trim().length > 0) keys.push(value.trim());
+		if (typeof value === "string" && value.trim().length > 0) {
+			const key = value.trim();
+			keys.push(key);
+			keyBySlot.set(slot, key);
+		}
 	}
 	if (keys.length === 0) return { keys, effective: null };
 	if (typeof process.env.TAVILY_API_KEY === "string" && process.env.TAVILY_API_KEY.trim().length > 0) {
@@ -75,8 +80,7 @@ function tavilyKeyPool(): { keys: string[]; effective: string | null } {
 		if (!keys.includes(solo)) keys.push(solo);
 	}
 	const fallback = Math.max(1, Number.parseInt(process.env.TAVILY_API_KEY_INDEX ?? "", 10) || 1);
-	if (Number.isNaN(fallback)) return { keys, effective: keys[0] };
-	return { keys, effective: keys[(fallback - 1) % keys.length] };
+	return { keys, effective: keyBySlot.get(((fallback - 1) % TAVILY_KEY_POOL_MAX) + 1) ?? keys[0] };
 }
 
 function getApiUrl(): string {
