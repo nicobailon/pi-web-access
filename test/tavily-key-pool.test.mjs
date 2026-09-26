@@ -17,15 +17,11 @@ async function createHome(config) {
 
 function runChild(script, env) {
 	const childEnv = { ...process.env };
-	for (const key of [
-		"PI_CODING_AGENT_DIR",
-		"TAVILY_API_KEY",
-		"TAVILY_API_KEY_INDEX",
-		"TAVILY_API_KEY_1",
-		"TAVILY_API_KEY_2",
-		"TAVILY_API_KEY_3",
-		"TAVILY_API_KEY_5",
-	]) delete childEnv[key];
+	for (const key of Object.keys(childEnv)) {
+		if (key === "PI_CODING_AGENT_DIR" || key === "TAVILY_API_KEY" || key === "TAVILY_API_KEY_INDEX" || /^TAVILY_API_KEY_\d+$/.test(key)) {
+			delete childEnv[key];
+		}
+	}
 	Object.assign(childEnv, env);
 	return spawnSync(process.execPath, ["--input-type=module"], {
 		input: script,
@@ -50,7 +46,7 @@ test("plain TAVILY_API_KEY environment still resolves exactly like before the ke
 		}));
 		await searchWithTavily("tavily", { numResults: 1 });
 		console.log(JSON.stringify({ calls, availableAfter: isTavilyAvailable() }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY: "tavily-solo-key" });
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY: "tavily-solo-key", TAVILY_API_KEY_25: "tavily-out-of-range-key" });
 
 	assert.equal(child.status, 0, child.stderr);
 	const [before, after] = child.stdout.trim().split("\n").map((line) => JSON.parse(line));
@@ -126,12 +122,12 @@ test("TAVILY_API_KEY_INDEX skips empty numbered slots and wraps through the conf
 		};
 		const result = await searchWithTavily("tavily", { numResults: 1 });
 		console.log(JSON.stringify({ ok: true, keys: calls, results: result.results.length }));
-	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_25: "tavily-pool-key-25", TAVILY_API_KEY_INDEX: "2" });
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_5: "tavily-pool-key-5", TAVILY_API_KEY_INDEX: "2" });
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.ok, true);
-	assert.deepEqual(output.keys, ["tavily-pool-key-25", "tavily-pool-key-1"]);
+	assert.deepEqual(output.keys, ["tavily-pool-key-5", "tavily-pool-key-1"]);
 	assert.equal(output.results, 1);
 });
 

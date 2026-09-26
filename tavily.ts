@@ -60,6 +60,7 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	});
 }
 
+const TAVILY_KEY_POOL_MAX = 20;
 const TAVILY_KEY_POOL_RETRIES = new Set([401, 402, 403, 429, 432]);
 
 function tavilyKeyPool(): { keys: string[]; effective: string | null } {
@@ -68,7 +69,7 @@ function tavilyKeyPool(): { keys: string[]; effective: string | null } {
 		const match = name.match(/^TAVILY_API_KEY_(\d+)$/);
 		if (!match || typeof value !== "string" || value.trim().length === 0) continue;
 		const slot = Number(match[1]);
-		if (!Number.isSafeInteger(slot) || slot < 1) continue;
+		if (!Number.isSafeInteger(slot) || slot < 1 || slot > TAVILY_KEY_POOL_MAX) continue;
 		keyBySlot.set(slot, value.trim());
 	}
 	const slots = [...keyBySlot.keys()].sort((a, b) => a - b);
