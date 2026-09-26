@@ -137,6 +137,54 @@ test("OpenAI search with OpenCode credentials sends attribution to an explicit O
 	assert.equal(request.headers["x-opencode-client"], "pi");
 });
 
+test("OpenAI search sends attribution to an explicit OpenCode URL with standalone credentials", async (t) => {
+	const out = await runSearch(t, {
+		config: {
+			openaiApiKey: "standalone-key",
+			openaiResponsesUrl: "https://opencode.ai/zen/v1/responses",
+		},
+		models: [],
+		sessionId: "search-session-standalone",
+	});
+
+	assert.equal(out.error, undefined);
+	const [request] = out.requests;
+	assert.equal(request.url, "https://opencode.ai/zen/v1/responses");
+	assert.equal(request.headers["x-opencode-session"], "search-session-standalone");
+	assert.equal(request.headers["x-opencode-client"], "pi");
+});
+
+test("OpenAI search sends attribution to an explicit OpenCode URL with a non-OpenCode Pi model", async (t) => {
+	const out = await runSearch(t, {
+		config: {
+			openaiSearchProviders: ["openai"],
+			openaiResponsesUrl: "https://opencode.ai/zen/v1/responses",
+		},
+		models: [{ provider: "openai", id: "gpt-5.6-terra", api: "openai-responses", baseUrl: "https://api.openai.com/v1" }],
+		sessionId: "search-session-non-opencode-model",
+	});
+
+	assert.equal(out.error, undefined);
+	const [request] = out.requests;
+	assert.equal(request.url, "https://opencode.ai/zen/v1/responses");
+	assert.equal(request.headers["x-opencode-session"], "search-session-non-opencode-model");
+	assert.equal(request.headers["x-opencode-client"], "pi");
+});
+
+test("OpenAI search rejects an insecure explicit OpenCode URL without sending credentials or attribution", async (t) => {
+	const out = await runSearch(t, {
+		config: {
+			openaiApiKey: "standalone-key",
+			openaiResponsesUrl: "http://opencode.ai/zen/v1/responses",
+		},
+		models: [],
+		sessionId: "search-session-insecure",
+	});
+
+	assert.match(out.error, /must use HTTPS for opencode\.ai/u);
+	assert.equal(out.requests.length, 0);
+});
+
 test("OpenAI search through opencode-go picks the newest versioned GPT model without openaiSearchModel", async (t) => {
 	const { openaiSearchModel: _unused, ...config } = openCodeGoConfig;
 	const out = await runSearch(t, { config, models: openCodeGoModels, sessionId: "search-session-3" });

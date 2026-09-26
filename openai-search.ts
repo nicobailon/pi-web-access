@@ -5,7 +5,6 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { openCodeSessionHeaders } from "./opencode-session-headers.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses";
@@ -186,6 +185,9 @@ function resolveConfiguredResponsesUrl(value: unknown): string {
 	if (url.protocol !== "https:" && url.protocol !== "http:") {
 		throw new Error(`openaiResponsesUrl in ${CONFIG_PATH} must use http or https`);
 	}
+	if (url.hostname.toLowerCase() === "opencode.ai" && url.protocol !== "https:") {
+		throw new Error(`openaiResponsesUrl in ${CONFIG_PATH} must use HTTPS for opencode.ai`);
+	}
 	return url.toString();
 }
 
@@ -207,6 +209,9 @@ function resolveProviderResponsesUrl(baseUrl: unknown, useCodexEndpoint: boolean
 		if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error();
 	} catch {
 		throw new CustomOpenAIBaseUrlError("OpenAI search configuration: openaiUseProviderBaseUrl requires an absolute http(s) provider baseUrl");
+	}
+	if (url.hostname.toLowerCase() === "opencode.ai" && url.protocol !== "https:") {
+		throw new CustomOpenAIBaseUrlError("OpenAI search configuration: opencode.ai provider baseUrl must use HTTPS");
 	}
 	const path = url.pathname.replace(/\/+$/u, "");
 	if (path.endsWith("/responses")) {
@@ -245,10 +250,18 @@ function toRequestHeaders(headers: ProviderHeaders): Record<string, string> {
 
 function isOpenCodeUrl(url: string): boolean {
 	try {
-		return new URL(url).hostname.toLowerCase() === "opencode.ai";
+		const parsed = new URL(url);
+		return parsed.protocol === "https:" && parsed.hostname.toLowerCase() === "opencode.ai";
 	} catch {
 		return false;
 	}
+}
+
+function openCodeDestinationHeaders(responsesUrl: string, ctx?: Pick<ExtensionContext, "sessionManager">): ProviderHeaders | undefined {
+	if (!isOpenCodeUrl(responsesUrl)) return undefined;
+	const sessionId = ctx?.sessionManager?.getSessionId?.();
+	if (!sessionId) return undefined;
+	return { "x-opencode-session": sessionId, "x-opencode-client": "pi" };
 }
 
 async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, providers: readonly string[], modelOverride?: string, hasExplicitResponsesUrl = false, useProviderBaseUrl = false): Promise<OpenAIAuth | undefined> {
@@ -295,9 +308,7 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 		}
 		// OpenCode attribution follows the request destination: the provider's own base URL,
 		// or an explicit openaiResponsesUrl on OpenCode. Other gateways never get the session ID.
-		const sessionHeaders = isOpenCodeUrl(providerResponsesUrl)
-			? openCodeSessionHeaders(preferred, ctx.sessionManager)
-			: undefined;
+		const sessionHeaders = openCodeDestinationHeaders(providerResponsesUrl, ctx);
 		return {
 			provider,
 			apiKey: resolved.apiKey,
@@ -338,7 +349,7 @@ export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSi
 		signal,
 	});
 	return apiKey
-		? { provider: "openai", apiKey, model: modelOverride ?? "gpt-5.6-terra", headers: {}, responsesUrl }
+		? { provider: "openai", apiKey, model: modelOverride ?? "gpt-5.6-terra", headers: openCodeDestinationHeaders(responsesUrl, ctx) ?? {}, responsesUrl }
 		: undefined;
 }
 
