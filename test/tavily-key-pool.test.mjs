@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const tavilyModuleUrl = new URL("../tavily.ts", import.meta.url).href;
+const activityModuleUrl = new URL("../activity.ts", import.meta.url).href;
 
 async function createHome(config) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-tavily-key-pool-"));
@@ -60,7 +61,11 @@ test("key pool advances to the next key on quota failures and reports the last e
 	const child = runChild(`
 		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
 		const calls = [];
+		let requestSignal;
+		let sharedSignal = true;
 		globalThis.fetch = async (url, init = {}) => {
+			if (requestSignal) sharedSignal &&= init.signal === requestSignal;
+			else requestSignal = init.signal;
 			const headers = Object.fromEntries(new Headers(init.headers));
 			calls.push({ status: null, authorization: headers.authorization });
 			if (String(headers.authorization).endsWith("tavily-pool-key-3")) {
@@ -70,7 +75,7 @@ test("key pool advances to the next key on quota failures and reports the last e
 		};
 		try {
 			const result = await searchWithTavily("tavily", { numResults: 1 });
-			console.log(JSON.stringify({ ok: true, keys: calls.map((call) => call.authorization.replace("Bearer ", "")), results: result.results.length }));
+			console.log(JSON.stringify({ ok: true, keys: calls.map((call) => call.authorization.replace("Bearer ", "")), results: result.results.length, sharedSignal }));
 		} catch (err) {
 			console.log(JSON.stringify({ ok: false, error: String(err.message), keys: calls.map((call) => call.authorization.replace("Bearer ", "")) }));
 		}
@@ -81,6 +86,7 @@ test("key pool advances to the next key on quota failures and reports the last e
 	assert.equal(output.ok, true);
 	assert.deepEqual(output.keys, ["tavily-pool-key-1", "tavily-pool-key-2", "tavily-pool-key-3"]);
 	assert.equal(output.results, 1);
+	assert.equal(output.sharedSignal, true);
 });
 
 test("TAVILY_API_KEY_INDEX chooses the pool slot that is tried first", async () => {
@@ -135,6 +141,7 @@ test("numbered pool keys are exhausted before the standalone fallback", async ()
 	const { home, agentDir } = await createHome({});
 	const child = runChild(`
 		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const { activityMonitor } = await import(${JSON.stringify(activityModuleUrl)});
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
 			const authorization = new Headers(init.headers).get("authorization");
@@ -145,12 +152,60 @@ test("numbered pool keys are exhausted before the standalone fallback", async ()
 			return new Response("quota exhausted", { status: 429 });
 		};
 		const result = await searchWithTavily("tavily", { numResults: 1 });
-		console.log(JSON.stringify({ keys: calls, results: result.results.length }));
+		console.log(JSON.stringify({ keys: calls, results: result.results.length, activity: activityMonitor.getEntries() }));
 	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY: "tavily-solo-key", TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_5: "tavily-pool-key-5", TAVILY_API_KEY_INDEX: "5" });
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.deepEqual(output.keys, ["tavily-pool-key-5", "tavily-pool-key-1", "tavily-solo-key"]);
+	assert.equal(output.results, 1);
+	assert.equal(output.activity.length, 1);
+	assert.equal(output.activity[0].status, 200);
+});
+
+test("configured credentials are the final fallback after numbered pool keys", async () => {
+	const { home, agentDir } = await createHome({ tavilyApiKey: "tavily-config-key" });
+	const child = runChild(`
+		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			const authorization = new Headers(init.headers).get("authorization");
+			calls.push(authorization.replace("Bearer ", ""));
+			if (authorization.endsWith("tavily-config-key")) {
+				return new Response(JSON.stringify({ results: [{ title: "Tavily", url: "https://example.com/tavily", content: "result" }] }), { status: 200 });
+			}
+			return new Response("quota exhausted", { status: 429 });
+		};
+		const result = await searchWithTavily("tavily", { numResults: 1 });
+		console.log(JSON.stringify({ keys: calls, results: result.results.length }));
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-pool-key-1" });
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.keys, ["tavily-pool-key-1", "tavily-config-key"]);
+	assert.equal(output.results, 1);
+});
+
+test("duplicate numbered credentials are attempted once from the selected slot", async () => {
+	const { home, agentDir } = await createHome({});
+	const child = runChild(`
+		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			const authorization = new Headers(init.headers).get("authorization");
+			calls.push(authorization.replace("Bearer ", ""));
+			if (authorization.endsWith("tavily-pool-key-5")) {
+				return new Response(JSON.stringify({ results: [{ title: "Tavily", url: "https://example.com/tavily", content: "result" }] }), { status: 200 });
+			}
+			return new Response("quota exhausted", { status: 429 });
+		};
+		const result = await searchWithTavily("tavily", { numResults: 1 });
+		console.log(JSON.stringify({ keys: calls, results: result.results.length }));
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-duplicate-key", TAVILY_API_KEY_3: "tavily-duplicate-key", TAVILY_API_KEY_5: "tavily-pool-key-5", TAVILY_API_KEY_INDEX: "3" });
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.keys, ["tavily-duplicate-key", "tavily-pool-key-5"]);
 	assert.equal(output.results, 1);
 });
 
