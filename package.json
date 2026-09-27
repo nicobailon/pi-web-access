@@ -58,11 +58,12 @@
     "@mozilla/readability": "^0.6.0",
     "defuddle": "0.19.3",
     "linkedom": "^0.16.0",
+    "minimatch": "10.2.6",
     "p-limit": "^6.1.0",
     "promise.try": "^2.0.1",
     "turndown": "^7.2.0",
-    "unpdf": "^1.6.2",
-    "undici": "^8.9.0"
+    "undici": "^8.9.0",
+    "unpdf": "^1.6.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
