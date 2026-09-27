@@ -9,30 +9,63 @@ import { createAgentSession, DefaultResourceLoader, SessionManager } from "@eare
 const extensionPath = new URL("../index.ts", import.meta.url).pathname;
 const root = mkdtempSync(join(tmpdir(), "pi-web-access-sdk-"));
 
-async function runNative(config = {}) {
+async function withNativeEnv(config, run) {
 	writeFileSync(join(root, "web-search.json"), JSON.stringify(config), "utf8");
 	const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const previousFauxKey = process.env.FAUX_API_KEY;
 	process.env.PI_CODING_AGENT_DIR = root;
 	process.env.FAUX_API_KEY = "test";
 	try {
-		const faux = fauxProvider();
-		const models = createModels();
-		models.setProvider(faux.provider);
-		const modelRuntime = new Proxy(models, {
-			get(target, property) {
-				if (property === "hasConfiguredAuth") return () => true;
-				if (property === "checkAuth") return async () => ({ type: "api_key", key: "test" });
-				if (property === "isUsingOAuth" || property === "isUsingSubscription") return () => false;
-				const value = Reflect.get(target, property, target);
-				return typeof value === "function" ? value.bind(target) : value;
-			},
+		return await run();
+	} finally {
+		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		if (previousFauxKey === undefined) delete process.env.FAUX_API_KEY;
+		else process.env.FAUX_API_KEY = previousFauxKey;
+	}
+}
+
+function nativeHarness() {
+	const faux = fauxProvider();
+	const models = createModels();
+	models.setProvider(faux.provider);
+	const modelRuntime = new Proxy(models, {
+		get(target, property) {
+			if (property === "hasConfiguredAuth") return () => true;
+			if (property === "checkAuth") return async () => ({ type: "api_key", key: "test" });
+			if (property === "isUsingOAuth" || property === "isUsingSubscription") return () => false;
+			const value = Reflect.get(target, property, target);
+			return typeof value === "function" ? value.bind(target) : value;
+		},
+	});
+	const requests = [];
+	const captureRequest = (context) => requests.push({
+		tools: getCurrentTools(context.messages),
+		systemText: context.messages.filter(message => message.role === "system").map(getSystemMessageText).join("\n\n"),
+	});
+	async function start({ extensions, sessionManager, reason, noTools }) {
+		const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, additionalExtensionPaths: extensions ? [extensionPath] : [], noExtensions: !extensions });
+		await loader.reload();
+		const { session, extensionsResult } = await createAgentSession({
+			cwd: root,
+			agentDir: root,
+			model: faux.getModel(),
+			modelRuntime,
+			resourceLoader: loader,
+			sessionManager,
+			sessionStartEvent: { type: "session_start", reason },
+			noTools,
 		});
-		const requests = [];
-		const captureRequest = (context) => requests.push({
-			tools: getCurrentTools(context.messages),
-			systemText: context.messages.filter(message => message.role === "system").map(getSystemMessageText).join("\n\n"),
-		});
+		assert.deepEqual(extensionsResult.errors, []);
+		await session.bindExtensions({});
+		return session;
+	}
+	return { faux, requests, captureRequest, start };
+}
+
+async function runNative(config = {}) {
+	return withNativeEnv(config, async () => {
+		const { faux, requests, captureRequest, start } = nativeHarness();
 		faux.setResponses([
 			(context) => {
 				captureRequest(context);
@@ -43,29 +76,11 @@ async function runNative(config = {}) {
 				return fauxAssistantMessage("done");
 			},
 		]);
-		const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, additionalExtensionPaths: [extensionPath] });
-		await loader.reload();
-		const { session, extensionsResult } = await createAgentSession({
-			cwd: root,
-			agentDir: root,
-			model: faux.getModel(),
-			modelRuntime,
-			resourceLoader: loader,
-			sessionManager: SessionManager.inMemory(root),
-			sessionStartEvent: { type: "session_start", reason: "startup" },
-			noTools: "builtin",
-		});
-		assert.deepEqual(extensionsResult.errors, []);
-		await session.bindExtensions({});
+		const session = await start({ extensions: true, sessionManager: SessionManager.inMemory(root), reason: "startup", noTools: "builtin" });
 		await session.prompt("Research this");
 		session.dispose();
 		return requests;
-	} finally {
-		if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-		else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-		if (previousFauxKey === undefined) delete process.env.FAUX_API_KEY;
-		else process.env.FAUX_API_KEY = previousFauxKey;
-	}
+	});
 }
 
 test("native Pi sends configured web schemas on the request immediately after activation", async () => {
@@ -83,4 +98,26 @@ test("native Pi sends configured web schemas on the request immediately after ac
 	const fetchOnly = await runNative({ tools: { webSearch: { enabled: false }, sourceCheck: { enabled: false }, getSearchContent: { enabled: false } } });
 	assert.deepEqual(fetchOnly[0].tools.map(tool => tool.name), ["web_enable"]);
 	assert.deepEqual(fetchOnly[1].tools.map(tool => tool.name), ["web_enable", "fetch_content"]);
+});
+
+test("native Pi resumes a session recorded without pi-web-access with its recorded tools", async () => {
+	const requests = await withNativeEnv({}, async () => {
+		const { faux, requests, captureRequest, start } = nativeHarness();
+		const reply = (context) => {
+			captureRequest(context);
+			return fauxAssistantMessage("ok");
+		};
+		faux.setResponses([reply, reply]);
+		const sessionManager = SessionManager.inMemory(root);
+		const before = await start({ extensions: false, sessionManager, reason: "startup" });
+		await before.prompt("first turn");
+		before.dispose();
+		const resumed = await start({ extensions: true, sessionManager, reason: "resume" });
+		await resumed.prompt("second turn");
+		resumed.dispose();
+		return requests;
+	});
+	const recorded = requests[0].tools.map(tool => tool.name);
+	assert.ok(recorded.length > 0);
+	assert.deepEqual(requests[1].tools.map(tool => tool.name), recorded);
 });
