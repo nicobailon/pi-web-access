@@ -211,18 +211,20 @@ function openRegularFile(path: string): { fd: number; info: Stats } {
 	}
 }
 
-// True once the entry is gone; false when it changed underneath us or could not be removed.
+// True once the entry is gone; false when the directory or entry changed underneath us or could not be removed.
 function unlinkCacheFile(dir: string, file: CacheFile): boolean {
+	let rootChecked = false;
 	try {
 		const root = lstatSync(dir);
 		if (root.isSymbolicLink() || !root.isDirectory()) return false;
+		rootChecked = true;
 		const path = join(dir, file.name);
 		const current = lstatSync(path);
 		if (current.isSymbolicLink() || !current.isFile() || current.dev !== file.dev || current.ino !== file.ino) return false;
 		unlinkSync(path);
 		return true;
 	} catch (err) {
-		return (err as NodeJS.ErrnoException).code === "ENOENT";
+		return rootChecked && (err as NodeJS.ErrnoException).code === "ENOENT";
 	}
 }
 
