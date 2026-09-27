@@ -175,6 +175,7 @@ test("tool names can be configured without changing defaults", () => {
 test("tool name config rejects invalid, duplicate, and reserved loader names", () => {
 	assert.match(registrationError({ toolNames: { webSearch: "1bad" } }), /toolNames\.webSearch/);
 	assert.match(registrationError({ toolNames: { webSearch: "same_name", fetchContent: "same_name" } }), /duplicates/);
+	assert.match(registrationError({ toolActivation: "lazy" }), /toolActivation.*"dynamic" or "eager"/);
 	assert.match(registrationError({ toolNames: { webSearch: "web_enable" } }), /web_enable.*reserved/i);
 });
 
