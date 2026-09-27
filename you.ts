@@ -1,11 +1,13 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
-import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
+import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
+import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
+import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath } from "./utils.ts";
+import { fetchWithCredentialRedirects, getWebSearchConfigPath } from "./utils.ts";
 
-const YOU_SEARCH_URL = "https://api.you.com/api/v1/search";
+const YOU_SEARCH_URL = "https://ydc-index.io/v1/search";
 const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
 
@@ -36,147 +38,127 @@ function loadConfig(): WebSearchConfig {
 	return cachedConfig;
 }
 
-async function getApiKey(signal?: AbortSignal): Promise<string | null> {
-	return resolveCredential({
+async function requireApiKey(signal?: AbortSignal): Promise<string> {
+	const apiKey = await resolveCredential({
 		provider: "You.com",
 		configuredValue: loadConfig().youApiKey,
-		environmentValue: process.env.YOU_API_KEY ?? process.env.YDC_API_KEY,
+		environmentValue: process.env.YDC_API_KEY,
 		signal,
 	});
-}
-
-async function requireApiKey(signal?: AbortSignal): Promise<string> {
-	const apiKey = await getApiKey(signal);
 	if (!apiKey) {
 		throw new Error(
 			"You.com API key not found. Either:\n" +
 			`  1. Create ${CONFIG_PATH} with { "youApiKey": "your-key" }\n` +
-			"  2. Set YOU_API_KEY or YDC_API_KEY environment variable\n" +
+			"  2. Set YDC_API_KEY environment variable\n" +
 			"Get a key at https://you.com/platform/api-keys",
 		);
 	}
 	return apiKey;
 }
 
-function normalizeCount(value: number | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) return 10;
-	return Math.max(1, Math.min(Math.floor(value), 20));
-}
-
-function mapFreshness(value: SearchOptions["recencyFilter"]): string {
-	switch (value) {
-		case "day": return "day";
-		case "week": return "week";
-		case "month": return "month";
-		case "year": return "year";
-		default: return "";
+function mapDomainFilter(domainFilter: string[] | undefined): { include_domains?: string[]; exclude_domains?: string[] } {
+	const include_domains: string[] = [];
+	const exclude_domains: string[] = [];
+	for (const raw of domainFilter ?? []) {
+		const domain = normalizeDomain(raw);
+		if (!domain) continue;
+		const target = raw.trim().startsWith("-") ? exclude_domains : include_domains;
+		if (!target.includes(domain)) target.push(domain);
 	}
+	return {
+		...(include_domains.length > 0 ? { include_domains } : {}),
+		...(exclude_domains.length > 0 ? { exclude_domains } : {}),
+	};
 }
 
 function errorMessage(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
-function invalidResponse(message: string): Error {
-	return new Error(`You.com API returned invalid response: ${message}`);
-}
-
-function firstString(...values: unknown[]): string | null {
-	for (const value of values) {
-		if (typeof value === "string" && value.trim()) return value.trim();
-	}
-	return null;
-}
-
-function parseSearchResponse(value: unknown): { results: SearchResponse["results"] } {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse("expected an object envelope");
-	const envelope = value as Record<string, unknown>;
-	const web = envelope.web;
-	const items = (typeof web === "object" && web !== null && !Array.isArray(web))
-		? (web as Record<string, unknown>).results
-		: undefined;
-	if (!Array.isArray(items)) throw invalidResponse("missing web.results array");
-	const results: SearchResponse["results"] = [];
-	for (const item of items) {
-		if (!item || typeof item !== "object" || Array.isArray(item)) continue;
-		const entry = item as Record<string, unknown>;
-		const url = firstString(entry.url, entry.link);
-		if (!url) continue;
-		const title = firstString(entry.title, entry.name) ?? url;
-		const snippet = firstString(entry.description, entry.snippet, entry.text) ?? "";
-		results.push({ title, url, snippet });
-	}
-	return { results };
+function parseWebResults(value: unknown): unknown[] {
+	const results = value && typeof value === "object" ? (value as { results?: unknown }).results : undefined;
+	const web = results && typeof results === "object" ? (results as { web?: unknown }).web : undefined;
+	if (!Array.isArray(web)) throw new Error("You.com returned invalid response: expected results.web array");
+	return web;
 }
 
 export function isYouAvailable(): boolean {
-	return hasCredentialSource({
-		provider: "You.com",
-		configuredValue: loadConfig().youApiKey,
-		environmentValue: process.env.YOU_API_KEY ?? process.env.YDC_API_KEY,
-	});
+	return hasCredentialSource({ provider: "You.com", configuredValue: loadConfig().youApiKey, environmentValue: process.env.YDC_API_KEY });
 }
 
 export async function searchWithYou(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
-	const numResults = normalizeCount(options.numResults);
-	const freshness = mapFreshness(options.recencyFilter);
+	const numResults = normalizeSearchResultCount(options.numResults);
+	const body = {
+		query,
+		count: numResults,
+		...(options.recencyFilter ? { freshness: options.recencyFilter } : {}),
+		...mapDomainFilter(options.domainFilter),
+	};
 	const activityId = activityMonitor.logStart({ type: "api", query });
-
-	const params = new URLSearchParams({ query, num_web_results: String(numResults) });
-	if (freshness) params.set("freshness", freshness);
-
+	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	let response: Response;
-	const url = `${YOU_SEARCH_URL}?${params}`;
+	let entries: unknown[];
 	try {
-		response = await fetch(url, {
-			method: "GET",
-			headers: {
-				Authorization: `Bearer ${apiKey}`,
-				Accept: "application/json",
-			},
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		});
+		response = await fetchWithCredentialRedirects(YOU_SEARCH_URL, {
+			method: "POST",
+			headers: { Accept: "application/json", "Content-Type": "application/json", "X-API-Key": apiKey },
+			body: JSON.stringify(body),
+			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
+		}, ["X-API-Key"]);
+		if (!response.ok) {
+			const errorText = await response.text();
+			throw new Error(`You.com error ${response.status}: ${redactCredential(errorText, apiKey).slice(0, 300)}`);
+		}
+		let rawData: unknown;
+		try {
+			rawData = await response.json();
+		} catch (err) {
+			if (err instanceof Error && err.name === "TimeoutError") throw err;
+			throw new Error(`You.com returned invalid JSON: ${errorMessage(err)}`);
+		}
+		entries = parseWebResults(rawData);
 	} catch (err) {
+		if (options.signal?.aborted) {
+			activityMonitor.logComplete(activityId, 0);
+			throw new Error("Aborted");
+		}
 		const message = errorMessage(err);
-		const redactedMessage = redactCredential(message, apiKey);
-		if (redactedMessage.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, redactedMessage);
-		if (redactedMessage === message) throw err;
-		const redactedError = new Error(redactedMessage);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+		const providerTimeout = timeoutSignal.aborted || (err instanceof Error && err.name === "TimeoutError");
+		const outgoing = providerTimeout
+			? new Error(`You.com request timed out after ${Math.round(SEARCH_TIMEOUT_MS / 1000)}s`)
+			: (() => {
+				const redactedMessage = redactCredential(message, apiKey);
+				if (redactedMessage === message && err instanceof Error) return err;
+				const redactedError = new Error(redactedMessage);
+				if (err instanceof Error) redactedError.name = err.name;
+				return redactedError;
+			})();
+		activityMonitor.logError(activityId, redactCredential(errorMessage(outgoing), apiKey));
+		throw outgoing;
 	}
-
-	if (!response.ok) {
-		activityMonitor.logComplete(activityId, response.status);
-		const errorText = redactCredential(await response.text(), apiKey);
-		throw new Error(`You.com API error ${response.status}: ${errorText.slice(0, 300)}`);
-	}
-
-	let rawData: unknown;
-	try {
-		rawData = await response.json();
-	} catch (err) {
-		activityMonitor.logComplete(activityId, response.status);
-		throw new Error(`You.com API returned invalid JSON: ${errorMessage(err)}`);
-	}
-
-	let parsed: { results: SearchResponse["results"] };
-	try {
-		parsed = parseSearchResponse(rawData);
-	} catch (err) {
-		const message = errorMessage(err);
-		activityMonitor.logError(activityId, message);
-		if (message === errorMessage(err)) throw err;
-		const redactedError = new Error(message);
-		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
-	}
-
 	activityMonitor.logComplete(activityId, response.status);
-	const results = parsed.results.slice(0, numResults);
+	const results: SearchResponse["results"] = [];
+	for (const entry of entries) {
+		if (!entry || typeof entry !== "object") continue;
+		const { url, title, description, snippets } = entry as Record<string, unknown>;
+		if (typeof url !== "string" || !url) continue;
+		let resultUrl: URL;
+		try {
+			resultUrl = new URL(url);
+		} catch {
+			continue;
+		}
+		if (resultUrl.protocol !== "http:" && resultUrl.protocol !== "https:") continue;
+		const snippet = typeof description === "string" && description.trim()
+			? description
+			: Array.isArray(snippets) && typeof snippets[0] === "string" ? snippets[0] : "";
+		results.push({
+			title: typeof title === "string" && title.trim() ? title.trim() : `Source ${results.length + 1}`,
+			url: resultUrl.href,
+			snippet,
+		});
+		if (results.length >= numResults) break;
+	}
 	return { answer: formatSearchResultsAsAnswer(results), results };
 }
