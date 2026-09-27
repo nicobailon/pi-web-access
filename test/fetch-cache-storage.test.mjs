@@ -242,6 +242,25 @@ test("cache pruning reclaims expired inline payloads even without a disk cache",
 	assert.equal(legacy.urls[0].content, "legacy payload");
 });
 
+test("PI_WEB_ACCESS_CACHE_ROOT moves only the fetched-content cache, into a folder it owns", async () => {
+	await useTempAgentDir();
+	const root = await mkdtemp(join(tmpdir(), "pi-web-access-cache-root-"));
+	const userFile = join(root, "notes.json");
+	writeFileSync(userFile, "{}");
+	utimesSync(userFile, new Date(0), new Date(0));
+	process.env.PI_WEB_ACCESS_CACHE_ROOT = root;
+	try {
+		storeFetchedContentResult("isolated", fetchedData("isolated"));
+		pruneExpiredFetchCache();
+		assert.deepEqual(readdirSync(join(root, "web-search-cache")), ["isolated.json"]);
+		assert.deepEqual(readdirSync(root).sort(), ["notes.json", "web-search-cache"]);
+		assert.equal(readdirSync(testAgentDir).includes("web-search-cache"), false);
+	} finally {
+		delete process.env.PI_WEB_ACCESS_CACHE_ROOT;
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
 test("cache pruning evicts the oldest entries by count and bytes", async () => {
 	await useTempAgentDir();
 	const cacheDir = getFetchCacheDir();

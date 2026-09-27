@@ -74,7 +74,9 @@ export function generateId(): string {
 }
 
 export function getFetchCacheDir(): string {
-	return join(getWebSearchConfigDir(), FETCH_CACHE_DIR);
+	// Always append our own folder: pruning deletes stale *.json files, so the override must
+	// never point pruning at a directory that holds user files.
+	return join(process.env.PI_WEB_ACCESS_CACHE_ROOT || getWebSearchConfigDir(), FETCH_CACHE_DIR);
 }
 
 function fetchCachePath(key: string): string | null {
