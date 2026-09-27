@@ -97,14 +97,19 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 	}
 
 	let warned = false;
+	// A resumed transcript that declared its tools without the loader keeps that set; adding the
+	// loader there would record a mid-conversation tool change the user never asked for (#462).
+	let loaderSelected = true;
 	function selectFromSession(ctx: ExtensionContext): void {
 		if (!loaderAvailable()) return;
 		try {
 			const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
+			const declared = transcriptToolNames(messages);
 			// Sessions from before transcript tool declarations keep every web tool; fresh ones start with none.
-			const recorded = transcriptToolNames(messages) ?? new Set(messages.length > 0 ? names : []);
-			const others = pi.getActiveTools().filter(name => !names.includes(name));
-			pi.setActiveTools([...new Set([...others, ...names.filter(name => recorded.has(name)), LOADER_NAME])]);
+			const recorded = declared ?? new Set(messages.length > 0 ? names : []);
+			loaderSelected = !declared || declared.has(LOADER_NAME);
+			const others = pi.getActiveTools().filter(name => name !== LOADER_NAME && !names.includes(name));
+			pi.setActiveTools([...new Set([...others, ...names.filter(name => recorded.has(name)), ...(loaderSelected ? [LOADER_NAME] : [])])]);
 		} catch (error) {
 			if (!warned) {
 				warned = true;
@@ -116,7 +121,7 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 	pi.on("session_start", (_event, ctx) => selectFromSession(ctx));
 	pi.on("session_tree", (_event, ctx) => selectFromSession(ctx));
 	pi.on("before_agent_start", () => {
-		if (!loaderAvailable() || pi.getActiveTools().includes(LOADER_NAME)) return;
+		if (!loaderSelected || !loaderAvailable() || pi.getActiveTools().includes(LOADER_NAME)) return;
 		try {
 			pi.setActiveTools([...pi.getActiveTools(), LOADER_NAME]);
 		} catch {

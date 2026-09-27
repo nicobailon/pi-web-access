@@ -34,7 +34,9 @@ function run(config = {}, options = {}) {
 				timestamp: new Date(index).toISOString(), message,
 			}));
 			const ctx = { sessionManager: { getBranch: () => entries } };
-			for (const handler of handlers.get(options.event ?? "session_start") ?? []) await handler(options.eventPayload ?? {}, ctx);
+			for (const event of [].concat(options.event ?? "session_start")) {
+				for (const handler of handlers.get(event) ?? []) await handler(options.eventPayload ?? {}, ctx);
+			}
 			const before = [...active];
 			let result;
 			if (options.activate && tools.has("web_enable")) result = await tools.get("web_enable").execute("call", {}, new AbortController().signal, () => {}, ctx);
@@ -133,6 +135,18 @@ test("legacy conversation without tool declarations preserves eager web tools", 
 	const state = run({}, { messages: [{ role: "user", content: [{ type: "text", text: "old session" }], timestamp: 1 }] });
 	assert.deepEqual(state.before.filter(name => defaultNames.includes(name)), defaultNames);
 	assert.ok(state.before.includes("web_enable"));
+});
+
+test("a resumed transcript that declared its tools without web_enable keeps that set", () => {
+	const tool = name => ({ name, description: "", parameters: { type: "object" } });
+	const turn = { role: "user", content: [{ type: "text", text: "Run: echo hello" }], timestamp: 2 };
+	const event = ["session_start", "before_agent_start"];
+	const upgraded = run({}, { messages: [{ role: "system", content: "", toolsAdded: [tool("read")], timestamp: 1 }, turn], event });
+	assert.equal(upgraded.before.includes("web_enable"), false);
+	assert.deepEqual(upgraded.before.filter(name => defaultNames.includes(name)), []);
+
+	const recorded = run({}, { messages: [{ role: "system", content: "", toolsAdded: [tool("read"), tool("web_enable")], timestamp: 1 }, turn], event });
+	assert.ok(recorded.before.includes("web_enable"));
 });
 
 test("provider-facing cold and activated schemas stay within budget", () => {

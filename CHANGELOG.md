@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Resuming a session that was recorded without `web_enable`, for example one started before pi-web-access was installed or upgraded, no longer adds `web_enable` to the conversation. Sessions keep the tools they recorded. Thanks to [@nilsoskar](https://github.com/nilsoskar) for [issue #462](https://github.com/nicobailon/pi-web-access/issues/462).
 - Dynamic tool activation now checks the running Pi instead of the `@earendil-works/pi-coding-agent` version installed beside the extension, so a managed install that still carries an older peer keeps `web_enable`. Pi 0.86.0, which added transcript-backed tool changes, is now the minimum. Thanks to [@PhrZer](https://github.com/PhrZer) for [PR #456](https://github.com/nicobailon/pi-web-access/pull/456) and [@nguyenchiencong](https://github.com/nguyenchiencong) for [issue #444](https://github.com/nicobailon/pi-web-access/issues/444).
 
 ## [0.32.0] - 2026-09-26
