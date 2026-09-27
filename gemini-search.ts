@@ -22,6 +22,7 @@ import { isSearch1APIAvailable, searchWithSearch1API } from "./search1api.ts";
 import { isSearchinfinityAvailable, searchWithSearchinfinity } from "./searchinfinity.ts";
 import { isQueritAvailable, searchWithQuerit } from "./querit.ts";
 import { isTavilyAvailable, searchWithTavily } from "./tavily.ts";
+import { isYouAvailable, searchWithYou } from "./you.ts";
 import { isFirecrawlAvailable, searchWithFirecrawl } from "./firecrawl.ts";
 import { isJinaSearchAvailable, searchWithJina } from "./jina-search.ts";
 import { isSerpdiveAvailable, searchWithSerpdive } from "./serpdive.ts";
@@ -44,7 +45,7 @@ import { isKimiSearchAvailable, searchWithKimi } from "./kimi-search.ts";
 import { isMistralAvailable, searchWithMistral } from "./mistral-search.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
-export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "searxng", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "bocha", "xcrawl", "baizhi"] as const;
+export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "you", "firecrawl", "jina", "searxng", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "bocha", "xcrawl", "baizhi"] as const;
 export const SEARCH_PROVIDERS = ["auto", "all", ...RESOLVED_SEARCH_PROVIDERS] as const;
 
 export type ResolvedSearchProvider = typeof RESOLVED_SEARCH_PROVIDERS[number];
@@ -389,6 +390,7 @@ async function searchWithResolvedProvider(
 	if (provider === "searchinfinity") return { ...(await searchWithSearchinfinity(query, options)), provider };
 	if (provider === "querit") return { ...(await searchWithQuerit(query, options)), provider };
 	if (provider === "tavily") return { ...(await searchWithTavily(query, options)), provider };
+	if (provider === "you") return { ...(await searchWithYou(query, options)), provider };
 	if (provider === "firecrawl") return { ...(await searchWithFirecrawl(query, options)), provider };
 	if (provider === "jina") return { ...(await searchWithJina(query, options)), provider };
 	if (provider === "serpdive") return { ...(await searchWithSerpdive(query, options)), provider };
@@ -816,8 +818,8 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	throw new Error(
 		"No search provider available. Either:\n" +
 		"  1. Use /login to sign in with a Codex subscription for OpenAI web search\n" +
-		`  2. Set openaiApiKey, braveApiKey, parallelApiKey, tinyfishApiKey, search1apiApiKey, searchinfinityApiKey, queritApiKey, tavilyApiKey, firecrawlBaseUrl, jinaApiKey, serpdiveApiKey, kagiApiKey, ollamaApiKey, searxngBaseUrl, perplexityApiKey, exaApiKey, geminiApiKey, bochaApiKey, or cloudflareApiKey in ${CONFIG_PATH}\n` +
-		"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TINYFISH_API_KEY, SEARCH1API_KEY, SEARCHINFINITY_API_KEY, QUERIT_API_KEY, TAVILY_API_KEY, FIRECRAWL_BASE_URL, JINA_API_KEY, SERPDIVE_API_KEY, KAGI_API_KEY, BOCHA_API_KEY, OLLAMA_API_KEY, SEARXNG_BASE_URL, EXA_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, or CLOUDFLARE_API_KEY env vars\n" +
+		`  2. Set openaiApiKey, braveApiKey, parallelApiKey, tinyfishApiKey, search1apiApiKey, searchinfinityApiKey, queritApiKey, tavilyApiKey, youApiKey, firecrawlBaseUrl, jinaApiKey, serpdiveApiKey, kagiApiKey, ollamaApiKey, searxngBaseUrl, perplexityApiKey, exaApiKey, geminiApiKey, bochaApiKey, or cloudflareApiKey in ${CONFIG_PATH}\n` +
+		"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TINYFISH_API_KEY, SEARCH1API_KEY, SEARCHINFINITY_API_KEY, QUERIT_API_KEY, TAVILY_API_KEY, YOU_API_KEY, FIRECRAWL_BASE_URL, JINA_API_KEY, SERPDIVE_API_KEY, KAGI_API_KEY, BOCHA_API_KEY, OLLAMA_API_KEY, SEARXNG_BASE_URL, EXA_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, or CLOUDFLARE_API_KEY env vars\n" +
 		"  4. Set GOOGLE_GEMINI_BASE_URL with CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 		"  5. Sign into gemini.google.com in a supported Chromium-based browser\n" +
 		"  6. Explicitly select provider: \"anysearch\" for anonymous AnySearch, \"xcrawl\" for XCrawl, \"xai\" for Grok, \"mistral\" for Mistral Conversations web search, \"brightdata\" with brightdataSerpZone for paid Bright Data SERP, \"serpbase\", \"serpapi\", \"serper\", or \"serply\" for Google SERP, or \"valyu\" for research search"
