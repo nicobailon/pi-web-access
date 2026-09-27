@@ -123,15 +123,55 @@ test("summary model scope matches nested provider model ids and thinking suffixe
 			{ provider: "openrouter", id: "anthropic/claude-sonnet-4" },
 			["openrouter/*:low"],
 		),
-		true,
+		false,
 	);
 	assert.equal(
 		modelMatchesEnabledPatterns(
-			{ provider: "openrouter", id: "ai21/jamba-large-1.7" },
-			["openrouter/nvidia/*"],
+			{ provider: "openrouter", id: "anthropic/claude-sonnet-4" },
+			["openrouter/**:low"],
+		),
+		true,
+	);
+});
+
+test("enabledModels extglob matches Pi's reported allowlist", () => {
+	const reported = [
+		"@(!(openai-codex|openai-codex-work))/*",
+		"*/!(gpt-5.3-codex-spark|gpt-5.4|gpt-5.4-mini|gpt-5.5)",
+	];
+	assert.equal(modelMatchesEnabledPatterns({ provider: "openai-codex", id: "gpt-6-sol" }, reported), true);
+	assert.equal(modelMatchesEnabledPatterns({ provider: "anthropic", id: "claude-sonnet-5" }, [reported[0]]), true);
+	assert.equal(modelMatchesEnabledPatterns({ provider: "openai-codex", id: "gpt-5.4" }, reported), false);
+});
+
+test("enabledModels follows Pi's glob trigger and bare-id rules", () => {
+	assert.equal(
+		modelMatchesEnabledPatterns({ provider: "openrouter", id: "anthropic/claude-sonnet-4" }, ["@(anthropic)/*"]),
+		true,
+	);
+	assert.equal(modelMatchesEnabledPatterns({ provider: "anthropic", id: "claude-a" }, ["anthropic/claude-[ab]"]), true);
+	assert.equal(modelMatchesEnabledPatterns({ provider: "anthropic", id: "claude-c" }, ["anthropic/claude-[ab]"]), false);
+	assert.equal(modelMatchesEnabledPatterns({ provider: "anthropic", id: "claude-[ab]" }, ["anthropic/claude-[ab]"]), true);
+
+	assert.equal(
+		modelMatchesEnabledPatterns(
+			{ provider: "anthropic", id: "claude-sonnet-5" },
+			["anthropic/{claude-sonnet-5,claude-haiku-4-5}"],
 		),
 		false,
 	);
+	assert.equal(
+		modelMatchesEnabledPatterns(
+			{ provider: "anthropic", id: "claude-sonnet-5" },
+			["anthropic/{claude-sonnet-5,claude-haiku-4-5}*"],
+		),
+		true,
+	);
+	assert.equal(
+		modelMatchesEnabledPatterns({ provider: "anthropic", id: "claude-sonnet-5" }, ["@(anthropic)/claude-sonnet-5"]),
+		false,
+	);
+
 });
 
 test("summary generation resolves preferred models through routed providers", async () => {

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { minimatch } from "minimatch";
 
 const THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -90,36 +91,26 @@ export function splitThinkingSuffix(value: string): { value: string; thinkingLev
 }
 
 function stripThinkingSuffix(pattern: string): string {
- return splitThinkingSuffix(pattern).value;
+	return splitThinkingSuffix(pattern).value;
 }
 
-function globToRegExp(pattern: string): RegExp {
-	let source = "^";
-	for (const char of pattern) {
-		if (char === "*") {
-			source += ".*";
-		} else if (char === "?") {
-			source += ".";
-		} else {
-			source += char.replace(/[|\\{}()[\]^$+?.]/g, "\\$&");
-		}
-	}
-	return new RegExp(`${source}$`, "i");
+function isEnabledModelGlob(pattern: string): boolean {
+	return pattern.includes("*") || pattern.includes("?") || pattern.includes("[");
 }
 
 export function modelMatchesEnabledPatterns(model: ModelLike, patterns: string[] | null): boolean {
 	if (patterns === null) return true;
-	const value = summaryModelValue(model).toLowerCase();
-	const id = model.id.toLowerCase();
+	const fullId = summaryModelValue(model);
+	const fullIdKey = fullId.toLowerCase();
+	const idKey = model.id.toLowerCase();
 	for (const rawPattern of patterns) {
-		const pattern = stripThinkingSuffix(rawPattern.trim()).toLowerCase();
+		const pattern = stripThinkingSuffix(rawPattern.trim());
 		if (!pattern) continue;
-		if (pattern.includes("*") || pattern.includes("?")) {
-			const regex = globToRegExp(pattern);
-			if (regex.test(value) || regex.test(id)) return true;
-			continue;
-		}
-		if (pattern === value || pattern === id) return true;
+		const patternKey = pattern.toLowerCase();
+		// Pi checks an exact provider/id or bare id before treating *, ?, or [ as a glob.
+		if (patternKey === fullIdKey || patternKey === idKey) return true;
+		if (!isEnabledModelGlob(pattern)) continue;
+		if (minimatch(fullId, pattern, { nocase: true }) || minimatch(model.id, pattern, { nocase: true })) return true;
 	}
 	return false;
 }
