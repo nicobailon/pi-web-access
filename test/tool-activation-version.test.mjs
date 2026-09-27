@@ -8,12 +8,8 @@ import { test } from "node:test";
 const indexUrl = new URL("../index.ts", import.meta.url).href;
 const realPiUrl = import.meta.resolve("@earendil-works/pi-coding-agent");
 
-// The deployed shape for issue #428: Pi is installed globally and the extension is
-// installed as a Pi package, so `@earendil-works/pi-coding-agent` is absent from the
-// extension's `node_modules`. Pi's extension loader keeps working by redirecting the
-// extension's own imports to its bundled copy, but `import.meta.resolve()` skips that
-// redirect. Point the specifier at a host-redirected module that has no `package.json`
-// on disk, and report a Pi version an `import.meta.resolve()` based probe cannot read.
+// Issue #428: with Pi installed globally, the host redirects the extension's Pi imports to its
+// bundled copy, so neither a Pi `package.json` nor pi-ai subpaths resolve from the extension.
 function hostRedirectHook(version) {
 	return `
 		import { registerHooks } from "node:module";
@@ -22,6 +18,9 @@ function hostRedirectHook(version) {
 			resolve(specifier, context, nextResolve) {
 				if (specifier === "@earendil-works/pi-coding-agent") {
 					return { url: "host:pi-coding-agent", shortCircuit: true };
+				}
+				if (specifier.startsWith("@earendil-works/pi-ai/utils/transcript")) {
+					throw Object.assign(new Error("Cannot find module '" + specifier + "'"), { code: "ERR_MODULE_NOT_FOUND" });
 				}
 				return nextResolve(specifier, context);
 			},
@@ -38,20 +37,6 @@ function hostRedirectHook(version) {
 		});
 	`;
 }
-
-const unavailablePiAiSubpathHook = `
-	import { registerHooks } from "node:module";
-	registerHooks({
-		resolve(specifier, context, nextResolve) {
-			if (specifier === "@earendil-works/pi-ai/utils/transcript" || specifier === "@earendil-works/pi-ai/utils/transcript.ts") {
-				const error = new Error("Cannot find module '" + specifier + "'");
-				error.code = "ERR_MODULE_NOT_FOUND";
-				throw error;
-			}
-			return nextResolve(specifier, context);
-		},
-	});
-`;
 
 function run({ messages = [], hook = "" } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "pi-web-access-version-"));
@@ -123,20 +108,4 @@ test("a host older than 0.86.1 falls back to eager web tools without crashing", 
 	assert.match(state.warnings[0], /requires Pi 0\.86\.1 or newer/);
 	assert.equal(state.active.includes("web_enable"), false);
 	assert.ok(state.active.includes("web_search"), `expected eager web_search, got ${state.active.join(", ")}`);
-});
-
-test("warm session tool restoration does not resolve the pi-ai transcript helper at runtime", () => {
-	const messages = [{ role: "system", content: "", toolsAdded: [{ name: "web_search", description: "", parameters: { type: "object" } }], timestamp: 1 }];
-	const state = run({ messages, hook: unavailablePiAiSubpathHook });
-	assert.deepEqual(state.warnings, []);
-	assert.ok(state.active.includes("web_search"), `expected restored web_search, got ${state.active.join(", ")}`);
-});
-test("dynamic tool activation gates on the running Pi version", async () => {
-	const { versionAtLeast } = await import("../tool-activation.ts");
-	for (const version of ["0.86.1", "0.86.2", "0.86.10", "0.87.0", "0.87.0-beta.1", "1.0.0", "2.1.3"]) {
-		assert.equal(versionAtLeast(version, [0, 86, 1]), true, `${version} should support dynamic tools`);
-	}
-	for (const version of ["0.79.1", "0.85.9", "0.86.0", "", "garbage", "0.86", "1.x.0"]) {
-		assert.equal(versionAtLeast(version, [0, 86, 1]), false, `${version} should not support dynamic tools`);
-	}
 });

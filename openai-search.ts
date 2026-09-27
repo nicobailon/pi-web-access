@@ -185,7 +185,7 @@ function resolveConfiguredResponsesUrl(value: unknown): string {
 	if (url.protocol !== "https:" && url.protocol !== "http:") {
 		throw new Error(`openaiResponsesUrl in ${CONFIG_PATH} must use http or https`);
 	}
-	if (url.hostname.toLowerCase() === "opencode.ai" && url.protocol !== "https:") {
+	if (url.hostname === "opencode.ai" && url.protocol !== "https:") {
 		throw new Error(`openaiResponsesUrl in ${CONFIG_PATH} must use HTTPS for opencode.ai`);
 	}
 	return url.toString();
@@ -210,7 +210,7 @@ function resolveProviderResponsesUrl(baseUrl: unknown, useCodexEndpoint: boolean
 	} catch {
 		throw new CustomOpenAIBaseUrlError("OpenAI search configuration: openaiUseProviderBaseUrl requires an absolute http(s) provider baseUrl");
 	}
-	if (url.hostname.toLowerCase() === "opencode.ai" && url.protocol !== "https:") {
+	if (url.hostname === "opencode.ai" && url.protocol !== "https:") {
 		throw new CustomOpenAIBaseUrlError("OpenAI search configuration: opencode.ai provider baseUrl must use HTTPS");
 	}
 	const path = url.pathname.replace(/\/+$/u, "");
@@ -248,20 +248,16 @@ function toRequestHeaders(headers: ProviderHeaders): Record<string, string> {
 	return requestHeaders;
 }
 
-function isOpenCodeUrl(url: string): boolean {
-	const parsed = new URL(url);
-	return parsed.protocol === "https:" && parsed.hostname.toLowerCase() === "opencode.ai";
-}
-
 function applyOpenCodeDestinationHeaders(headers: HeadersInit, requestUrl: string, ctx?: Pick<ExtensionContext, "sessionManager">): Headers {
 	const requestHeaders = new Headers(headers);
 	requestHeaders.delete("x-opencode-session");
 	requestHeaders.delete("x-opencode-client");
-	if (!isOpenCodeUrl(requestUrl)) return requestHeaders;
+	const url = new URL(requestUrl);
 	const sessionId = ctx?.sessionManager?.getSessionId?.();
-	if (!sessionId) return requestHeaders;
-	requestHeaders.set("x-opencode-session", sessionId);
-	requestHeaders.set("x-opencode-client", "pi");
+	if (url.protocol === "https:" && url.hostname === "opencode.ai" && sessionId) {
+		requestHeaders.set("x-opencode-session", sessionId);
+		requestHeaders.set("x-opencode-client", "pi");
+	}
 	return requestHeaders;
 }
 

@@ -60,23 +60,17 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	});
 }
 
-const TAVILY_KEY_POOL_MAX = 20;
 const TAVILY_KEY_POOL_RETRIES = new Set([401, 402, 403, 429, 432]);
 
 function tavilyKeyPool(): string[] {
-	const keyBySlot = new Map<number, string>();
-	for (const [name, value] of Object.entries(process.env)) {
-		const match = name.match(/^TAVILY_API_KEY_(\d+)$/);
-		if (!match || typeof value !== "string" || value.trim().length === 0) continue;
-		const slot = Number(match[1]);
-		if (!Number.isSafeInteger(slot) || slot < 1 || slot > TAVILY_KEY_POOL_MAX) continue;
-		keyBySlot.set(slot, value.trim());
+	const slots: Array<[number, string]> = [];
+	for (let slot = 1; slot <= 20; slot++) {
+		const key = process.env[`TAVILY_API_KEY_${slot}`]?.trim();
+		if (key) slots.push([slot, key]);
 	}
-	const entries = [...keyBySlot.entries()].sort(([a], [b]) => a - b);
-	if (entries.length === 0) return [];
-	const requestedSlot = Math.max(1, Number.parseInt(process.env.TAVILY_API_KEY_INDEX ?? "", 10) || 1);
-	const start = Math.max(0, entries.findIndex(([slot]) => slot >= requestedSlot));
-	return [...new Set([...entries.slice(start), ...entries.slice(0, start)].map(([, key]) => key))];
+	const requestedSlot = Number.parseInt(process.env.TAVILY_API_KEY_INDEX ?? "", 10) || 1;
+	const start = Math.max(0, slots.findIndex(([slot]) => slot >= requestedSlot));
+	return [...new Set([...slots.slice(start), ...slots.slice(0, start)].map(([, key]) => key))];
 }
 
 function getApiUrl(): string {
@@ -178,34 +172,9 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 
 	const signal = requestSignal(options.signal);
 	const activityId = activityMonitor.logStart({ type: "api", query });
+	let data: TavilyResponse;
 	try {
-		const pool = tavilyKeyPool();
-		if (pool.length === 0) {
-			return await tavilySearch(apiUrl, await requireApiKey(signal), body, numResults, options.includeContent === true, signal, activityId);
-		}
-
-		let lastError: Error | null = null;
-		const tryKey = async (apiKey: string): Promise<SearchResponse | null> => {
-			try {
-				return await tavilySearch(apiUrl, apiKey, body, numResults, options.includeContent === true, signal, activityId);
-			} catch (err) {
-				if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) throw err;
-				if (!TAVILY_KEY_POOL_RETRIES.has(tavilyErrorStatus(err))) throw err;
-				lastError = err instanceof Error ? err : new Error(String(err));
-				return null;
-			}
-		};
-		for (const apiKey of pool) {
-			const result = await tryKey(apiKey);
-			if (result) return result;
-		}
-
-		const fallback = await getApiKey(signal);
-		if (fallback && !pool.includes(fallback)) {
-			const result = await tryKey(fallback);
-			if (result) return result;
-		}
-		throw lastError ?? new Error("Tavily key pool exhausted");
+		data = await requestWithKeyFailover(apiUrl, body, signal);
 	} catch (err) {
 		if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) activityMonitor.logComplete(activityId, 0);
 		else {
@@ -215,24 +184,44 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 		}
 		throw err;
 	}
+
+	activityMonitor.logComplete(activityId, 200);
+	const result: SearchResponse = {
+		answer: typeof data.answer === "string" ? data.answer : "",
+		results: mapResults(data.results, numResults),
+	};
+	if (options.includeContent) {
+		const inlineContent = mapInlineContent(data.results);
+		if (inlineContent.length > 0) result.inlineContent = inlineContent;
+	}
+	return result;
 }
 
 function tavilyErrorStatus(err: unknown): number {
-	const status = (err as { status?: unknown }).status;
-	if (typeof status === "number") return status;
-	const match = errorMessage(err).match(/\bTavily API error (\d{3})\b/);
-	return match ? Number(match[1]) : 0;
+	return Number(errorMessage(err).match(/^Tavily API error (\d{3}):/)?.[1] ?? 0);
 }
 
-async function tavilySearch(
-	apiUrl: string,
-	apiKey: string,
-	body: Record<string, unknown>,
-	numResults: number,
-	includeContent: boolean,
-	signal: AbortSignal,
-	activityId: string,
-): Promise<SearchResponse> {
+async function requestWithKeyFailover(apiUrl: string, body: Record<string, unknown>, signal: AbortSignal): Promise<TavilyResponse> {
+	const pool = tavilyKeyPool();
+	const keys = pool.length > 0 ? pool : [await requireApiKey(signal)];
+	let fallbackChecked = pool.length === 0;
+	for (let i = 0; ; i++) {
+		try {
+			return await tavilyRequest(apiUrl, keys[i], body, signal);
+		} catch (err) {
+			if (!TAVILY_KEY_POOL_RETRIES.has(tavilyErrorStatus(err))) throw err;
+			if (i + 1 < keys.length) continue;
+			if (fallbackChecked) throw err;
+			// Resolve the standalone credential only after every numbered pool key failed.
+			fallbackChecked = true;
+			const fallback = await getApiKey(signal);
+			if (!fallback || keys.includes(fallback)) throw err;
+			keys.push(fallback);
+		}
+	}
+}
+
+async function tavilyRequest(apiUrl: string, apiKey: string, body: Record<string, unknown>, signal: AbortSignal): Promise<TavilyResponse> {
 	let response: Response;
 	try {
 		response = await fetchWithCredentialRedirects(apiUrl, {
@@ -258,21 +247,9 @@ async function tavilySearch(
 		throw new Error(`Tavily API error ${response.status}: ${errorText.slice(0, 300)}`);
 	}
 
-	let data: TavilyResponse;
 	try {
-		data = await response.json() as TavilyResponse;
+		return await response.json() as TavilyResponse;
 	} catch (err) {
 		throw new Error(`Tavily API returned invalid JSON: ${errorMessage(err)}`);
 	}
-
-	activityMonitor.logComplete(activityId, response.status);
-	const result: SearchResponse = {
-		answer: typeof data.answer === "string" ? data.answer : "",
-		results: mapResults(data.results, numResults),
-	};
-	if (includeContent) {
-		const inlineContent = mapInlineContent(data.results);
-		if (inlineContent.length > 0) result.inlineContent = inlineContent;
-	}
-	return result;
 }

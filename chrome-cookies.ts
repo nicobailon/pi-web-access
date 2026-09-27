@@ -206,7 +206,7 @@ export async function getBrowserCookiesForHosts(
 				for (const password of browserPasswords) if (password.warning) warningSet.add(password.warning);
 				const windowsKey = currentPlatform === "win32" ? await readWindowsEncryptionKey(config, home) : null;
 				const browserKeys = browserPasswords.flatMap((password) => password.value
-					? [{ password, key: pbkdf2Sync(password.value, "saltysalt", currentPlatform === "darwin" ? 1003 : 1, 16, "sha1") }]
+					? [pbkdf2Sync(password.value, "saltysalt", currentPlatform === "darwin" ? 1003 : 1, 16, "sha1")]
 					: []);
 				if (currentPlatform === "win32" ? !windowsKey : browserKeys.length === 0) {
 					warningSet.add(currentPlatform === "win32"
@@ -242,8 +242,8 @@ export async function getBrowserCookiesForHosts(
 						if (currentPlatform === "win32") {
 							value = decryptWindowsCookieValue(encrypted, windowsKey!, metaVersion.value >= 24);
 						} else {
-							for (const candidate of browserKeys) {
-								value = decryptCookieValue(encrypted, candidate.key, metaVersion.value >= 24);
+							for (const key of browserKeys) {
+								value = decryptCookieValue(encrypted, key, metaVersion.value >= 24);
 								if (value) break;
 							}
 						}
@@ -252,9 +252,9 @@ export async function getBrowserCookiesForHosts(
 							const fallback = await readKWalletPassword(config);
 							if (fallback.warning) warningSet.add(fallback.warning);
 							if (fallback.value) {
-								const candidate = { password: fallback, key: pbkdf2Sync(fallback.value, "saltysalt", 1, 16, "sha1") };
-								browserKeys.push(candidate);
-								value = decryptCookieValue(encrypted, candidate.key, metaVersion.value >= 24);
+								const key = pbkdf2Sync(fallback.value, "saltysalt", 1, 16, "sha1");
+								browserKeys.push(key);
+								value = decryptCookieValue(encrypted, key, metaVersion.value >= 24);
 								if (value) {
 									browserPasswords.push(fallback);
 									browserPasswordCache.set(passwordCacheKey(config, currentPlatform), Promise.resolve([...browserPasswords]));

@@ -105,18 +105,19 @@ function writeFailPasswordCommand(bin, countPath, targetPlatform = process.platf
 	return { COUNT_FILE: countPath };
 }
 
-function writeKWalletCommand(bin, countPath, argsPath) {
-	const script = `#!/bin/sh\nn=0\n[ -f "$KWALLET_COUNT_FILE" ] && n=$(cat "$KWALLET_COUNT_FILE")\nprintf '%s' $((n + 1)) > "$KWALLET_COUNT_FILE"\nprintf '%s\\n' "$@" > "$KWALLET_ARGS_FILE"\nprintf '%s' "$KWALLET_PASSWORD"\n`;
+function writeKWalletCommand(bin, countPath, argsPath, { failFirst = false } = {}) {
+	const script = `#!/bin/sh\nn=0\n[ -f "$KWALLET_COUNT_FILE" ] && n=$(cat "$KWALLET_COUNT_FILE")\nn=$((n + 1))\nprintf '%s' $n > "$KWALLET_COUNT_FILE"\n[ -n "$KWALLET_ARGS_FILE" ] && printf '%s\\n' "$@" > "$KWALLET_ARGS_FILE"\n${failFirst ? '[ "$n" = 1 ] && exit 1\n' : ""}printf '%s' "$KWALLET_PASSWORD"\n`;
 	writeFileSync(join(bin, "kwallet-query"), script);
 	chmodSync(join(bin, "kwallet-query"), 0o755);
-	return { KWALLET_COUNT_FILE: countPath, KWALLET_ARGS_FILE: argsPath };
+	return { KWALLET_COUNT_FILE: countPath, ...(argsPath ? { KWALLET_ARGS_FILE: argsPath } : {}) };
 }
 
-function writeFailThenSucceedKWalletCommand(bin, countPath) {
-	const script = `#!/bin/sh\nn=0\n[ -f "$KWALLET_COUNT_FILE" ] && n=$(cat "$KWALLET_COUNT_FILE")\nn=$((n + 1))\nprintf '%s' $n > "$KWALLET_COUNT_FILE"\n[ "$n" = 1 ] && exit 1\nprintf '%s' "$KWALLET_PASSWORD"\n`;
-	writeFileSync(join(bin, "kwallet-query"), script);
-	chmodSync(join(bin, "kwallet-query"), 0o755);
-	return { KWALLET_COUNT_FILE: countPath };
+function googleLinuxRows(password, one = "one", two = "two") {
+	const host = ".google.com";
+	return [
+		["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie(one, password, "v11", host)}`, 1],
+		["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie(two, password, "v11", host)}`, 2],
+	];
 }
 
 function runCookies(home, env, options = "{ requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] }", platformOverride) {
@@ -179,11 +180,7 @@ for (const scenario of [
 		const home = mkdtempSync(join(tmpdir(), "pi-cookie-kwallet-"));
 		const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
 		const password = "synthetic-kwallet-password";
-		const host = ".google.com";
-		createFixture(home, "Default", [
-			["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("one", password, "v11", host)}`, 1],
-			["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("two", password, "v11", host)}`, 2],
-		], { browser: scenario.browser, targetPlatform: "linux" });
+		createFixture(home, "Default", googleLinuxRows(password), { browser: scenario.browser, targetPlatform: "linux" });
 		const secretCount = join(home, "secret-count");
 		const kwalletCount = join(home, "kwallet-count");
 		const kwalletArgs = join(home, "kwallet-args");
@@ -211,11 +208,7 @@ test("KDE keeps Secret Service ahead of KWallet", (t) => {
 	skipWithoutPython(t);
 	const home = mkdtempSync(join(tmpdir(), "pi-cookie-kwallet-precedence-"));
 	const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
-	const host = ".google.com";
-	createFixture(home, "Default", [
-		["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("one", "peanuts", "v11", host)}`, 1],
-		["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("two", "peanuts", "v11", host)}`, 2],
-	], { targetPlatform: "linux" });
+	createFixture(home, "Default", googleLinuxRows("peanuts"), { targetPlatform: "linux" });
 	const kwalletCount = join(home, "kwallet-count");
 	const env = makeEnvironment(home, bin, {
 		XDG_CURRENT_DESKTOP: "KDE",
@@ -236,15 +229,8 @@ test("KDE caches both Secret Service and KWallet passwords", (t) => {
 	const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
 	const password = "synthetic-kwallet-password";
 	const secretPassword = "synthetic-secret-service-password";
-	const host = ".google.com";
-	createFixture(home, "Profile 1", [
-		["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("one", password, "v11", host)}`, 1],
-		["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("two", password, "v11", host)}`, 2],
-	], { targetPlatform: "linux" });
-	createFixture(home, "Profile 2", [
-		["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("three", secretPassword, "v11", host)}`, 1],
-		["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("four", secretPassword, "v11", host)}`, 2],
-	], { targetPlatform: "linux" });
+	createFixture(home, "Profile 1", googleLinuxRows(password), { targetPlatform: "linux" });
+	createFixture(home, "Profile 2", googleLinuxRows(secretPassword, "three", "four"), { targetPlatform: "linux" });
 	const secretCount = join(home, "secret-count");
 	const kwalletCount = join(home, "kwallet-count");
 	const env = makeEnvironment(home, bin, {
@@ -275,18 +261,14 @@ test("failed KWallet reads retry and successful passwords are cached", (t) => {
 	const home = mkdtempSync(join(tmpdir(), "pi-cookie-kwallet-cache-"));
 	const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
 	const password = "synthetic-kwallet-password";
-	const host = ".google.com";
-	createFixture(home, "Default", [
-		["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("one", password, "v11", host)}`, 1],
-		["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("two", password, "v11", host)}`, 2],
-	], { targetPlatform: "linux" });
+	createFixture(home, "Default", googleLinuxRows(password), { targetPlatform: "linux" });
 	const secretCount = join(home, "secret-count");
 	const kwalletCount = join(home, "kwallet-count");
 	const env = makeEnvironment(home, bin, {
 		XDG_CURRENT_DESKTOP: "KDE",
 		KWALLET_PASSWORD: password,
 		...writeFailPasswordCommand(bin, secretCount, "linux"),
-		...writeFailThenSucceedKWalletCommand(bin, kwalletCount),
+		...writeKWalletCommand(bin, kwalletCount, undefined, { failFirst: true }),
 	});
 	const result = runCookieScript(env, `
 		const options = { profile: 'Default', requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] };

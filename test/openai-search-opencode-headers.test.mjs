@@ -16,7 +16,7 @@ const openCodeGoModels = [
 	{ provider: "opencode-go", id: "space-bunny-free", api: "openai-completions", baseUrl: "https://opencode.ai/zen/go/v1" },
 ];
 
-async function runSearch(t, { config, models, sessionId, resolvedBaseUrl, resolvedHeaders = { "x-existing": "kept" }, withContext = true, redirectUrl, redirectStatus = 307 }) {
+async function runSearch(t, { config, models, sessionId = "session-1", resolvedBaseUrl, resolvedHeaders = { "x-existing": "kept" }, withContext = true, redirectUrl, redirectStatus = 307 }) {
 	const dir = await mkdtemp(join(tmpdir(), "pi-openai-opencode-headers-"));
 	t.after(() => rm(dir, { recursive: true, force: true }));
 	await writeFile(join(dir, "web-search.json"), JSON.stringify(config));
@@ -62,252 +62,79 @@ const openCodeGoConfig = {
 	openaiSearchModel: "gpt-6-luna",
 };
 
-test("OpenAI search through opencode-go sends OpenCode session attribution", async (t) => {
-	const out = await runSearch(t, { config: openCodeGoConfig, models: openCodeGoModels, sessionId: "search-session-1" });
+const openCodeUrl = "https://opencode.ai/zen/v1/responses";
+const openaiModel = { provider: "openai", id: "gpt-5.6-terra", api: "openai-responses", baseUrl: "https://api.openai.com/v1" };
+const { openaiSearchModel: _unused, ...autoModelConfig } = openCodeGoConfig;
 
-	assert.equal(out.error, undefined);
+test("OpenAI search through opencode-go keeps provider headers and picks the newest versioned GPT model", async (t) => {
+	const out = await runSearch(t, { config: autoModelConfig, models: openCodeGoModels });
 	assert.equal(out.result.answer, "Search answer");
-	assert.equal(out.requests.length, 1);
-	const [request] = out.requests;
-	assert.equal(request.url, "https://opencode.ai/zen/go/v1/responses");
-	assert.equal(request.headers["x-opencode-session"], "search-session-1");
-	assert.equal(request.headers["x-opencode-client"], "pi");
-	assert.equal(request.headers["x-existing"], "kept");
-});
-
-test("OpenAI search through opencode-go omits attribution without a session id", async (t) => {
-	const out = await runSearch(t, { config: openCodeGoConfig, models: openCodeGoModels });
-
-	assert.equal(out.error, undefined);
-	const [request] = out.requests;
-	assert.equal(request.headers["x-opencode-session"], undefined);
-	assert.equal(request.headers["x-opencode-client"], undefined);
-	assert.equal(request.headers["x-existing"], "kept");
-});
-
-test("OpenAI search does not send OpenCode attribution when resolved auth overrides the provider base URL", async (t) => {
-	const out = await runSearch(t, {
-		config: openCodeGoConfig,
-		models: openCodeGoModels,
-		sessionId: "search-session-override",
-		resolvedBaseUrl: "https://resolved-gateway.example/v1",
-	});
-
-	assert.equal(out.error, undefined);
-	const [request] = out.requests;
-	assert.equal(request.url, "https://resolved-gateway.example/v1/responses");
-	assert.equal(request.headers["x-opencode-session"], undefined);
-	assert.equal(request.headers["x-opencode-client"], undefined);
-	assert.equal(request.headers["x-existing"], "kept");
-});
-
-test("OpenAI search with OpenCode credentials does not send attribution to another explicit gateway", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiSearchProviders: ["opencode-go"],
-			openaiResponsesUrl: "https://other-gateway.example/v1/responses",
-			openaiSearchModel: "gpt-6-luna",
-		},
-		models: openCodeGoModels,
-		sessionId: "search-session-4",
-		resolvedHeaders: { "x-existing": "kept", "X-OpenCode-Session": "registry-session", "x-opencode-client": "registry-client" },
-	});
-
-	assert.equal(out.error, undefined);
-	const [request] = out.requests;
-	assert.equal(request.url, "https://other-gateway.example/v1/responses");
-	assert.equal(request.headers["x-opencode-session"], undefined);
-	assert.equal(request.headers["x-opencode-client"], undefined);
-	assert.equal(request.headers["x-existing"], "kept");
-});
-
-test("OpenAI search with Codex credentials strips OpenCode attribution after switching to the ChatGPT endpoint", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiSearchProviders: ["openai-codex"],
-			openaiResponsesUrl: "https://opencode.ai/zen/v1/responses",
-		},
-		models: [{ provider: "openai-codex", id: "gpt-5.6-terra", api: "openai-codex-responses", baseUrl: "https://chatgpt.com/backend-api" }],
-		sessionId: "search-session-codex",
-	});
-
-	assert.equal(out.error, undefined);
-	const [request] = out.requests;
-	assert.equal(request.url, "https://chatgpt.com/backend-api/codex/responses");
-	assert.equal(request.headers["x-opencode-session"], undefined);
-	assert.equal(request.headers["x-opencode-client"], undefined);
-	assert.equal(request.headers["x-existing"], "kept");
-});
-
-test("OpenAI search with OpenCode credentials sends attribution to an explicit OpenCode URL", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiSearchProviders: ["opencode-go"],
-			openaiResponsesUrl: "https://opencode.ai/zen/go/v1/responses",
-			openaiSearchModel: "gpt-6-luna",
-		},
-		models: openCodeGoModels,
-		sessionId: "search-session-5",
-	});
-
-	assert.equal(out.error, undefined);
-	const [request] = out.requests;
-	assert.equal(request.url, "https://opencode.ai/zen/go/v1/responses");
-	assert.equal(request.headers["x-opencode-session"], "search-session-5");
-	assert.equal(request.headers["x-opencode-client"], "pi");
-});
-
-test("OpenAI search sends attribution to an explicit OpenCode URL with standalone credentials", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiApiKey: "standalone-key",
-			openaiResponsesUrl: "https://opencode.ai/zen/v1/responses",
-		},
-		models: [],
-		sessionId: "search-session-standalone",
-	});
-
-	assert.equal(out.error, undefined);
-	const [request] = out.requests;
-	assert.equal(request.url, "https://opencode.ai/zen/v1/responses");
-	assert.equal(request.headers["x-opencode-session"], "search-session-standalone");
-	assert.equal(request.headers["x-opencode-client"], "pi");
-});
-
-test("OpenAI search preserves attribution across a same-origin OpenCode redirect", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiApiKey: "standalone-key",
-			openaiResponsesUrl: "https://opencode.ai/zen/v1/responses",
-		},
-		models: [],
-		sessionId: "search-session-same-origin",
-		redirectUrl: "https://opencode.ai/zen/v2/responses",
-	});
-
-	assert.equal(out.error, undefined);
-	assert.equal(out.result.answer, "Search answer");
-	assert.equal(out.requests.length, 2);
-	assert.equal(out.requests[1].url, "https://opencode.ai/zen/v2/responses");
-	assert.equal(out.requests[1].headers["x-opencode-session"], "search-session-same-origin");
-	assert.equal(out.requests[1].headers["x-opencode-client"], "pi");
-});
-
-test("OpenAI search strips attribution and provider auth across a cross-origin redirect", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiSearchProviders: ["opencode-go"],
-			openaiResponsesUrl: "https://opencode.ai/zen/v1/responses",
-		},
-		models: openCodeGoModels,
-		sessionId: "search-session-cross-origin",
-		resolvedHeaders: { "x-provider-secret": "registry-secret", "x-normal-header": "also-registry-supplied" },
-		redirectUrl: "https://redirect-target.example/v1/responses",
-		redirectStatus: 302,
-	});
-
-	assert.equal(out.error, undefined);
-	assert.equal(out.result.answer, "Search answer");
-	assert.equal(out.requests.length, 2);
-	assert.equal(out.requests[0].headers["x-provider-secret"], "registry-secret");
-	assert.equal(out.requests[1].url, "https://redirect-target.example/v1/responses");
-	assert.equal(out.requests[1].method, "GET");
-	assert.equal(out.requests[1].headers.authorization, undefined);
-	assert.equal(out.requests[1].headers["x-opencode-session"], undefined);
-	assert.equal(out.requests[1].headers["x-opencode-client"], undefined);
-	assert.equal(out.requests[1].headers["x-provider-secret"], undefined);
-	assert.equal(out.requests[1].headers["x-normal-header"], undefined);
-});
-
-test("OpenAI search strips attribution when an OpenCode redirect downgrades to HTTP", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiApiKey: "standalone-key",
-			openaiResponsesUrl: "https://opencode.ai/zen/v1/responses",
-		},
-		models: [],
-		sessionId: "search-session-downgrade",
-		redirectUrl: "http://opencode.ai/zen/v2/responses",
-	});
-
-	assert.equal(out.error, undefined);
-	assert.equal(out.requests.length, 2);
-	assert.equal(out.requests[1].url, "http://opencode.ai/zen/v2/responses");
-	assert.equal(out.requests[1].headers.authorization, undefined);
-	assert.equal(out.requests[1].headers["x-opencode-session"], undefined);
-	assert.equal(out.requests[1].headers["x-opencode-client"], undefined);
-});
-
-test("OpenAI search without context does not send attribution to an explicit OpenCode URL", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiApiKey: "standalone-key",
-			openaiResponsesUrl: "https://opencode.ai/zen/v1/responses",
-		},
-		models: [],
-		sessionId: "unavailable-session",
-		withContext: false,
-	});
-
-	assert.equal(out.error, undefined);
-	const [request] = out.requests;
-	assert.equal(request.headers["x-opencode-session"], undefined);
-	assert.equal(request.headers["x-opencode-client"], undefined);
-});
-
-test("OpenAI search sends attribution to an explicit OpenCode URL with a non-OpenCode Pi model", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiSearchProviders: ["openai"],
-			openaiResponsesUrl: "https://opencode.ai/zen/v1/responses",
-		},
-		models: [{ provider: "openai", id: "gpt-5.6-terra", api: "openai-responses", baseUrl: "https://api.openai.com/v1" }],
-		sessionId: "search-session-non-opencode-model",
-	});
-
-	assert.equal(out.error, undefined);
-	const [request] = out.requests;
-	assert.equal(request.url, "https://opencode.ai/zen/v1/responses");
-	assert.equal(request.headers["x-opencode-session"], "search-session-non-opencode-model");
-	assert.equal(request.headers["x-opencode-client"], "pi");
-});
-
-test("OpenAI search rejects an insecure explicit OpenCode URL without sending credentials or attribution", async (t) => {
-	const out = await runSearch(t, {
-		config: {
-			openaiApiKey: "standalone-key",
-			openaiResponsesUrl: "http://opencode.ai/zen/v1/responses",
-		},
-		models: [],
-		sessionId: "search-session-insecure",
-	});
-
-	assert.match(out.error, /must use HTTPS for opencode\.ai/u);
-	assert.equal(out.requests.length, 0);
-});
-
-test("OpenAI search through opencode-go picks the newest versioned GPT model without openaiSearchModel", async (t) => {
-	const { openaiSearchModel: _unused, ...config } = openCodeGoConfig;
-	const out = await runSearch(t, { config, models: openCodeGoModels, sessionId: "search-session-3" });
-
-	assert.equal(out.error, undefined);
 	const [request] = out.requests;
 	assert.equal(request.url, "https://opencode.ai/zen/go/v1/responses");
 	assert.equal(request.body.model, "gpt-6-luna");
-	assert.equal(request.headers["x-opencode-session"], "search-session-3");
+	assert.equal(request.headers["x-existing"], "kept");
+	assert.equal(request.headers["x-opencode-session"], "session-1");
+	assert.equal(request.headers["x-opencode-client"], "pi");
 });
 
-test("OpenAI search through official providers does not send OpenCode attribution", async (t) => {
-	const out = await runSearch(t, {
-		config: {},
-		models: [{ provider: "openai", id: "gpt-5.6-terra", api: "openai-responses", baseUrl: "https://api.openai.com/v1" }],
-		sessionId: "search-session-2",
+for (const [name, options, url] of [
+	["an explicit OpenCode URL with OpenCode credentials", { config: { openaiSearchProviders: ["opencode-go"], openaiResponsesUrl: openCodeUrl, openaiSearchModel: "gpt-6-luna" }, models: openCodeGoModels }, openCodeUrl],
+	["an explicit OpenCode URL with standalone credentials", { config: { openaiApiKey: "standalone-key", openaiResponsesUrl: openCodeUrl }, models: [] }, openCodeUrl],
+	["an explicit OpenCode URL with a non-OpenCode Pi model", { config: { openaiSearchProviders: ["openai"], openaiResponsesUrl: openCodeUrl }, models: [openaiModel] }, openCodeUrl],
+]) {
+	test(`OpenAI search sends OpenCode attribution to ${name}`, async (t) => {
+		const out = await runSearch(t, options);
+		assert.equal(out.error, undefined);
+		assert.equal(out.requests[0].url, url);
+		assert.equal(out.requests[0].headers["x-opencode-session"], "session-1");
+		assert.equal(out.requests[0].headers["x-opencode-client"], "pi");
 	});
+}
 
-	assert.equal(out.error, undefined);
-	const [request] = out.requests;
-	assert.equal(request.url, "https://api.openai.com/v1/responses");
-	assert.equal(request.headers["x-opencode-session"], undefined);
-	assert.equal(request.headers["x-opencode-client"], undefined);
-	assert.equal(request.headers["x-existing"], "kept");
+for (const [name, options, url] of [
+	["without a session id", { config: openCodeGoConfig, models: openCodeGoModels, sessionId: null }, "https://opencode.ai/zen/go/v1/responses"],
+	["without an extension context", { config: { openaiApiKey: "standalone-key", openaiResponsesUrl: openCodeUrl }, models: [], withContext: false }, openCodeUrl],
+	["when resolved auth overrides the provider base URL", { config: openCodeGoConfig, models: openCodeGoModels, resolvedBaseUrl: "https://resolved-gateway.example/v1" }, "https://resolved-gateway.example/v1/responses"],
+	["to another explicit gateway, even when the registry supplies OpenCode headers", {
+		config: { openaiSearchProviders: ["opencode-go"], openaiResponsesUrl: "https://other-gateway.example/v1/responses", openaiSearchModel: "gpt-6-luna" },
+		models: openCodeGoModels,
+		resolvedHeaders: { "X-OpenCode-Session": "registry-session", "x-opencode-client": "registry-client" },
+	}, "https://other-gateway.example/v1/responses"],
+	["after Codex credentials switch to the ChatGPT endpoint", {
+		config: { openaiSearchProviders: ["openai-codex"], openaiResponsesUrl: openCodeUrl },
+		models: [{ provider: "openai-codex", id: "gpt-5.6-terra", api: "openai-codex-responses", baseUrl: "https://chatgpt.com/backend-api" }],
+	}, "https://chatgpt.com/backend-api/codex/responses"],
+	["through official providers", { config: {}, models: [openaiModel] }, "https://api.openai.com/v1/responses"],
+]) {
+	test(`OpenAI search omits OpenCode attribution ${name}`, async (t) => {
+		const out = await runSearch(t, options);
+		assert.equal(out.error, undefined);
+		assert.equal(out.requests[0].url, url);
+		assert.equal(out.requests[0].headers["x-opencode-session"], undefined);
+		assert.equal(out.requests[0].headers["x-opencode-client"], undefined);
+	});
+}
+
+test("OpenAI search strips attribution and provider auth across a cross-origin redirect", async (t) => {
+	const out = await runSearch(t, {
+		config: { openaiSearchProviders: ["opencode-go"], openaiResponsesUrl: openCodeUrl },
+		models: openCodeGoModels,
+		resolvedHeaders: { "x-provider-secret": "registry-secret" },
+		redirectUrl: "https://redirect-target.example/v1/responses",
+		redirectStatus: 302,
+	});
+	assert.equal(out.result.answer, "Search answer");
+	assert.equal(out.requests[0].headers["x-provider-secret"], "registry-secret");
+	assert.equal(out.requests[0].headers["x-opencode-session"], "session-1");
+	const redirected = out.requests[1];
+	assert.equal(redirected.url, "https://redirect-target.example/v1/responses");
+	for (const header of ["authorization", "x-opencode-session", "x-opencode-client", "x-provider-secret"]) {
+		assert.equal(redirected.headers[header], undefined, header);
+	}
+});
+
+test("OpenAI search rejects an insecure explicit OpenCode URL before sending a request", async (t) => {
+	const out = await runSearch(t, { config: { openaiApiKey: "standalone-key", openaiResponsesUrl: "http://opencode.ai/zen/v1/responses" }, models: [] });
+	assert.match(out.error, /must use HTTPS for opencode\.ai/u);
+	assert.equal(out.requests.length, 0);
 });

@@ -16,21 +16,11 @@ const CAPABILITY_LABELS: Record<WebCapability, string> = {
 	"stored-content": "stored-result retrieval",
 };
 
-export function versionAtLeast(version: string, minimum: readonly [number, number, number]): boolean {
-	const [major, minor, patch] = version.split(".").map(part => Number.parseInt(part, 10));
-	if (![major, minor, patch].every(Number.isFinite)) return false;
-	const [minMajor, minMinor, minPatch] = minimum;
-	if (major !== minMajor) return major > minMajor;
-	if (minor !== minMinor) return minor > minMinor;
-	return patch >= minPatch;
-}
-
 function supportsDynamicTools(pi: ExtensionAPI): boolean {
 	if (typeof pi.getAllTools !== "function" || typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return false;
-	// Read the version from the running Pi module. Resolving the package on disk fails
-	// for the single-file binary, which has no `@earendil-works/pi-coding-agent` install
-	// for extension imports to resolve against.
-	return typeof VERSION === "string" && versionAtLeast(VERSION, [0, 86, 1]);
+	// Read the running Pi's version: global and binary installs have no Pi package on disk to resolve.
+	const [major, minor, patch] = String(VERSION).split(".").map(part => Number.parseInt(part, 10));
+	return major > 0 || minor > 86 || minor === 86 && patch >= 1;
 }
 
 function hasToolDeclarations(messages: unknown[]): boolean {
