@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Set `"toolActivation": "eager"` in `web-search.json` to skip `web_enable` and keep every enabled web tool available from the first request. The `web_enable` guidance now tells the model to call it first whenever current, external, or linked information could help. Thanks to [@ackalker](https://github.com/ackalker) for [issue #458](https://github.com/nicobailon/pi-web-access/issues/458).
+
 ## [0.32.0] - 2026-09-26
 
 ### Highlights

@@ -179,6 +179,7 @@ interface WebSearchConfig {
 		allowedProviders?: unknown;
 	};
 	tools?: Partial<Record<keyof ToolNames, { enabled?: boolean }>>;
+	toolActivation?: unknown;
 	commands?: Partial<Record<"websearch" | "curator" | "search" | "google-account", { enabled?: boolean }>>;
 	toolNames?: Partial<ToolNames>;
 	shortcuts?: {
@@ -3266,7 +3267,11 @@ export default function (pi: ExtensionAPI) {
 		...(fetchContentEnabled ? [{ name: toolNames.fetchContent, capability: "fetch" as const }] : []),
 		...(getSearchContentEnabled ? [{ name: toolNames.getSearchContent, capability: "stored-content" as const }] : []),
 	];
-	registerWebToolActivation(pi, activationTools);
+	const toolActivation = initConfig.toolActivation ?? "dynamic";
+	if (toolActivation !== "dynamic" && toolActivation !== "eager") {
+		throw new Error(`toolActivation in ${WEB_SEARCH_CONFIG_PATH} must be "dynamic" or "eager"`);
+	}
+	if (toolActivation === "dynamic") registerWebToolActivation(pi, activationTools);
 
 	if (isCommandEnabled(initConfig, "websearch")) pi.registerCommand("websearch", {
 		description: "Open web search curator",

@@ -54,7 +54,7 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 		name: LOADER_NAME,
 		label: "Enable Web Access",
 		description: "Enable configured pi-web-access tools for web research and content retrieval. Does not search or fetch. Enabled tools are available on the next model request; disabled capabilities remain unavailable.",
-		promptSnippet: `pi-web-access is configured for ${capabilities}. Call web_enable to activate these tools; use them on the next model request.`,
+		promptSnippet: `Tools for ${capabilities} stay hidden until enabled. Call web_enable first whenever current, external, or linked information could help; the tools appear on the next model request.`,
 		parameters,
 		async execute() {
 			const registered = new Set(pi.getAllTools().map(tool => tool.name));

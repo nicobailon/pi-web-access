@@ -90,6 +90,12 @@ test("all-disabled configuration registers no loader", () => {
 	assert.deepEqual(state.before, ["read", "foreign_tool"]);
 });
 
+test("eager activation config registers no loader and keeps web tools active", () => {
+	const state = run({ toolActivation: "eager" });
+	assert.deepEqual(state.registered, defaultNames);
+	assert.deepEqual(state.before.filter(name => defaultNames.includes(name)), defaultNames);
+});
+
 test("excluded loader leaves permitted legacy tools active", () => {
 	const state = run({}, { unavailable: ["web_enable"] });
 	assert.deepEqual(state.before.filter(name => defaultNames.includes(name)), defaultNames);

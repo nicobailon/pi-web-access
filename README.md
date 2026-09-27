@@ -497,6 +497,7 @@ Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_D
     "fetchContent": { "enabled": true },
     "getSearchContent": { "enabled": true }
   },
+  "toolActivation": "dynamic",
   "commands": {
     "websearch": { "enabled": true },
     "curator": { "enabled": true },
@@ -988,6 +989,8 @@ When `false`, a requested Curator session never tries to open a Glimpse window o
 ### Tool activation
 
 Pi starts normal sessions with the compact `web_enable` tool. Its guidance lists only the web capabilities enabled in `web-search.json`. The model can call it without a human toggle; the configured search, source-check, fetch, and stored-content tools then appear on the immediately following model request. Disabled tools stay unregistered, and alternate `toolNames` are preserved. Warm and resumed sessions retain their recorded tool selection.
+
+Set `"toolActivation": "eager"` in `web-search.json` to skip `web_enable` and keep every enabled web tool available from the first request, for models that rarely call the loader on their own. The default is `"dynamic"`. Pi restart is required.
 
 ### Shortcuts
 
