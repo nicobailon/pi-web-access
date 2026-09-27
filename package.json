@@ -4,7 +4,7 @@
   "description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent. Supports OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Crawl4AI, Jina, SERPdive, Kagi, Ollama, AnySearch, Bright Data SERP, SerpBase, SerpApi, Serply, SearXNG, Exa, Perplexity, Gemini, Kimi, and Mistral.",
   "type": "module",
   "scripts": {
-    "test": "node --test",
+    "test": "node --import ./test/isolate-env.mjs --test",
     "typecheck": "tsc",
     "audit:runtime": "npm audit --omit=dev --omit=peer",
     "build": "node scripts/build.js",
