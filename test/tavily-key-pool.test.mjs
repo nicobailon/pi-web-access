@@ -19,7 +19,7 @@ async function createHome(config) {
 function runChild(script, env) {
 	const childEnv = { ...process.env };
 	for (const key of Object.keys(childEnv)) {
-		if (key === "PI_CODING_AGENT_DIR" || key === "TAVILY_API_KEY" || key === "TAVILY_API_KEY_INDEX" || /^TAVILY_API_KEY_\d+$/.test(key)) {
+		if (key === "PI_CODING_AGENT_DIR" || key === "PI_WEB_ACCESS_TEST_MISSING_TAVILY_KEY" || key === "TAVILY_API_KEY" || key === "TAVILY_API_KEY_INDEX" || /^TAVILY_API_KEY_\d+$/.test(key)) {
 			delete childEnv[key];
 		}
 	}
@@ -138,7 +138,7 @@ test("TAVILY_API_KEY_INDEX skips empty numbered slots and wraps through the conf
 });
 
 test("numbered pool keys are exhausted before the standalone fallback", async () => {
-	const { home, agentDir } = await createHome({});
+	const { home, agentDir } = await createHome({ tavilyApiKey: "$PI_WEB_ACCESS_TEST_MISSING_TAVILY_KEY" });
 	const child = runChild(`
 		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
 		const { activityMonitor } = await import(${JSON.stringify(activityModuleUrl)});

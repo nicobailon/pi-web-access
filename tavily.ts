@@ -60,6 +60,14 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	});
 }
 
+async function getConfiguredApiKey(signal?: AbortSignal): Promise<string | null> {
+	return resolveCredential({
+		provider: "Tavily",
+		configuredValue: loadConfig().tavilyApiKey,
+		signal,
+	});
+}
+
 const TAVILY_KEY_POOL_MAX = 20;
 const TAVILY_KEY_POOL_RETRIES = new Set([401, 402, 403, 429, 432]);
 
@@ -185,26 +193,30 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 		}
 
 		let lastError: Error | null = null;
-		for (const apiKey of pool) {
+		const tryKey = async (apiKey: string): Promise<SearchResponse | null> => {
 			try {
 				return await tavilySearch(apiUrl, apiKey, body, numResults, options.includeContent === true, signal, activityId);
 			} catch (err) {
 				if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) throw err;
-				const status = tavilyErrorStatus(err);
-				if (!TAVILY_KEY_POOL_RETRIES.has(status)) throw err;
-				lastError = err instanceof Error ? err : new Error(String(err));
-			}
-		}
-
-		const fallback = await getApiKey(signal);
-		if (fallback && !pool.includes(fallback)) {
-			try {
-				return await tavilySearch(apiUrl, fallback, body, numResults, options.includeContent === true, signal, activityId);
-			} catch (err) {
-				if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) throw err;
 				if (!TAVILY_KEY_POOL_RETRIES.has(tavilyErrorStatus(err))) throw err;
 				lastError = err instanceof Error ? err : new Error(String(err));
+				return null;
 			}
+		};
+		for (const apiKey of pool) {
+			const result = await tryKey(apiKey);
+			if (result) return result;
+		}
+
+		const standalone = process.env.TAVILY_API_KEY?.trim();
+		if (standalone && !pool.includes(standalone)) {
+			const result = await tryKey(standalone);
+			if (result) return result;
+		}
+		const configured = await getConfiguredApiKey(signal);
+		if (configured && configured !== standalone && !pool.includes(configured)) {
+			const result = await tryKey(configured);
+			if (result) return result;
 		}
 		throw lastError ?? new Error("Tavily key pool exhausted");
 	} catch (err) {
