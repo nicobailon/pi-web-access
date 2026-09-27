@@ -10,7 +10,6 @@ const previousEnv = new Map(envNames.map(name => [name, process.env[name]]));
 const originalFetch = globalThis.fetch;
 const root = await mkdtemp(join(tmpdir(), "pi-fetch-pdf-answer-"));
 for (const name of envNames) process.env[name] = root;
-await writeFile(join(root, "settings.json"), JSON.stringify({ enabledModels: ["test/pdf-answer"] }));
 const configPath = join(root, "web-search.json");
 const config = { pdf: { provider: "unpdf" }, fetchRouting: { providers: ["http"] } };
 await writeFile(configPath, JSON.stringify(config));
@@ -42,8 +41,7 @@ const ctx = {
 			return { stopReason: "stop", content: [{ type: "text", text: "Synthetic answer." }] };
 		},
 	},
-	cwd: root,
-	isProjectTrusted: () => false,
+	scopedModels: [],
 };
 
 beforeEach(async () => {

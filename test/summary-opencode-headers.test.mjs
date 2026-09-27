@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -9,9 +9,6 @@ import { generateSummaryDraft } from "../summary-review.ts";
 
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 const agentDir = await mkdtemp(join(tmpdir(), "pi-summary-opencode-"));
-await writeFile(join(agentDir, "settings.json"), JSON.stringify({
-	enabledModels: ["opencode-go/deepseek-v4-flash", "anthropic/claude-haiku-4-5", "test/summary-model"],
-}));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
 after(async () => {
@@ -37,8 +34,7 @@ function context(models, complete) {
 			...(complete ? { complete } : {}),
 		},
 		sessionManager: { getSessionId: () => "summary-session-385" },
-		cwd: process.cwd(),
-		isProjectTrusted: () => false,
+		scopedModels: [],
 	};
 }
 
@@ -130,7 +126,7 @@ test("thinking summary completion sends OpenCode attribution headers", () => {
 		timeout: 10_000,
 		input: `
 			import assert from "node:assert/strict";
-			import { mkdtemp, writeFile } from "node:fs/promises";
+			import { mkdtemp } from "node:fs/promises";
 			import { tmpdir } from "node:os";
 			import { join } from "node:path";
 			import { register } from "node:module";
@@ -149,7 +145,6 @@ test("thinking summary completion sends OpenCode attribution headers", () => {
 			\`;
 			register("data:text/javascript," + encodeURIComponent(loaderSource), import.meta.url);
 			const agentDir = await mkdtemp(join(tmpdir(), "summary-thinking-opencode-"));
-			await writeFile(join(agentDir, "settings.json"), JSON.stringify({ enabledModels: ["opencode-go/deepseek-v4-flash"] }));
 			process.env.PI_CODING_AGENT_DIR = agentDir;
 			let calls = 0;
 			globalThis.completeSimple = (_model, _request, options) => {
@@ -170,8 +165,7 @@ test("thinking summary completion sends OpenCode attribution headers", () => {
 					getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key", headers: { "x-existing": "kept" } }),
 				},
 				sessionManager: { getSessionId: () => "thinking-session-385" },
-				cwd: agentDir,
-				isProjectTrusted: () => false,
+				scopedModels: [],
 			}, undefined, "opencode-go/deepseek-v4-flash:high");
 			assert.equal(result.summary, "Thinking summary");
 			assert.equal(result.meta.model, "opencode-go/deepseek-v4-flash");

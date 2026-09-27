@@ -1,7 +1,7 @@
 import type { complete, Api, Message, Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
-import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "./summary-model-scope.ts";
+import { findModelWithProviderRouting, isModelInScope } from "./summary-model-scope.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 import { awaitWithAbort } from "./abortable.ts";
 import { openCodeSessionHeaders } from "./opencode-session-headers.ts";
@@ -84,7 +84,7 @@ function resolveModel(ctx: ExtensionContext, override?: string, configured?: Ans
 		throw new Error("No current model available for page answering");
 	}
 	if (!model.input.includes("text")) throw new Error(`Answer model does not support text input: ${model.provider}/${model.id}`);
-	if (!modelMatchesEnabledPatterns(model, loadEnabledModelPatterns(ctx))) {
+	if (!isModelInScope(model, ctx.scopedModels)) {
 		throw new Error(`Answer model is not enabled: ${model.provider}/${model.id}`);
 	}
 	return model;

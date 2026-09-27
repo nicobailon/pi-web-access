@@ -2,7 +2,7 @@ import type { ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { complete, Api, Message, Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { openCodeSessionHeaders } from "./opencode-session-headers.ts";
-import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns, splitThinkingSuffix, type SummaryThinkingLevel } from "./summary-model-scope.ts";
+import { findModelWithProviderRouting, isModelInScope, splitThinkingSuffix, type SummaryThinkingLevel } from "./summary-model-scope.ts";
 import type { QueryResultData } from "./storage.ts";
 
 type ProviderHeaders = Record<string, string | null>;
@@ -30,7 +30,7 @@ export interface SummaryMeta {
 	edited?: boolean;
 }
 
-export type SummaryGenerationContext = Pick<ExtensionContext, "model" | "modelRegistry" | "sessionManager" | "cwd" | "isProjectTrusted">;
+export type SummaryGenerationContext = Pick<ExtensionContext, "model" | "modelRegistry" | "sessionManager" | "scopedModels">;
 
 function estimateTokens(text: string): number {
 	const trimmed = text.trim();
@@ -215,7 +215,6 @@ async function resolveSummaryModelCandidates(
 	ctx: SummaryGenerationContext,
 	modelOverride?: string,
 ): Promise<{ candidates: Array<{ model: Model<Api>; apiKey?: string; headers?: ProviderHeaders; thinkingLevel?: SummaryThinkingLevel }>; errors: string[] }> {
-	const enabledModelPatterns = loadEnabledModelPatterns(ctx);
 	const specs: Array<{ provider: string; id: string; thinkingLevel?: SummaryThinkingLevel }> = [];
 	const normalizedOverride = typeof modelOverride === "string" ? modelOverride.trim() : "";
 	if (normalizedOverride.length > 0) specs.push(parseModelSelector(normalizedOverride));
@@ -234,7 +233,7 @@ async function resolveSummaryModelCandidates(
 			errors.push(`Summary model not found: ${value}`);
 			continue;
 		}
-		if (!modelMatchesEnabledPatterns(model, enabledModelPatterns)) {
+		if (!isModelInScope(model, ctx.scopedModels)) {
 			errors.push(`Summary model is not enabled: ${value}`);
 			continue;
 		}

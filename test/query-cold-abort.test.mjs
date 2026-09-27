@@ -33,7 +33,7 @@ for (const kind of ["page", "rewrite"]) {
 						globalThis.importGate = new Promise((yes, no) => { release = yes; reject = no; });
 						globalThis.calls = 0;
 						const model = { provider: "anthropic", id: "claude-haiku-4-5", input: ["text"], contextWindow: 10000 };
-						const ctx = { model, cwd: root, isProjectTrusted: () => false, modelRegistry: {
+						const ctx = { model, scopedModels: [], modelRegistry: {
 							find: () => model, getAvailable: () => [model], getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test" }),
 						} };
 						const controller = new AbortController();

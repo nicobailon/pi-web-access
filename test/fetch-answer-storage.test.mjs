@@ -30,7 +30,7 @@ test("answer mode stores original fetched content instead of its answer presenta
 		{ url: "https://93.184.216.34/page", mode: "answer", prompt: "What does it say?" },
 		undefined,
 		undefined,
-		{ model: undefined, modelRegistry: {}, cwd: process.cwd(), isProjectTrusted: () => false },
+		{ model: undefined, modelRegistry: {}, scopedModels: [] },
 	);
 	assert.match(result.details.error, /Page answer failed/);
 	const stored = getResult(result.details.responseId);

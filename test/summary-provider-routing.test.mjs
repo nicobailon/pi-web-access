@@ -45,8 +45,7 @@ test("summary generation preserves registered provider behavior", async () => {
 					};
 				},
 			},
-			cwd: process.cwd(),
-			isProjectTrusted: () => false,
+			scopedModels: [],
 		},
 		undefined,
 		"custom-gateway/upstream/test-model",

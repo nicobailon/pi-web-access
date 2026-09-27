@@ -79,7 +79,7 @@ function buildChildScript(mode, scenario) {
 		mock.timers.enable({ apis: ["Date", "setTimeout"], now: 0 });
 		try {
 			const pending = generateSummaryDraft([], {
-				modelRegistry: registry, cwd: agentDir, isProjectTrusted: () => false,
+				modelRegistry: registry, scopedModels: [],
 			}, controller.signal, "test/model" + (${JSON.stringify(mode)} === "thinking" ? ":high" : ""), undefined, undefined, 100);
 			// Wait for cold module evaluation before advancing the clock.
 			await importStarted;

@@ -76,7 +76,7 @@ import { isBaizhiAvailable } from "./baizhi.ts";
 import { isValyuAvailable } from "./valyu.ts";
 import { isXcrawlAvailable } from "./xcrawl.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
-import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns, splitThinkingSuffix } from "./summary-model-scope.ts";
+import { findModelWithProviderRouting, isModelInScope, splitThinkingSuffix } from "./summary-model-scope.ts";
 import { registerCuratorRunLifecycle, resolveWebSearchWorkflow, type WebSearchWorkflow } from "./curator-run.ts";
 import {
 	buildResearchArtifact,
@@ -1302,27 +1302,16 @@ export default function (pi: ExtensionAPI) {
 			summaryModels.push({ value, label: value });
 		};
 
-		let enabledModelPatterns: string[] | null = null;
-		let scopeLoaded = true;
-		try {
-			enabledModelPatterns = loadEnabledModelPatterns(summaryContext);
-			const availableModels = summaryContext.modelRegistry.getAvailable();
-			for (const model of availableModels) {
-				if (!modelMatchesEnabledPatterns(model, enabledModelPatterns)) continue;
-				const value = `${model.provider}/${model.id}`;
-				availableValues.add(value);
-				addModel(model.provider, model.id);
-			}
-		} catch (err) {
-			scopeLoaded = false;
-			const message = err instanceof Error ? err.message : String(err);
-			console.error(`Failed to load summary models: ${message}`);
+		for (const model of summaryContext.modelRegistry.getAvailable()) {
+			if (!isModelInScope(model, summaryContext.scopedModels)) continue;
+			availableValues.add(`${model.provider}/${model.id}`);
+			addModel(model.provider, model.id);
 		}
 
 		const currentModelValue = summaryContext.model
 			? `${summaryContext.model.provider}/${summaryContext.model.id}`
 			: null;
-		if (scopeLoaded && summaryContext.model && currentModelValue && !seen.has(currentModelValue) && modelMatchesEnabledPatterns(summaryContext.model, enabledModelPatterns)) {
+		if (summaryContext.model && currentModelValue && !seen.has(currentModelValue) && isModelInScope(summaryContext.model, summaryContext.scopedModels)) {
 			addModel(summaryContext.model.provider, summaryContext.model.id);
 		}
 
@@ -1357,12 +1346,12 @@ export default function (pi: ExtensionAPI) {
 		};
 
 		let defaultSummaryModel: string | null = null;
-		if (scopeLoaded && configuredSummaryModel.length > 0) {
+		if (configuredSummaryModel.length > 0) {
 			defaultSummaryModel = availableValues.has(configuredSummaryModel)
 				? configuredSummaryModel
 				: resolveAvailableModelValue(configuredSummaryModel);
 		}
-		if (scopeLoaded && !defaultSummaryModel) {
+		if (!defaultSummaryModel) {
 			for (const preferred of preferredDefaults) {
 				const model = findModelWithProviderRouting(summaryContext.modelRegistry, preferred.provider, preferred.id);
 				const value = model ? `${model.provider}/${model.id}` : null;
@@ -1918,8 +1907,7 @@ export default function (pi: ExtensionAPI) {
 					model: ctx.model,
 					modelRegistry: ctx.modelRegistry,
 					sessionManager: ctx.sessionManager,
-					cwd: ctx.cwd,
-					isProjectTrusted: () => ctx.isProjectTrusted(),
+					scopedModels: ctx.scopedModels,
 				};
 				const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
 
@@ -2148,8 +2136,7 @@ export default function (pi: ExtensionAPI) {
 					model: ctx.model,
 					modelRegistry: ctx.modelRegistry,
 					sessionManager: ctx.sessionManager,
-					cwd: ctx.cwd,
-					isProjectTrusted: () => ctx.isProjectTrusted(),
+					scopedModels: ctx.scopedModels,
 				};
 				const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
 				const generated = await generateSummaryDraft(
@@ -3308,8 +3295,7 @@ export default function (pi: ExtensionAPI) {
 				model: ctx.model,
 				modelRegistry: ctx.modelRegistry,
 				sessionManager: ctx.sessionManager,
-				cwd: ctx.cwd,
-				isProjectTrusted: () => ctx.isProjectTrusted(),
+				scopedModels: ctx.scopedModels,
 			};
 			const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
 

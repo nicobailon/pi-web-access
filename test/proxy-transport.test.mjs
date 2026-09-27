@@ -492,6 +492,7 @@ test("websearch command scopes searches but not model callbacks to configured pr
 					modelRegistry,
 					cwd: process.cwd(),
 					isProjectTrusted() { return true; },
+					scopedModels: [],
 					ui: { notify(message, level) { notifications.push({ message, level }); } },
 				};
 				await commands.get("websearch").handler("initial command query", ctx);

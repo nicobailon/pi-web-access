@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { after, test } from "node:test";
+import { test } from "node:test";
 
-import { findModelWithProviderRouting, loadEnabledModelPatterns, modelMatchesEnabledPatterns } from "../summary-model-scope.ts";
+import { findModelWithProviderRouting } from "../summary-model-scope.ts";
 import { generateSummaryDraft, SUMMARY_GENERATION_DEADLINE_MS } from "../summary-review.ts";
 
 const indexUrl = new URL("../index.ts", import.meta.url).href;
@@ -15,7 +15,7 @@ const readmeSrc = readFileSync(new URL("../README.md", import.meta.url), "utf8")
 const summarySrc = readFileSync(new URL("../summary-review.ts", import.meta.url), "utf8");
 const queryRewriteSrc = readFileSync(new URL("../query-rewrite.ts", import.meta.url), "utf8");
 
-function summaryContext() {
+function summaryContext(scopedModels = []) {
 	const model = { provider: "anthropic", id: "claude-haiku-4-5" };
 	return {
 		modelRegistry: {
@@ -23,8 +23,7 @@ function summaryContext() {
 			getAvailable: () => [model],
 			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
 		},
-		cwd: process.cwd(),
-		isProjectTrusted: () => false,
+		scopedModels,
 	};
 }
 
@@ -35,15 +34,6 @@ const summaryResults = [{
 	error: null,
 	provider: "test",
 }];
-
-const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-access-summary-deadline-"));
-await writeFile(join(testAgentDir, "settings.json"), JSON.stringify({ enabledModels: ["anthropic/claude-haiku-4-5", "openrouter/nvidia/nemotron-3-super-120b-a12b:free"] }));
-process.env.PI_CODING_AGENT_DIR = testAgentDir;
-after(() => {
-	if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
-	else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-});
 
 test("never-settling summary completion returns a deterministic deadline fallback", async () => {
 	let completionSignal;
@@ -110,28 +100,20 @@ test("caller abort takes precedence over a pending summary completion", async ()
 	);
 });
 
-test("summary model scope matches nested provider model ids and thinking suffixes", () => {
-	assert.equal(
-		modelMatchesEnabledPatterns(
-			{ provider: "openrouter", id: "nvidia/nemotron-3-super-120b-a12b:free" },
-			["openrouter/nvidia/nemotron-3-super-120b-a12b:free"],
-		),
-		true,
-	);
-	assert.equal(
-		modelMatchesEnabledPatterns(
-			{ provider: "openrouter", id: "anthropic/claude-sonnet-4" },
-			["openrouter/*:low"],
-		),
-		true,
-	);
-	assert.equal(
-		modelMatchesEnabledPatterns(
-			{ provider: "openrouter", id: "ai21/jamba-large-1.7" },
-			["openrouter/nvidia/*"],
-		),
-		false,
-	);
+test("summary generation only uses models in the host's resolved scope", async () => {
+	const completeWith = calls => () => {
+		calls.push(1);
+		return Promise.resolve({ stopReason: "stop", content: [{ type: "text", text: "Scoped summary" }] });
+	};
+	const outOfScope = [];
+	const excluded = await generateSummaryDraft(summaryResults, summaryContext([{ model: { provider: "openai-codex", id: "gpt-5.6-luna" } }]), undefined, undefined, undefined, completeWith(outOfScope), 1000);
+	assert.equal(outOfScope.length, 0);
+	assert.equal(excluded.meta.fallbackUsed, true);
+
+	const inScope = [];
+	const included = await generateSummaryDraft(summaryResults, summaryContext([{ model: { provider: "anthropic", id: "claude-haiku-4-5" } }]), undefined, undefined, undefined, completeWith(inScope), 1000);
+	assert.equal(inScope.length, 1);
+	assert.equal(included.meta.model, "anthropic/claude-haiku-4-5");
 });
 
 test("summary generation resolves preferred models through routed providers", async () => {
@@ -145,8 +127,7 @@ test("summary generation resolves preferred models through routed providers", as
 				getAvailable: () => [routedModel],
 				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
 			},
-			cwd: process.cwd(),
-			isProjectTrusted: () => false,
+			scopedModels: [],
 		},
 		undefined,
 		undefined,
@@ -178,8 +159,7 @@ test("summaryModel thinking suffix strips before lookup and reaches completion o
 				getAvailable: () => [],
 				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
 			},
-			cwd: process.cwd(),
-			isProjectTrusted: () => false,
+			scopedModels: [],
 		},
 		undefined,
 		"anthropic/claude-haiku-4-5:low",
@@ -212,8 +192,7 @@ test("summaryModel keeps non-thinking colons in model ids", async () => {
 				getAvailable: () => [],
 				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
 			},
-			cwd: process.cwd(),
-			isProjectTrusted: () => false,
+			scopedModels: [],
 		},
 		undefined,
 		"openrouter/nvidia/nemotron-3-super-120b-a12b:free",
@@ -242,8 +221,7 @@ test("summaryModel thinking suffix omits effort for non-reasoning models", async
 				getAvailable: () => [model],
 				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
 			},
-			cwd: process.cwd(),
-			isProjectTrusted: () => false,
+			scopedModels: [],
 		},
 		undefined,
 		"anthropic/claude-haiku-4-5:low",
@@ -299,33 +277,6 @@ test("routed model resolution follows available-model ordering", () => {
 	);
 });
 
-test("enabledModels loading uses trusted project settings over global settings", async () => {
-	const agentDir = await mkdtemp(join(tmpdir(), "pi-web-access-agent-"));
-	const projectDir = await mkdtemp(join(tmpdir(), "pi-web-access-project-"));
-	await writeFile(join(agentDir, "settings.json"), JSON.stringify({ enabledModels: ["global/model"] }));
-	await mkdir(join(projectDir, ".pi"));
-	await writeFile(join(projectDir, ".pi", "settings.json"), JSON.stringify({ enabledModels: ["project/model"] }));
-
-	const previous = process.env.PI_CODING_AGENT_DIR;
-	process.env.PI_CODING_AGENT_DIR = agentDir;
-	try {
-		assert.deepEqual(
-			loadEnabledModelPatterns({ cwd: projectDir, isProjectTrusted: () => true }),
-			["project/model"],
-		);
-		assert.deepEqual(
-			loadEnabledModelPatterns({ cwd: projectDir, isProjectTrusted: () => false }),
-			["global/model"],
-		);
-	} finally {
-		if (previous === undefined) {
-			delete process.env.PI_CODING_AGENT_DIR;
-		} else {
-			process.env.PI_CODING_AGENT_DIR = previous;
-		}
-	}
-});
-
 test("summary generation has a hard deadline and preserves caller cancellation", () => {
 	assert.equal(SUMMARY_GENERATION_DEADLINE_MS, 30_000);
 	assert.match(summarySrc, /Promise\.race\(contenders\)/);
@@ -374,9 +325,9 @@ test("summary generation no longer uses catalog fallback or first available mode
 	assert.doesNotMatch(indexSrc, /getModel/);
 	assert.match(summarySrc, /findModelWithProviderRouting\(ctx\.modelRegistry, spec\.provider, spec\.id\)/);
 	assert.match(queryRewriteSrc, /findModelWithProviderRouting\(ctx\.modelRegistry, provider, id\)/);
-	assert.match(summarySrc, /modelMatchesEnabledPatterns\(model, enabledModelPatterns\)/);
+	assert.match(summarySrc, /isModelInScope\(model, ctx\.scopedModels\)/);
 	assert.doesNotMatch(indexSrc, /defaultSummaryModel = summaryModels\[0\]\.value/);
-	assert.match(indexSrc, /modelMatchesEnabledPatterns\(model, enabledModelPatterns\)/);
+	assert.match(indexSrc, /isModelInScope\(model, summaryContext\.scopedModels\)/);
 });
 
 test("summary and query rewrite defaults use the refreshed model order", () => {

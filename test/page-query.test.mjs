@@ -6,7 +6,6 @@ import { join } from "node:path";
 
 const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 const agentDir = await mkdtemp(join(tmpdir(), "pi-page-query-"));
-await writeFile(join(agentDir, "settings.json"), JSON.stringify({ enabledModels: ["test/page-model"] }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const configPath = join(agentDir, "web-search.json");
 after(() => {
@@ -37,8 +36,7 @@ test("answerFromPage grounds the model call in supplied page content", async () 
 				return { stopReason: "stop", content: [{ type: "text", text: "The value is 42." }] };
 			},
 		},
-		cwd: process.cwd(),
-		isProjectTrusted: () => false,
+		scopedModels: [],
 	};
 	const result = await answerFromPage(
 		{ question: "What is the value?", pageText: "The value is 42.", sourceUrl: "https://example.com" },
@@ -59,15 +57,11 @@ async function writeFetchConfig(fetch) {
 	await writeFile(configPath, JSON.stringify({ fetch }) + "\n", "utf8");
 }
 
-async function setEnabledModels(enabledModels) {
-	await writeFile(join(agentDir, "settings.json"), JSON.stringify({ enabledModels }) + "\n", "utf8");
-}
-
 function pageModel(id, input = ["text"]) {
 	return { api: "custom-page-api", provider: "test", id, input, contextWindow: 10_000 };
 }
 
-function contextFor(models, { sessionModel = pageModel("page-model"), auth = { ok: true, apiKey: "test-key" }, sessionId } = {}) {
+function contextFor(models, { sessionModel = pageModel("page-model"), auth = { ok: true, apiKey: "test-key" }, sessionId, scopedModels = [] } = {}) {
 	let request;
 	const ctx = {
 		model: sessionModel,
@@ -81,15 +75,13 @@ function contextFor(models, { sessionModel = pageModel("page-model"), auth = { o
 				return { stopReason: "stop", content: [{ type: "text", text: "The configured answer." }] };
 			},
 		},
-		cwd: process.cwd(),
-		isProjectTrusted: () => false,
+		scopedModels,
 	};
 	return { ctx, getRequest: () => request };
 }
 
 test("answerFromPage uses a valid configured answer model", async () => {
 	const configured = pageModel("configured-model");
-	await setEnabledModels(["test/page-model", "test/configured-model"]);
 	await writeFetchConfig({ answerProvider: " test ", answerModel: " configured-model " });
 	const { ctx, getRequest } = contextFor([configured]);
 
@@ -105,7 +97,6 @@ test("answerFromPage uses a valid configured answer model", async () => {
 test("answerFromPage resolves configured models through routed providers", async () => {
 	const routed = pageModel("anthropic/claude-haiku-4-5");
 	routed.provider = "openrouter";
-	await setEnabledModels(["openrouter/anthropic/claude-haiku-4-5"]);
 	await writeFetchConfig({ answerProvider: "anthropic", answerModel: "claude-haiku-4-5" });
 	const { ctx, getRequest } = contextFor([routed]);
 	ctx.modelRegistry.find = () => undefined;
@@ -121,7 +112,6 @@ test("answerFromPage resolves configured models through routed providers", async
 
 test("answerFromPage gives a per-call model precedence over valid and partial config", async () => {
 	const override = pageModel("override-model");
-	await setEnabledModels(["test/page-model", "test/override-model"]);
 
 	await writeFetchConfig({ answerProvider: "test", answerModel: "configured-model" });
 	let call = contextFor([override]);
@@ -155,7 +145,6 @@ test("answerFromPage adds opencode session headers on the registry path", async 
 	const openCodeModel = pageModel("gpt-5.6-luna");
 	openCodeModel.provider = "opencode-go";
 	openCodeModel.baseUrl = "https://opencode.ai/zen/go/v1";
-	await setEnabledModels(["opencode-go/gpt-5.6-luna"]);
 	await rm(configPath, { force: true });
 	const { ctx, getRequest } = contextFor([openCodeModel], {
 		sessionModel: openCodeModel,
@@ -179,7 +168,6 @@ test("answerFromPage adds opencode session headers for an opencode.ai base url",
 	const routed = pageModel("some-proxied-model");
 	routed.provider = "my-proxy";
 	routed.baseUrl = "https://opencode.ai/zen/go/v1";
-	await setEnabledModels(["my-proxy/some-proxied-model"]);
 	await rm(configPath, { force: true });
 	const { ctx, getRequest } = contextFor([routed], { sessionModel: routed, sessionId: "session-abc" });
 
@@ -194,7 +182,6 @@ test("answerFromPage adds opencode session headers for an opencode.ai base url",
 
 test("answerFromPage leaves request headers alone for non-opencode models", async () => {
 	const other = pageModel("page-model");
-	await setEnabledModels(["test/page-model"]);
 	await rm(configPath, { force: true });
 	const { ctx, getRequest } = contextFor([other], { sessionModel: other, sessionId: "session-123" });
 
@@ -210,7 +197,6 @@ test("answerFromPage omits opencode session headers when no session id is availa
 	const openCodeModel = pageModel("glm-5.3-flash");
 	openCodeModel.provider = "opencode-go";
 	openCodeModel.baseUrl = "https://opencode.ai/zen/go/v1";
-	await setEnabledModels(["opencode-go/glm-5.3-flash"]);
 	await rm(configPath, { force: true });
 	const { ctx, getRequest } = contextFor([openCodeModel], { sessionModel: openCodeModel });
 
@@ -223,7 +209,6 @@ test("answerFromPage omits opencode session headers when no session id is availa
 });
 
 test("answerFromPage rejects partial configured answer defaults", async () => {
-	await setEnabledModels(["test/page-model"]);
 	await writeFetchConfig({ answerProvider: "test" });
 
 	await assert.rejects(
@@ -236,7 +221,6 @@ test("answerFromPage rejects partial configured answer defaults", async () => {
 });
 
 test("answerFromPage rejects blank and non-string configured answer defaults", async () => {
-	await setEnabledModels(["test/page-model"]);
 	for (const fetch of [
 		{ answerProvider: "", answerModel: "configured-model" },
 		{ answerProvider: "test", answerModel: 42 },
@@ -253,7 +237,6 @@ test("answerFromPage rejects blank and non-string configured answer defaults", a
 });
 
 test("answerFromPage rejects an unknown configured answer model", async () => {
-	await setEnabledModels(["test/page-model"]);
 	await writeFetchConfig({ answerProvider: "test", answerModel: "missing-model" });
 
 	await assert.rejects(
@@ -268,17 +251,15 @@ test("answerFromPage rejects an unknown configured answer model", async () => {
 test("answerFromPage preserves configured model scope and text-input checks", async () => {
 	const disabled = pageModel("disabled-model");
 	await writeFetchConfig({ answerProvider: "test", answerModel: "disabled-model" });
-	await setEnabledModels(["test/page-model"]);
 	await assert.rejects(
 		() => answerFromPage(
 			{ question: "Which model?", pageText: "Content", sourceUrl: "https://example.com" },
-			contextFor([disabled]).ctx,
+			contextFor([disabled], { scopedModels: [{ model: pageModel("page-model") }] }).ctx,
 		),
 		/Answer model is not enabled: test\/disabled-model/,
 	);
 
 	const imageOnly = pageModel("image-model", ["image"]);
-	await setEnabledModels(["test/page-model", "test/image-model"]);
 	await writeFetchConfig({ answerProvider: "test", answerModel: "image-model" });
 	await assert.rejects(
 		() => answerFromPage(
@@ -291,7 +272,6 @@ test("answerFromPage preserves configured model scope and text-input checks", as
 
 test("answerFromPage preserves configured model auth checks", async () => {
 	const configured = pageModel("configured-model");
-	await setEnabledModels(["test/page-model", "test/configured-model"]);
 	await writeFetchConfig({ answerProvider: "test", answerModel: "configured-model" });
 
 	await assert.rejects(

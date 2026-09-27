@@ -39,8 +39,7 @@ test("rewriteSearchQuery uses the registered provider runtime", async () => {
 					};
 				},
 			},
-			cwd: process.cwd(),
-			isProjectTrusted: () => false,
+			scopedModels: [],
 		},
 		signal,
 	);
