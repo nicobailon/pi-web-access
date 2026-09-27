@@ -1,4 +1,4 @@
-import { buildSessionContext, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { buildSessionContext, type ExtensionAPI, type ExtensionContext, type SessionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 export type WebCapability = "search" | "source-check" | "fetch" | "stored-content";
@@ -27,21 +27,16 @@ function supportsDynamicTools(pi: ExtensionAPI): boolean {
 	return true;
 }
 
-function hasToolDeclarations(messages: unknown[]): boolean {
-	return messages.some(message => message && typeof message === "object" && (
-		"toolsAdded" in message || "toolsRemoved" in message
-	));
-}
-
-function currentTranscriptToolNames(messages: unknown[]): string[] {
-	const tools = new Set<string>();
+// Undefined when the transcript never declared tool changes.
+function transcriptToolNames(messages: SessionContext["messages"]): Set<string> | undefined {
+	let tools: Set<string> | undefined;
 	for (const message of messages) {
-		if (!message || typeof message !== "object") continue;
-		const declaration = message as { toolsAdded?: Array<{ name: string }>; toolsRemoved?: Array<{ name: string }> };
-		for (const tool of declaration.toolsRemoved ?? []) tools.delete(tool.name);
-		for (const tool of declaration.toolsAdded ?? []) tools.add(tool.name);
+		if (message.role !== "system" || !("toolsAdded" in message || "toolsRemoved" in message)) continue;
+		tools ??= new Set();
+		for (const tool of message.toolsRemoved ?? []) tools.delete(tool.name);
+		for (const tool of message.toolsAdded ?? []) tools.add(tool.name);
 	}
-	return [...tools];
+	return tools;
 }
 
 export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray<WebActivationTool>): void {
@@ -102,19 +97,14 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 	}
 
 	let warned = false;
-	async function selectFromSession(ctx: ExtensionContext): Promise<void> {
+	function selectFromSession(ctx: ExtensionContext): void {
 		if (!loaderAvailable()) return;
 		try {
 			const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
-			const recorded = hasToolDeclarations(messages)
-				? new Set(await currentTranscriptToolNames(messages))
-				: messages.length > 0
-					? new Set(names)
-					: new Set<string>();
-			const heavy = new Set(names);
-			const active = pi.getActiveTools().filter(name => !heavy.has(name));
-			for (const name of names) if (recorded.has(name)) active.push(name);
-			pi.setActiveTools([...new Set([...active, LOADER_NAME])]);
+			// Sessions from before transcript tool declarations keep every web tool; fresh ones start with none.
+			const recorded = transcriptToolNames(messages) ?? new Set(messages.length > 0 ? names : []);
+			const others = pi.getActiveTools().filter(name => !names.includes(name));
+			pi.setActiveTools([...new Set([...others, ...names.filter(name => recorded.has(name)), LOADER_NAME])]);
 		} catch (error) {
 			if (!warned) {
 				warned = true;

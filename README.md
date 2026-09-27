@@ -990,7 +990,7 @@ When `false`, a requested Curator session never tries to open a Glimpse window o
 
 Pi starts normal sessions with the compact `web_enable` tool. Its guidance lists only the web capabilities enabled in `web-search.json`. The model can call it without a human toggle; the configured search, source-check, fetch, and stored-content tools then appear on the immediately following model request. Disabled tools stay unregistered, and alternate `toolNames` are preserved. Warm and resumed sessions retain their recorded tool selection.
 
-Set `"toolActivation": "eager"` in `web-search.json` to skip `web_enable` and keep every enabled web tool available from the first request, for models that rarely call the loader on their own. The default is `"dynamic"`. Pi restart is required.
+Set `"toolActivation": "eager"` in `web-search.json` to skip `web_enable` and keep every enabled web tool available from the first request, for models that rarely call `web_enable` on their own. The default is `"dynamic"`. Restart Pi after changing it.
 
 ### Shortcuts
 

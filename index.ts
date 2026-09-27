@@ -86,7 +86,7 @@ import {
 	type RecencyFilter,
 	type ResearchArtifact,
 } from "./source-check.ts";
-import { registerWebToolActivation, type WebActivationTool } from "./tool-activation.ts";
+import { registerWebToolActivation } from "./tool-activation.ts";
 
 // Match pi-ai's StringEnum without loading its compat barrel during registration.
 function StringEnum<T extends string[]>(values: T, options?: { description?: string; default?: T[number] }) {
@@ -3265,13 +3265,12 @@ export default function (pi: ExtensionAPI) {
 	});
 	}
 
-	const activationTools: WebActivationTool[] = [
+	if (toolActivation === "dynamic") registerWebToolActivation(pi, [
 		...(webSearchEnabled ? [{ name: toolNames.webSearch, capability: "search" as const }] : []),
 		...(sourceCheckEnabled ? [{ name: toolNames.sourceCheck, capability: "source-check" as const }] : []),
 		...(fetchContentEnabled ? [{ name: toolNames.fetchContent, capability: "fetch" as const }] : []),
 		...(getSearchContentEnabled ? [{ name: toolNames.getSearchContent, capability: "stored-content" as const }] : []),
-	];
-	if (toolActivation === "dynamic") registerWebToolActivation(pi, activationTools);
+	]);
 
 	if (isCommandEnabled(initConfig, "websearch")) pi.registerCommand("websearch", {
 		description: "Open web search curator",

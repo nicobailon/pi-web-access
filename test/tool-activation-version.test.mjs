@@ -10,8 +10,9 @@ const realPiUrl = import.meta.resolve("@earendil-works/pi-coding-agent");
 
 // Issue #428: with Pi installed globally, the host redirects the extension's Pi imports to its
 // bundled copy, so neither a Pi `package.json` nor pi-ai subpaths resolve from the extension.
-function hostRedirectHook(version) {
-	return `
+// Issue #444: the redirected module also reports a stale VERSION, like an old Pi peer installed
+// beside the extension, which must not decide activation.
+const hostRedirectHook = `
 		import { registerHooks } from "node:module";
 		const realPi = ${JSON.stringify(realPiUrl)};
 		registerHooks({
@@ -29,14 +30,13 @@ function hostRedirectHook(version) {
 					return {
 						format: "module",
 						shortCircuit: true,
-						source: 'export * from ' + JSON.stringify(realPi) + '; export const VERSION = ' + JSON.stringify(${JSON.stringify(version)}) + ';',
+						source: 'export * from ' + JSON.stringify(realPi) + '; export const VERSION = "0.85.1";',
 					};
 				}
 				return nextLoad(url, context);
 			},
 		});
 	`;
-}
 
 function run({ messages = [], hook = "", legacyHost = false } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "pi-web-access-version-"));
@@ -54,12 +54,7 @@ function run({ messages = [], hook = "", legacyHost = false } = {}) {
 			const pi = {
 				registerTool(tool) { tools.set(tool.name, tool); active.push(tool.name); },
 				registerCommand() {}, registerShortcut() {},
-				on(event, handler) {
-					const list = handlers.get(event) ?? [];
-					list.push(handler);
-					handlers.set(event, list);
-					if (!${legacyHost}) return () => list.splice(list.indexOf(handler), 1);
-				},
+				on(event, handler) { const list = handlers.get(event) ?? []; list.push(handler); handlers.set(event, list); if (!${legacyHost}) return () => {}; },
 				getAllTools() { return [...tools.values()]; },
 				getActiveTools() { return [...active]; },
 				setActiveTools(names) { active = [...names]; },
@@ -88,19 +83,12 @@ function run({ messages = [], hook = "", legacyHost = false } = {}) {
 	return JSON.parse(child.stdout);
 }
 
-test("activation needs no Pi package on disk when the host redirects extension imports", () => {
-	const state = run({ hook: hostRedirectHook("0.87.1") });
+test("activation ignores the imported Pi version and needs no Pi package on disk", () => {
+	const state = run({ hook: hostRedirectHook });
 	assert.deepEqual(state.warnings, []);
 	assert.ok(state.active.includes("web_enable"), `expected web_enable, got ${state.active.join(", ")}`);
 	const web = ["web_search", "source_check", "fetch_content", "get_search_content"];
 	assert.deepEqual(state.active.filter(name => web.includes(name)), [], `web tools should stay dormant, got ${state.active.join(", ")}`);
-});
-
-test("a stale Pi package beside the extension cannot disable activation", () => {
-	// Issue #444: a managed install kept a 0.85.1 peer beside the extension while Pi 0.87.1 ran it.
-	const state = run({ hook: hostRedirectHook("0.85.1") });
-	assert.deepEqual(state.warnings, []);
-	assert.ok(state.active.includes("web_enable"), `expected web_enable, got ${state.active.join(", ")}`);
 });
 
 test("a host-redirected warm session restores exactly the tools it recorded", () => {
@@ -108,7 +96,7 @@ test("a host-redirected warm session restores exactly the tools it recorded", ()
 		{ role: "system", content: "", toolsAdded: [{ name: "web_search", description: "", parameters: { type: "object" } }], timestamp: 1 },
 		{ role: "system", content: "", toolsRemoved: [{ name: "source_check" }], timestamp: 2 },
 	];
-	const state = run({ messages, hook: hostRedirectHook("0.87.1") });
+	const state = run({ messages, hook: hostRedirectHook });
 	assert.deepEqual(state.warnings, []);
 	assert.ok(state.active.includes("web_search"), `expected restored web_search, got ${state.active.join(", ")}`);
 	assert.equal(state.active.includes("fetch_content"), false, `fetch_content was never recorded, got ${state.active.join(", ")}`);

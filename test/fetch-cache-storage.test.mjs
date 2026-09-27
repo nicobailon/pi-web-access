@@ -7,11 +7,10 @@ import { after, afterEach, test } from "node:test";
 
 const originalFetch = globalThis.fetch;
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
-const originalCacheRoot = process.env.PI_WEB_ACCESS_CACHE_ROOT;
 const originalDateNow = Date.now;
 const testAgentDir = await mkdtemp(join(tmpdir(), "pi-web-access-fetch-cache-"));
 process.env.PI_CODING_AGENT_DIR = testAgentDir;
-// These tests delete and prune the cache, so never let them touch a cache root set in the shell.
+// Direct `node --test <file>` runs skip test/isolate-env.mjs.
 delete process.env.PI_WEB_ACCESS_CACHE_ROOT;
 
 const { default: initializeExtension } = await import("../index.ts");
@@ -36,7 +35,6 @@ afterEach(() => {
 after(() => {
 	if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
 	else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
-	if (originalCacheRoot !== undefined) process.env.PI_WEB_ACCESS_CACHE_ROOT = originalCacheRoot;
 	rmSync(testAgentDir, { recursive: true, force: true });
 });
 
