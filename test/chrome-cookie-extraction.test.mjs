@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { createCipheriv, createHash } from "node:crypto";
+import { createCipheriv, createHash, pbkdf2Sync } from "node:crypto";
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -24,7 +24,7 @@ function createFixture(home, profile, rows = [], options = {}) {
 			? browser === "Edge"
 				? join(home, "AppData", "Local", "Microsoft", "Edge", "User Data")
 				: join(home, "AppData", "Local", "Google", "Chrome", "User Data")
-		: join(home, ".config", "google-chrome");
+		: browser === "Chromium" ? join(home, ".config", "chromium") : join(home, ".config", "google-chrome");
 	const dbPath = targetPlatform === "win32" ? join(base, profile, "Network", "Cookies") : join(base, profile, "Cookies");
 	mkdirSync(dirname(dbPath), { recursive: true });
 	execFileSync(python, ["-c", `
@@ -51,6 +51,13 @@ function encryptWindowsCookie(value, key, version = "v10", hostKey) {
 	return Buffer.concat([Buffer.from(version), nonce, cipher.update(plaintext), cipher.final(), cipher.getAuthTag()]).toString("hex");
 }
 
+function encryptLinuxCookie(value, password, version = "v11", hostKey) {
+	const key = pbkdf2Sync(password, "saltysalt", 1, 16, "sha1");
+	const cipher = createCipheriv("aes-128-cbc", key, Buffer.alloc(16, 0x20));
+	const plaintext = hostKey ? Buffer.concat([createHash("sha256").update(hostKey).digest(), Buffer.from(value)]) : Buffer.from(value);
+	return Buffer.concat([Buffer.from(version), cipher.update(plaintext), cipher.final()]).toString("hex");
+}
+
 function writeWindowsDpapiCommand(bin, argsPath) {
 	const script = "#!/bin/sh\n[ -n \"$ARGS_FILE\" ] && printf '%s\\n' \"$@\" > \"$ARGS_FILE\"\nencoded=0\nfor arg do [ \"$arg\" = \"-EncodedCommand\" ] && encoded=1; [ \"$arg\" = \"$DPAPI_PROTECTED\" ] && exit 1; done\n[ \"$encoded\" = 1 ] || exit 1\n[ \"$PIWA_PROTECTED\" = \"$DPAPI_PROTECTED\" ] || exit 1\nprintf '%s' \"$DPAPI_KEY\"\n";
 	writeFileSync(join(bin, "powershell.exe"), script);
@@ -65,16 +72,18 @@ function makeEnvironment(home, bin, extra = {}) {
 		USERPROFILE: home,
 		PI_ALLOW_BROWSER_COOKIES: "1",
 		PATH: `${bin}:${process.env.PATH ?? ""}`,
-		...extra,
 	};
 	delete env.PI_CODING_AGENT_DIR;
 	delete env.XDG_CONFIG_HOME;
+	delete env.KDE_FULL_SESSION;
+	delete env.XDG_CURRENT_DESKTOP;
+	Object.assign(env, extra);
 	return env;
 }
 
 function writePasswordCommand(bin, countPath, targetPlatform = process.platform, argsPath) {
 	const command = targetPlatform === "darwin" ? "security" : "secret-tool";
-	const script = `#!/bin/sh\nn=0\n[ -f "$COUNT_FILE" ] && n=$(cat "$COUNT_FILE")\nprintf '%s' $((n + 1)) > "$COUNT_FILE"\n[ -n "$ARGS_FILE" ] && printf '%s\\n' "$@" > "$ARGS_FILE"\nprintf peanuts\n`;
+	const script = `#!/bin/sh\nn=0\n[ -f "$COUNT_FILE" ] && n=$(cat "$COUNT_FILE")\nprintf '%s' $((n + 1)) > "$COUNT_FILE"\n[ -n "$ARGS_FILE" ] && printf '%s\\n' "$@" > "$ARGS_FILE"\nprintf '%s' "\${STUB_PASSWORD:-peanuts}"\n`;
 	writeFileSync(join(bin, command), script);
 	chmodSync(join(bin, command), 0o755);
 	return { COUNT_FILE: countPath, ...(argsPath ? { ARGS_FILE: argsPath } : {}) };
@@ -94,6 +103,20 @@ function writeFailPasswordCommand(bin, countPath, targetPlatform = process.platf
 	writeFileSync(join(bin, command), script);
 	chmodSync(join(bin, command), 0o755);
 	return { COUNT_FILE: countPath };
+}
+
+function writeKWalletCommand(bin, countPath, argsPath) {
+	const script = `#!/bin/sh\nn=0\n[ -f "$KWALLET_COUNT_FILE" ] && n=$(cat "$KWALLET_COUNT_FILE")\nprintf '%s' $((n + 1)) > "$KWALLET_COUNT_FILE"\nprintf '%s\\n' "$@" > "$KWALLET_ARGS_FILE"\nprintf '%s' "$KWALLET_PASSWORD"\n`;
+	writeFileSync(join(bin, "kwallet-query"), script);
+	chmodSync(join(bin, "kwallet-query"), 0o755);
+	return { KWALLET_COUNT_FILE: countPath, KWALLET_ARGS_FILE: argsPath };
+}
+
+function writeFailThenSucceedKWalletCommand(bin, countPath) {
+	const script = `#!/bin/sh\nn=0\n[ -f "$KWALLET_COUNT_FILE" ] && n=$(cat "$KWALLET_COUNT_FILE")\nn=$((n + 1))\nprintf '%s' $n > "$KWALLET_COUNT_FILE"\n[ "$n" = 1 ] && exit 1\nprintf '%s' "$KWALLET_PASSWORD"\n`;
+	writeFileSync(join(bin, "kwallet-query"), script);
+	chmodSync(join(bin, "kwallet-query"), 0o755);
+	return { KWALLET_COUNT_FILE: countPath };
 }
 
 function runCookies(home, env, options = "{ requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] }", platformOverride) {
@@ -143,6 +166,144 @@ test("auto-discovery finds a non-default Chromium profile", (t) => {
 	Object.assign(env, writePasswordCommand(bin, join(home, "password-count")));
 	const result = runCookies(home, env);
 	assert.deepEqual(result.result.cookies, { "__Secure-1PSIDTS": "two", "__Secure-1PSID": "one" });
+	rmSync(home, { recursive: true, force: true });
+	rmSync(bin, { recursive: true, force: true });
+});
+
+for (const scenario of [
+	{ browser: "Chrome", id: "chrome", folder: "Chrome Keys", entry: "Chrome Safe Storage" },
+	{ browser: "Chromium", id: "chromium", folder: "Chromium Keys", entry: "Chromium Safe Storage" },
+]) {
+	test(`KDE ${scenario.browser} decrypts v11 cookies with the KWallet safe-storage password`, (t) => {
+		skipWithoutPython(t);
+		const home = mkdtempSync(join(tmpdir(), "pi-cookie-kwallet-"));
+		const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
+		const password = "synthetic-kwallet-password";
+		const host = ".google.com";
+		createFixture(home, "Default", [
+			["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("one", password, "v11", host)}`, 1],
+			["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("two", password, "v11", host)}`, 2],
+		], { browser: scenario.browser, targetPlatform: "linux" });
+		const secretCount = join(home, "secret-count");
+		const kwalletCount = join(home, "kwallet-count");
+		const kwalletArgs = join(home, "kwallet-args");
+		const env = makeEnvironment(home, bin, {
+			XDG_CURRENT_DESKTOP: "KDE",
+			KWALLET_PASSWORD: password,
+			...writeFailPasswordCommand(bin, secretCount, "linux"),
+			...writeKWalletCommand(bin, kwalletCount, kwalletArgs),
+		});
+		const options = `{ browser: '${scenario.id}', profile: 'Default', requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] }`;
+		const result = runCookies(home, env, options, "linux");
+		assert.deepEqual(result.result.cookies, { "__Secure-1PSIDTS": "two", "__Secure-1PSID": "one" });
+		assert.equal(readFileSync(secretCount, "utf8"), "1");
+		assert.equal(readFileSync(kwalletCount, "utf8"), "1");
+		assert.deepEqual(readFileSync(kwalletArgs, "utf8").trim().split("\n"), [
+			"-f", scenario.folder, "-r", scenario.entry, "kdewallet",
+		]);
+		assert.equal(readFileSync(kwalletArgs, "utf8").includes(password), false);
+		rmSync(home, { recursive: true, force: true });
+		rmSync(bin, { recursive: true, force: true });
+	});
+}
+
+test("KDE keeps Secret Service ahead of KWallet", (t) => {
+	skipWithoutPython(t);
+	const home = mkdtempSync(join(tmpdir(), "pi-cookie-kwallet-precedence-"));
+	const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
+	const host = ".google.com";
+	createFixture(home, "Default", [
+		["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("one", "peanuts", "v11", host)}`, 1],
+		["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("two", "peanuts", "v11", host)}`, 2],
+	], { targetPlatform: "linux" });
+	const kwalletCount = join(home, "kwallet-count");
+	const env = makeEnvironment(home, bin, {
+		XDG_CURRENT_DESKTOP: "KDE",
+		KWALLET_PASSWORD: "unused-kwallet-password",
+		...writePasswordCommand(bin, join(home, "secret-count"), "linux"),
+		...writeKWalletCommand(bin, kwalletCount, join(home, "kwallet-args")),
+	});
+	const result = runCookies(home, env, undefined, "linux");
+	assert.deepEqual(result.result.cookies, { "__Secure-1PSIDTS": "two", "__Secure-1PSID": "one" });
+	assert.equal(existsSync(kwalletCount), false);
+	rmSync(home, { recursive: true, force: true });
+	rmSync(bin, { recursive: true, force: true });
+});
+
+test("KDE caches both Secret Service and KWallet passwords", (t) => {
+	skipWithoutPython(t);
+	const home = mkdtempSync(join(tmpdir(), "pi-cookie-kwallet-stale-secret-"));
+	const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
+	const password = "synthetic-kwallet-password";
+	const secretPassword = "synthetic-secret-service-password";
+	const host = ".google.com";
+	createFixture(home, "Profile 1", [
+		["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("one", password, "v11", host)}`, 1],
+		["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("two", password, "v11", host)}`, 2],
+	], { targetPlatform: "linux" });
+	createFixture(home, "Profile 2", [
+		["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("three", secretPassword, "v11", host)}`, 1],
+		["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("four", secretPassword, "v11", host)}`, 2],
+	], { targetPlatform: "linux" });
+	const secretCount = join(home, "secret-count");
+	const kwalletCount = join(home, "kwallet-count");
+	const env = makeEnvironment(home, bin, {
+		XDG_CURRENT_DESKTOP: "KDE",
+		STUB_PASSWORD: secretPassword,
+		KWALLET_PASSWORD: password,
+		...writePasswordCommand(bin, secretCount, "linux"),
+		...writeKWalletCommand(bin, kwalletCount, join(home, "kwallet-args")),
+	});
+	const result = runCookieScript(env, `
+		const requiredCookies = ['__Secure-1PSID', '__Secure-1PSIDTS'];
+		const first = await m.getGoogleCookies({ profile: 'Profile 1', requiredCookies });
+		const second = await m.getGoogleCookies({ profile: 'Profile 2', requiredCookies });
+		const third = await m.getGoogleCookies({ profile: 'Profile 1', requiredCookies });
+		console.log(JSON.stringify({ first, second, third }));
+	`, "linux");
+	assert.deepEqual(result.first.cookies, { "__Secure-1PSIDTS": "two", "__Secure-1PSID": "one" });
+	assert.deepEqual(result.second.cookies, { "__Secure-1PSIDTS": "four", "__Secure-1PSID": "three" });
+	assert.deepEqual(result.third.cookies, result.first.cookies);
+	assert.equal(readFileSync(secretCount, "utf8"), "1");
+	assert.equal(readFileSync(kwalletCount, "utf8"), "1");
+	rmSync(home, { recursive: true, force: true });
+	rmSync(bin, { recursive: true, force: true });
+});
+
+test("failed KWallet reads retry and successful passwords are cached", (t) => {
+	skipWithoutPython(t);
+	const home = mkdtempSync(join(tmpdir(), "pi-cookie-kwallet-cache-"));
+	const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
+	const password = "synthetic-kwallet-password";
+	const host = ".google.com";
+	createFixture(home, "Default", [
+		["__Secure-1PSID", "", host, `hex:${encryptLinuxCookie("one", password, "v11", host)}`, 1],
+		["__Secure-1PSIDTS", "", host, `hex:${encryptLinuxCookie("two", password, "v11", host)}`, 2],
+	], { targetPlatform: "linux" });
+	const secretCount = join(home, "secret-count");
+	const kwalletCount = join(home, "kwallet-count");
+	const env = makeEnvironment(home, bin, {
+		XDG_CURRENT_DESKTOP: "KDE",
+		KWALLET_PASSWORD: password,
+		...writeFailPasswordCommand(bin, secretCount, "linux"),
+		...writeFailThenSucceedKWalletCommand(bin, kwalletCount),
+	});
+	const result = runCookieScript(env, `
+		const options = { profile: 'Default', requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] };
+		const first = await m.getGoogleCookies(options);
+		const firstDiagnostic = m.getLastGoogleCookieDiagnostic();
+		const second = await m.getGoogleCookies(options);
+		const third = await m.getGoogleCookies(options);
+		console.log(JSON.stringify({ first, firstDiagnostic, second, third }));
+	`, "linux");
+	const cookies = { "__Secure-1PSIDTS": "two", "__Secure-1PSID": "one" };
+	assert.equal(result.first, null);
+	assert.match(result.firstDiagnostic, /Could not read Chrome KWallet cookie encryption password/);
+	assert.doesNotMatch(result.firstDiagnostic, /sensitive stderr/);
+	assert.deepEqual(result.second.cookies, cookies);
+	assert.deepEqual(result.third.cookies, cookies);
+	assert.equal(readFileSync(secretCount, "utf8"), "2");
+	assert.equal(readFileSync(kwalletCount, "utf8"), "2");
 	rmSync(home, { recursive: true, force: true });
 	rmSync(bin, { recursive: true, force: true });
 });
@@ -270,15 +431,17 @@ test("required-cookie preflight avoids password invocation for unrelated profile
 	skipWithoutPython(t);
 	const home = mkdtempSync(join(tmpdir(), "pi-cookie-preflight-"));
 	const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
-	createFixture(home, "Profile 1", [["NID", "unrelated", ".google.com", null, 1]]);
+	createFixture(home, "Profile 1", [["NID", "unrelated", ".google.com", null, 1]], { targetPlatform: "linux" });
 	const countPath = join(home, "password-count");
-	const env = makeEnvironment(home, bin);
-	Object.assign(env, writePasswordCommand(bin, countPath));
-	const result = runCookies(home, env);
+	const kwalletCount = join(home, "kwallet-count");
+	const env = makeEnvironment(home, bin, { XDG_CURRENT_DESKTOP: "KDE", ...writeKWalletCommand(bin, kwalletCount, join(home, "kwallet-args")) });
+	Object.assign(env, writePasswordCommand(bin, countPath, "linux"));
+	const result = runCookies(home, env, undefined, "linux");
 	assert.equal(result.result, null);
 	assert.equal(result.diagnostic.includes("required Gemini cookies"), true);
 	assert.equal(result.details.attempts.some((attempt) => attempt.browser === "Chrome" && attempt.profile === "Profile 1" && attempt.status === "missing-required-cookies"), true);
 	assert.equal(existsSync(countPath), false);
+	assert.equal(existsSync(kwalletCount), false);
 	rmSync(home, { recursive: true, force: true });
 	rmSync(bin, { recursive: true, force: true });
 });
@@ -356,6 +519,8 @@ for (const targetPlatform of ["linux", "darwin"]) {
 			], { targetPlatform });
 			const countPath = join(home, "password-count");
 			const env = makeEnvironment(home, bin);
+			const kwalletCount = join(home, "kwallet-count");
+			if (targetPlatform === "linux") Object.assign(env, writeKWalletCommand(bin, kwalletCount, join(home, "kwallet-args")));
 			Object.assign(env, writeFailThenSucceedPasswordCommand(bin, countPath, targetPlatform));
 			const result = runCookieScript(env, `
 				const options = { profile: 'Profile 2', requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] };
@@ -376,6 +541,7 @@ for (const targetPlatform of ["linux", "darwin"]) {
 			assert.deepEqual(result.third.cookies, cookies);
 			// The failed lookup is retried; the subsequent success is cached.
 			assert.equal(readFileSync(countPath, "utf8"), "2");
+			if (targetPlatform === "linux") assert.equal(existsSync(kwalletCount), false);
 		} finally {
 			rmSync(home, { recursive: true, force: true });
 			rmSync(bin, { recursive: true, force: true });

@@ -15,7 +15,15 @@ interface BrowserConfig {
 	keychainService?: string;
 	keychainAccount?: string;
 	secretToolApp?: string;
+	kwalletFolder?: string;
+	kwalletEntry?: string;
 }
+
+type BrowserPassword = {
+	value: string | null;
+	source?: "secret-service" | "kwallet";
+	warning?: string;
+};
 
 type SqliteRow = Record<string, unknown>;
 type SqliteFailure = "unavailable" | "query";
@@ -67,8 +75,8 @@ const MACOS_BROWSER_CONFIGS: BrowserConfig[] = [
 ];
 
 const LINUX_BROWSER_CONFIGS: BrowserConfig[] = [
-	{ id: "chromium", name: "Chromium", baseDir: ".config/chromium", secretToolApp: "chromium" },
-	{ id: "chrome", name: "Chrome", baseDir: ".config/google-chrome", secretToolApp: "chrome" },
+	{ id: "chromium", name: "Chromium", baseDir: ".config/chromium", secretToolApp: "chromium", kwalletFolder: "Chromium Keys", kwalletEntry: "Chromium Safe Storage" },
+	{ id: "chrome", name: "Chrome", baseDir: ".config/google-chrome", secretToolApp: "chrome", kwalletFolder: "Chrome Keys", kwalletEntry: "Chrome Safe Storage" },
 ];
 
 const WINDOWS_BROWSER_CONFIGS: BrowserConfig[] = [
@@ -76,7 +84,7 @@ const WINDOWS_BROWSER_CONFIGS: BrowserConfig[] = [
 	{ id: "edge", name: "Edge", baseDir: "Microsoft/Edge/User Data", usesLocalAppData: true },
 ];
 
-const browserPasswordCache = new Map<string, Promise<string | null>>();
+const browserPasswordCache = new Map<string, Promise<BrowserPassword[]>>();
 let lastCookieDiagnostic: string | null = null;
 let lastCookieDiagnosticDetails: BrowserCookieDiagnosticDetails | null = null;
 let sqliteModule: typeof import("node:sqlite") | null = null;
@@ -194,10 +202,13 @@ export async function getBrowserCookiesForHosts(
 					sawRequiredCookies = true;
 				}
 
-				const key = currentPlatform === "win32"
-					? await readWindowsEncryptionKey(config, home)
-					: await readBrowserPassword(config, currentPlatform).then((password) => password ? pbkdf2Sync(password, "saltysalt", currentPlatform === "darwin" ? 1003 : 1, 16, "sha1") : null);
-				if (!key) {
+				const browserPasswords = currentPlatform === "win32" ? [] : await readBrowserPasswords(config, currentPlatform);
+				for (const password of browserPasswords) if (password.warning) warningSet.add(password.warning);
+				const windowsKey = currentPlatform === "win32" ? await readWindowsEncryptionKey(config, home) : null;
+				const browserKeys = browserPasswords.flatMap((password) => password.value
+					? [{ password, key: pbkdf2Sync(password.value, "saltysalt", currentPlatform === "darwin" ? 1003 : 1, 16, "sha1") }]
+					: []);
+				if (currentPlatform === "win32" ? !windowsKey : browserKeys.length === 0) {
 					warningSet.add(currentPlatform === "win32"
 						? `Could not read ${config.name} Windows cookie encryption key`
 						: `Could not read ${config.name} cookie encryption password`);
@@ -220,6 +231,7 @@ export async function getBrowserCookiesForHosts(
 				const entries: BrowserCookieEntry[] = [];
 				const cookies: CookieMap = {};
 				const requiredDecryptFailures = new Set<string>();
+				let kwalletAttempted = browserPasswords.some((password) => password.source === "kwallet");
 				for (const row of rowsResult.rows) {
 					const name = typeof row.name === "string" ? row.name : "";
 					if (!name) continue;
@@ -227,9 +239,28 @@ export async function getBrowserCookiesForHosts(
 					if (!value && typeof row.encrypted_value_hex === "string" && /^[0-9a-f]*$/i.test(row.encrypted_value_hex)) {
 						const encrypted = Buffer.from(row.encrypted_value_hex, "hex");
 						if (currentPlatform === "win32" && encrypted.subarray(0, 3).toString("utf8") === "v20") sawWindowsAppBoundCookie = true;
-						value = currentPlatform === "win32"
-							? decryptWindowsCookieValue(encrypted, key, metaVersion.value >= 24)
-							: decryptCookieValue(encrypted, key, metaVersion.value >= 24);
+						if (currentPlatform === "win32") {
+							value = decryptWindowsCookieValue(encrypted, windowsKey!, metaVersion.value >= 24);
+						} else {
+							for (const candidate of browserKeys) {
+								value = decryptCookieValue(encrypted, candidate.key, metaVersion.value >= 24);
+								if (value) break;
+							}
+						}
+						if (!value && currentPlatform === "linux" && !kwalletAttempted && browserPasswords.some((password) => password.source === "secret-service") && requiredCookies?.includes(name)) {
+							kwalletAttempted = true;
+							const fallback = await readKWalletPassword(config);
+							if (fallback.warning) warningSet.add(fallback.warning);
+							if (fallback.value) {
+								const candidate = { password: fallback, key: pbkdf2Sync(fallback.value, "saltysalt", 1, 16, "sha1") };
+								browserKeys.push(candidate);
+								value = decryptCookieValue(encrypted, candidate.key, metaVersion.value >= 24);
+								if (value) {
+									browserPasswords.push(fallback);
+									browserPasswordCache.set(passwordCacheKey(config, currentPlatform), Promise.resolve([...browserPasswords]));
+								}
+							}
+						}
 						if (!value && requiredCookies?.includes(name)) requiredDecryptFailures.add(name);
 					}
 					if (!value) continue;
@@ -417,20 +448,24 @@ function removePkcs7Padding(buf: Buffer): Buffer {
 	return !padding || padding > 16 ? buf : buf.subarray(0, buf.length - padding);
 }
 
-function readBrowserPassword(config: BrowserConfig, currentPlatform: typeof process.platform): Promise<string | null> {
-	const cacheKey = `${currentPlatform}:${config.name}`;
+function passwordCacheKey(config: BrowserConfig, currentPlatform: typeof process.platform): string {
+	return `${currentPlatform}:${config.name}`;
+}
+
+function readBrowserPasswords(config: BrowserConfig, currentPlatform: typeof process.platform): Promise<BrowserPassword[]> {
+	const cacheKey = passwordCacheKey(config, currentPlatform);
 	const cached = browserPasswordCache.get(cacheKey);
 	if (cached) return cached;
 	const passwordResult = currentPlatform === "darwin"
 		? config.keychainAccount && config.keychainService
-			? readKeychainPassword(config.keychainAccount, config.keychainService).then(password => ({ password, cacheable: Boolean(password) }))
-			: Promise.resolve({ password: null, cacheable: false })
+			? readKeychainPassword(config.keychainAccount, config.keychainService).then(value => ({ value, cacheable: Boolean(value) }))
+			: Promise.resolve({ value: null, cacheable: false })
 		: currentPlatform === "linux"
-			? readLinuxPassword(config.secretToolApp)
-			: Promise.resolve({ password: null, cacheable: false });
-	const passwordPromise = passwordResult.then(({ password, cacheable }) => {
+			? readLinuxPassword(config)
+			: Promise.resolve({ value: null, cacheable: false });
+	const passwordPromise = passwordResult.then(({ cacheable, ...password }) => {
 		if (!cacheable) browserPasswordCache.delete(cacheKey);
-		return password;
+		return [password];
 	}, (error) => {
 		browserPasswordCache.delete(cacheKey);
 		throw error;
@@ -477,15 +512,34 @@ function readKeychainPassword(account: string, service: string): Promise<string 
 	});
 }
 
-function readLinuxPassword(secretToolApp: string | undefined): Promise<{ password: string; cacheable: boolean }> {
-	if (!secretToolApp) return Promise.resolve({ password: "peanuts", cacheable: true });
+function readLinuxCommandPassword(command: string, args: string[]): Promise<{ value: string | null; failed: boolean }> {
 	return new Promise((resolve) => {
-		execFile("secret-tool", ["lookup", "application", secretToolApp], { timeout: 5000 }, (err, stdout) => {
-			if (err) { resolve({ password: "peanuts", cacheable: false }); return; }
-			const password = stdout.trim();
-			resolve(password ? { password, cacheable: true } : { password: "peanuts", cacheable: false });
-		});
+		execFile(command, args, { timeout: 5000 }, (err, stdout) => resolve({ value: err ? null : stdout.trim() || null, failed: Boolean(err) }));
 	});
+}
+
+function isKdeSession(): boolean {
+	const desktop = process.env.XDG_CURRENT_DESKTOP?.toLowerCase().split(":") ?? [];
+	return process.env.KDE_FULL_SESSION?.toLowerCase() === "true" || desktop.includes("kde");
+}
+
+async function readKWalletPassword(config: BrowserConfig): Promise<BrowserPassword> {
+	if (!isKdeSession() || !config.kwalletFolder || !config.kwalletEntry) return { value: null };
+	const result = await readLinuxCommandPassword("kwallet-query", ["-f", config.kwalletFolder, "-r", config.kwalletEntry, "kdewallet"]);
+	return {
+		value: result.value,
+		source: result.value ? "kwallet" : undefined,
+		...(result.failed ? { warning: `Could not read ${config.name} KWallet cookie encryption password` } : {}),
+	};
+}
+
+async function readLinuxPassword(config: BrowserConfig): Promise<BrowserPassword & { cacheable: boolean }> {
+	if (!config.secretToolApp) return { value: "peanuts", cacheable: false };
+	const secretService = await readLinuxCommandPassword("secret-tool", ["lookup", "application", config.secretToolApp]);
+	if (secretService.value) return { value: secretService.value, source: "secret-service", cacheable: true };
+	const kwallet = await readKWalletPassword(config);
+	if (kwallet.value) return { ...kwallet, cacheable: true };
+	return { value: "peanuts", warning: kwallet.warning, cacheable: false };
 }
 
 async function importSqlite(): Promise<typeof import("node:sqlite") | null> {
