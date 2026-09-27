@@ -131,6 +131,52 @@ test("TAVILY_API_KEY_INDEX skips empty numbered slots and wraps through the conf
 	assert.equal(output.results, 1);
 });
 
+test("numbered pool keys are exhausted before the standalone fallback", async () => {
+	const { home, agentDir } = await createHome({});
+	const child = runChild(`
+		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			const authorization = new Headers(init.headers).get("authorization");
+			calls.push(authorization.replace("Bearer ", ""));
+			if (authorization.endsWith("tavily-solo-key")) {
+				return new Response(JSON.stringify({ results: [{ title: "Tavily", url: "https://example.com/tavily", content: "result" }] }), { status: 200 });
+			}
+			return new Response("quota exhausted", { status: 429 });
+		};
+		const result = await searchWithTavily("tavily", { numResults: 1 });
+		console.log(JSON.stringify({ keys: calls, results: result.results.length }));
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY: "tavily-solo-key", TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_5: "tavily-pool-key-5", TAVILY_API_KEY_INDEX: "5" });
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.keys, ["tavily-pool-key-5", "tavily-pool-key-1", "tavily-solo-key"]);
+	assert.equal(output.results, 1);
+});
+
+test("a retryable response body mentioning abort does not stop pool failover", async () => {
+	const { home, agentDir } = await createHome({});
+	const child = runChild(`
+		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			const authorization = new Headers(init.headers).get("authorization");
+			calls.push(authorization.replace("Bearer ", ""));
+			if (authorization.endsWith("tavily-pool-key-2")) {
+				return new Response(JSON.stringify({ results: [{ title: "Tavily", url: "https://example.com/tavily", content: "result" }] }), { status: 200 });
+			}
+			return new Response("abort this quota-limited request", { status: 429 });
+		};
+		const result = await searchWithTavily("tavily", { numResults: 1 });
+		console.log(JSON.stringify({ keys: calls, results: result.results.length }));
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY_1: "tavily-pool-key-1", TAVILY_API_KEY_2: "tavily-pool-key-2" });
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.keys, ["tavily-pool-key-1", "tavily-pool-key-2"]);
+	assert.equal(output.results, 1);
+});
+
 test("non-quota failures do not consume additional pool keys", async () => {
 	const { home, agentDir } = await createHome({});
 	const child = runChild(`

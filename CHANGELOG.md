@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Support `TAVILY_API_KEY_1` through `TAVILY_API_KEY_20` as an ordered Tavily credential pool with intra-search failover and `TAVILY_API_KEY_INDEX` start-slot selection. Thanks to [@apoapostolov](https://github.com/apoapostolov) for [PR #430](https://github.com/nicobailon/pi-web-access/pull/430).
+
 ### Fixed
 
 - Declare `typebox` as a host-provided peer dependency to avoid duplicate runtime modules and Pi startup warnings. Thanks to [@ksreenivasan](https://github.com/ksreenivasan) for [issue #442](https://github.com/nicobailon/pi-web-access/issues/442) and [PR #443](https://github.com/nicobailon/pi-web-access/pull/443).

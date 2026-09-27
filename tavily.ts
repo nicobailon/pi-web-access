@@ -63,7 +63,7 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 const TAVILY_KEY_POOL_MAX = 20;
 const TAVILY_KEY_POOL_RETRIES = new Set([401, 402, 403, 429, 432]);
 
-function tavilyKeyPool(): { keys: string[]; effective: string | null } {
+function tavilyKeyPool(): { keys: string[]; effective: string | null; fallback: string | null } {
 	const keyBySlot = new Map<number, string>();
 	for (const [name, value] of Object.entries(process.env)) {
 		const match = name.match(/^TAVILY_API_KEY_(\d+)$/);
@@ -74,14 +74,12 @@ function tavilyKeyPool(): { keys: string[]; effective: string | null } {
 	}
 	const slots = [...keyBySlot.keys()].sort((a, b) => a - b);
 	const keys = slots.map((slot) => keyBySlot.get(slot)!);
-	if (keys.length === 0) return { keys, effective: null };
-	if (typeof process.env.TAVILY_API_KEY === "string" && process.env.TAVILY_API_KEY.trim().length > 0) {
-		const solo = process.env.TAVILY_API_KEY.trim();
-		if (!keys.includes(solo)) keys.push(solo);
-	}
+	if (keys.length === 0) return { keys, effective: null, fallback: null };
+	const solo = process.env.TAVILY_API_KEY?.trim();
+	const fallback = solo && !keys.includes(solo) ? solo : null;
 	const requestedSlot = Math.max(1, Number.parseInt(process.env.TAVILY_API_KEY_INDEX ?? "", 10) || 1);
 	const selectedSlot = slots.find((slot) => slot >= requestedSlot) ?? slots[0];
-	return { keys, effective: keyBySlot.get(selectedSlot) ?? keys[0] };
+	return { keys, effective: keyBySlot.get(selectedSlot) ?? keys[0], fallback };
 }
 
 function getApiUrl(): string {
@@ -185,13 +183,13 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 	if (pool.effective !== null) {
 		// Pool mode: try keys in order, starting at the configured slot.
 		const start = Math.max(0, pool.keys.indexOf(pool.effective));
-		const ordered = [...pool.keys.slice(start), ...pool.keys.slice(0, start)];
+		const ordered = [...pool.keys.slice(start), ...pool.keys.slice(0, start), ...(pool.fallback ? [pool.fallback] : [])];
 		let lastError: Error | null = null;
 		for (const apiKey of ordered) {
 			try {
 				return await tavilySearch(apiUrl, apiKey, body, numResults, options);
 			} catch (err) {
-				if (isAbortError(err)) throw err;
+				if (options.signal?.aborted || (err instanceof Error && err.name === "AbortError")) throw err;
 				const status = tavilyErrorStatus(err);
 				if (!TAVILY_KEY_POOL_RETRIES.has(status)) throw err;
 				lastError = err instanceof Error ? err : new Error(String(err));
@@ -200,10 +198,6 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 		throw lastError ?? new Error("Tavily key pool exhausted");
 	}
 	return tavilySearch(apiUrl, await requireApiKey(options.signal), body, numResults, options);
-}
-
-function isAbortError(err: unknown): boolean {
-	return errorMessage(err).toLowerCase().includes("abort");
 }
 
 function tavilyErrorStatus(err: unknown): number {
