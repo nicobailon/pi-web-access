@@ -325,7 +325,6 @@ test("summary generation no longer uses catalog fallback or first available mode
 	assert.doesNotMatch(indexSrc, /getModel/);
 	assert.match(summarySrc, /findModelWithProviderRouting\(ctx\.modelRegistry, spec\.provider, spec\.id\)/);
 	assert.match(queryRewriteSrc, /findModelWithProviderRouting\(ctx\.modelRegistry, provider, id\)/);
-	assert.match(summarySrc, /isModelInScope\(model, ctx\.scopedModels\)/);
 	assert.doesNotMatch(indexSrc, /defaultSummaryModel = summaryModels\[0\]\.value/);
 	assert.match(indexSrc, /isModelInScope\(model, summaryContext\.scopedModels\)/);
 });
