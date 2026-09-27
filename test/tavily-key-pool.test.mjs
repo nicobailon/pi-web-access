@@ -138,7 +138,7 @@ test("TAVILY_API_KEY_INDEX skips empty numbered slots and wraps through the conf
 });
 
 test("numbered pool keys are exhausted before the standalone fallback", async () => {
-	const { home, agentDir } = await createHome({ tavilyApiKey: "$PI_WEB_ACCESS_TEST_MISSING_TAVILY_KEY" });
+	const { home, agentDir } = await createHome({});
 	const child = runChild(`
 		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
 		const { activityMonitor } = await import(${JSON.stringify(activityModuleUrl)});
@@ -184,6 +184,28 @@ test("configured credentials are the final fallback after numbered pool keys", a
 	const output = JSON.parse(child.stdout.trim());
 	assert.deepEqual(output.keys, ["tavily-pool-key-1", "tavily-config-key"]);
 	assert.equal(output.results, 1);
+});
+
+test("explicit configured credential sources remain fail-closed before the environment fallback", async () => {
+	const { home, agentDir } = await createHome({ tavilyApiKey: "$PI_WEB_ACCESS_TEST_MISSING_TAVILY_KEY" });
+	const child = runChild(`
+		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const calls = [];
+		globalThis.fetch = async (url, init = {}) => {
+			calls.push(new Headers(init.headers).get("authorization").replace("Bearer ", ""));
+			return new Response("quota exhausted", { status: 429 });
+		};
+		try {
+			await searchWithTavily("tavily", { numResults: 1 });
+		} catch (err) {
+			console.log(JSON.stringify({ keys: calls, error: err.message }));
+		}
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: agentDir, TAVILY_API_KEY: "tavily-solo-key", TAVILY_API_KEY_1: "tavily-pool-key-1" });
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.keys, ["tavily-pool-key-1"]);
+	assert.match(output.error, /^Tavily credential resolution failed: environment-empty$/);
 });
 
 test("duplicate numbered credentials are attempted once from the selected slot", async () => {

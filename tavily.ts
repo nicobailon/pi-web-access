@@ -60,14 +60,6 @@ async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	});
 }
 
-async function getConfiguredApiKey(signal?: AbortSignal): Promise<string | null> {
-	return resolveCredential({
-		provider: "Tavily",
-		configuredValue: loadConfig().tavilyApiKey,
-		signal,
-	});
-}
-
 const TAVILY_KEY_POOL_MAX = 20;
 const TAVILY_KEY_POOL_RETRIES = new Set([401, 402, 403, 429, 432]);
 
@@ -208,14 +200,9 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 			if (result) return result;
 		}
 
-		const standalone = process.env.TAVILY_API_KEY?.trim();
-		if (standalone && !pool.includes(standalone)) {
-			const result = await tryKey(standalone);
-			if (result) return result;
-		}
-		const configured = await getConfiguredApiKey(signal);
-		if (configured && configured !== standalone && !pool.includes(configured)) {
-			const result = await tryKey(configured);
+		const fallback = await getApiKey(signal);
+		if (fallback && !pool.includes(fallback)) {
+			const result = await tryKey(fallback);
 			if (result) return result;
 		}
 		throw lastError ?? new Error("Tavily key pool exhausted");
