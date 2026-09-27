@@ -8,7 +8,7 @@ All notable changes to this project will be documented in this file.
 
 - Set `"toolActivation": "eager"` in `web-search.json` to skip `web_enable` and keep every enabled web tool available from the first request. The `web_enable` guidance now tells the model to call it first whenever current, external, or linked information could help. Thanks to [@ackalker](https://github.com/ackalker) for [issue #458](https://github.com/nicobailon/pi-web-access/issues/458).
 - Set `PI_WEB_ACCESS_CACHE_ROOT` to give a Pi process its own fetched-content cache, stored in `web-search-cache` inside that directory, without moving `web-search.json`. Concurrent sessions then stop evicting each other's cached pages. Thanks to [@goodman-b](https://github.com/goodman-b) for [issue #457](https://github.com/nicobailon/pi-web-access/issues/457).
-- Added You.com as an optional search provider. Set `youApiKey` or `YDC_API_KEY`, then select `provider: "you"`, add it to a provider array, or list it in `searchRouting`. It is never picked by `auto` or `provider: "all"`, and it appears in the Curator. Thanks to [@mouse-value-add](https://github.com/mouse-value-add) for [PR #461](https://github.com/nicobailon/pi-web-access/pull/461).
+- You.com is available as an optional search provider. Set `youApiKey` or `YDC_API_KEY`, then select `provider: "you"`, add it to a provider array, or list it in `searchRouting`. It is never picked by `auto` or `provider: "all"`, and it appears in the Curator. Thanks to [@mouse-value-add](https://github.com/mouse-value-add) for [PR #461](https://github.com/nicobailon/pi-web-access/pull/461).
 
 ### Fixed
 

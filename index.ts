@@ -158,6 +158,7 @@ interface WebSearchConfig {
 	serpapiApiKey?: unknown;
 	serperApiKey?: unknown;
 	serplyApiKey?: unknown;
+	youApiKey?: unknown;
 	baizhiApiKey?: unknown;
 	tinyfishApiKey?: unknown;
 	valyuApiKey?: unknown;
