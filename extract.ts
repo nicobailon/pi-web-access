@@ -1067,15 +1067,11 @@ export async function extractContent(
 	return { ...(finalHttpResult ?? { url, title: "", content: "", error: null }), error: guidance };
 }
 
-const CLOUDFLARE_CHALLENGE_ERROR = "Blocked by Cloudflare challenge page";
-
-// Confidently identified Cloudflare challenge interstitials served with a 2xx
-// status: either Cloudflare's explicit `cf-mitigated: challenge` response
-// header, or a conjunctive body signature of the interstitial title plus both
-// Cloudflare challenge-platform markers. Generic "Just a moment" text alone
-// never matches.
-function isCloudflareChallenge(headers: Headers, html: string): boolean {
-	if (headers.get("cf-mitigated")?.trim().toLowerCase() === "challenge") return true;
+// Cloudflare interstitials served with HTTP 200. The body check needs both
+// challenge-platform markers so a generic "Just a moment..." page never matches.
+function isCloudflareChallenge(response: Response, html: string): boolean {
+	if (response.status !== 200) return false;
+	if (response.headers.get("cf-mitigated") === "challenge") return true;
 	return /<title>\s*Just a moment\.\.\.\s*<\/title>/i.test(html) &&
 		html.includes("window._cf_chl_opt") &&
 		html.includes("/cdn-cgi/challenge-platform/");
@@ -1347,9 +1343,9 @@ async function extractViaHttp(
 			return { url, title, content: text, error: null };
 		}
 
-		if (isCloudflareChallenge(response.headers, text)) {
+		if (isCloudflareChallenge(response, text)) {
 			activityMonitor.logComplete(activityId, response.status);
-			return { url, title: "", content: "", error: `HTTP ${response.status}: ${CLOUDFLARE_CHALLENGE_ERROR}`, status: response.status };
+			return { url, title: "", content: "", error: `HTTP ${response.status}: Blocked by Cloudflare challenge page`, status: response.status };
 		}
 
 		const { parseHTML } = await import("linkedom");
