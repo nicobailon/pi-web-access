@@ -278,6 +278,20 @@ test("HTTP 200 with cf-mitigated: challenge falls back to configured providers",
 	assert.equal(output.result.title, "Routed");
 });
 
+test("HTTP 200 cf-mitigated: challenge falls back even when the response is not labeled HTML", async () => {
+	const output = await runChallengeExtract(challengeFallbackRouting, { body: "Just a moment...", headers: { "content-type": "text/plain", "cf-mitigated": "challenge" } });
+	assert.deepEqual(output.calls, ["https://example.com/challenge", "https://r.jina.ai/https://example.com/challenge"]);
+	assert.equal(output.result.error, null);
+	assert.equal(output.result.title, "Routed");
+});
+
+test("Cloudflare body markers in a non-HTML response are returned as content", async () => {
+	const output = await runChallengeExtract(challengeFallbackRouting, { body: cloudflareChallengePage, headers: { "content-type": "text/plain" } });
+	assert.deepEqual(output.calls, ["https://example.com/challenge"]);
+	assert.equal(output.result.error, null);
+	assert.equal(output.result.content, cloudflareChallengePage);
+});
+
 test("HTTP 200 Cloudflare challenge body signature falls back to configured providers", async () => {
 	const output = await runChallengeExtract(challengeFallbackRouting, { body: cloudflareChallengePage });
 	assert.deepEqual(output.calls, ["https://example.com/challenge", "https://r.jina.ai/https://example.com/challenge"]);

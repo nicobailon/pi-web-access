@@ -1067,14 +1067,16 @@ export async function extractContent(
 	return { ...(finalHttpResult ?? { url, title: "", content: "", error: null }), error: guidance };
 }
 
-// Cloudflare interstitials served with HTTP 200. The body check needs both
-// challenge-platform markers so a generic "Just a moment..." page never matches.
-function isCloudflareChallenge(response: Response, html: string): boolean {
+// Cloudflare interstitials served with HTTP 200. The header is authoritative for
+// any text response; the body check is HTML-only and needs both challenge-platform
+// markers so a generic "Just a moment..." page never matches.
+function isCloudflareChallenge(response: Response, text: string, isHTML: boolean): boolean {
 	if (response.status !== 200) return false;
 	if (response.headers.get("cf-mitigated") === "challenge") return true;
-	return /<title>\s*Just a moment\.\.\.\s*<\/title>/i.test(html) &&
-		html.includes("window._cf_chl_opt") &&
-		html.includes("/cdn-cgi/challenge-platform/");
+	return isHTML &&
+		/<title>\s*Just a moment\.\.\.\s*<\/title>/i.test(text) &&
+		text.includes("window._cf_chl_opt") &&
+		text.includes("/cdn-cgi/challenge-platform/");
 }
 
 function isLikelyJSRendered(html: string): boolean {
@@ -1337,15 +1339,15 @@ async function extractViaHttp(
 		const text = await readTextResponseWithLimit(response, maxResponseSize);
 		const isHTML = contentType.includes("text/html") || contentType.includes("application/xhtml+xml");
 
+		if (isCloudflareChallenge(response, text, isHTML)) {
+			activityMonitor.logComplete(activityId, response.status);
+			return { url, title: "", content: "", error: `HTTP ${response.status}: Blocked by Cloudflare challenge page`, status: response.status };
+		}
+
 		if (!isHTML) {
 			activityMonitor.logComplete(activityId, response.status);
 			const title = extractTextTitle(text, url);
 			return { url, title, content: text, error: null };
-		}
-
-		if (isCloudflareChallenge(response, text)) {
-			activityMonitor.logComplete(activityId, response.status);
-			return { url, title: "", content: "", error: `HTTP ${response.status}: Blocked by Cloudflare challenge page`, status: response.status };
 		}
 
 		const { parseHTML } = await import("linkedom");
