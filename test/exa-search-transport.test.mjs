@@ -50,7 +50,7 @@ test("keyed Exa default and explicit five-result searches post to /search, never
 			answer: "docs highlight\nSource: Exa Docs (https://exa.ai/docs)",
 			results: [
 				{ title: "Exa Docs", url: "https://exa.ai/docs", snippet: "" },
-				{ title: "Source 2", url: "https://exa.ai/untitled", snippet: "" },
+				{ title: "exa.ai", url: "https://exa.ai/untitled", snippet: "" },
 			],
 		});
 	}
