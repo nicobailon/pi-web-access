@@ -16,11 +16,6 @@ interface WebSearchConfig {
 	exaBaseUrl?: unknown;
 }
 
-interface ExaAnswerResponse {
-	answer?: string;
-	citations?: Array<{ url?: string; title?: string; text?: string; publishedDate?: string }>;
-}
-
 interface ExaSearchResponse {
 	results?: Array<{
 		title?: string;
@@ -173,7 +168,7 @@ function buildAnswerFromSearchResults(results: ExaSearchResponse["results"]): st
 	return parts.join("\n\n");
 }
 
-function mapResults(results: ExaSearchResponse["results"] | ExaAnswerResponse["citations"]): SearchResponse["results"] {
+function mapResults(results: ExaSearchResponse["results"]): SearchResponse["results"] {
 	if (!Array.isArray(results)) return [];
 	const mapped: SearchResponse["results"] = [];
 	for (let i = 0; i < results.length; i++) {
@@ -457,35 +452,9 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 	}
 
 	const apiBaseUrl = getApiBaseUrl();
-	const useSearch = options.includeContent
-		|| !!options.recencyFilter
-		|| !!options.domainFilter?.length
-		|| !!(options.numResults && options.numResults !== 5);
-
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
-		if (!useSearch) {
-			const response = await fetchWithCredentialRedirects(`${apiBaseUrl}/answer`, {
-				method: "POST",
-				headers: exaApiHeaders(apiKey),
-				body: JSON.stringify({ query }),
-				signal: requestSignal(options.signal),
-			}, ["x-api-key"]);
-
-			if (!response.ok) {
-				const errorText = redactCredential(await response.text(), apiKey);
-				throw new Error(`Exa API error ${response.status}: ${errorText.slice(0, 300)}`);
-			}
-
-			const data = await response.json() as ExaAnswerResponse;
-			activityMonitor.logComplete(activityId, response.status);
-			return {
-				answer: data.answer || "",
-				results: mapResults(data.citations),
-			};
-		}
-
 		const response = await fetchWithCredentialRedirects(`${apiBaseUrl}/search`, {
 			method: "POST",
 			headers: exaApiHeaders(apiKey),

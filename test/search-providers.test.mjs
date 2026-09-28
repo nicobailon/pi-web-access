@@ -236,9 +236,6 @@ test("Brave, keyed Exa, and Tavily honor base URL overrides without leaking cred
 			if (target.includes("/brave/res/v1/web/search?")) {
 				return new Response(JSON.stringify({ web: { results: [] } }), { status: 200 });
 			}
-			if (target.endsWith("/exa/answer")) {
-				return new Response(JSON.stringify({ answer: "answer", citations: [] }), { status: 200 });
-			}
 			if (target.endsWith("/exa/search")) {
 				return new Response(JSON.stringify({ results: [] }), { status: 200 });
 			}
@@ -252,7 +249,7 @@ test("Brave, keyed Exa, and Tavily honor base URL overrides without leaking cred
 		const { searchWithExa } = await import(${JSON.stringify(exaModuleUrl)});
 		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
 		await searchWithBrave("configured");
-		await searchWithExa("answer endpoint");
+		await searchWithExa("default search");
 		await searchWithExa("search endpoint", { numResults: 2 });
 		await searchWithTavily("configured");
 
@@ -289,14 +286,14 @@ test("Brave, keyed Exa, and Tavily honor base URL overrides without leaking cred
 	assert.deepEqual(output.calls.map((call) => call.target), [
 		"https://gateway.example.com/brave/res/v1/web/search?q=configured&count=5",
 		"https://redirect.example.com/brave/res/v1/web/search?q=configured&count=5",
-		"https://gateway.example.com/exa/answer",
-		"https://redirect.example.com/exa/answer",
+		"https://gateway.example.com/exa/search",
+		"https://redirect.example.com/exa/search",
 		"https://gateway.example.com/exa/search",
 		"https://redirect.example.com/exa/search",
 		"https://gateway.example.com/tavily/search",
 		"https://redirect.example.com/tavily/search",
 		"https://env.example.com/brave/res/v1/web/search?q=environment&count=5",
-		"https://env.example.com/exa/answer",
+		"https://env.example.com/exa/search",
 		"https://env.example.com/tavily/search",
 	]);
 	assert.deepEqual(output.calls.map((call) => call.credential), [
@@ -669,8 +666,7 @@ test("Exa direct API key ignores full legacy usage counter", async () => {
 			capturedHeaders = init.headers;
 			capturedBody = JSON.parse(init.body);
 			return new Response(JSON.stringify({
-				answer: "Paid Exa answer",
-				citations: [{ title: "Exa Docs", url: "https://exa.ai/docs" }],
+				results: [{ title: "Exa Docs", url: "https://exa.ai/docs", highlights: ["Paid Exa answer"] }],
 			}), { status: 200, headers: { "content-type": "application/json" } });
 		};
 
@@ -696,11 +692,11 @@ test("Exa direct API key ignores full legacy usage counter", async () => {
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.available, true);
-	assert.equal(output.capturedUrl, "https://api.exa.ai/answer");
-	assert.deepEqual(output.capturedBody, { query: "paid exa query" });
+	assert.equal(output.capturedUrl, "https://api.exa.ai/search");
+	assert.deepEqual(output.capturedBody, { query: "paid exa query", type: "auto", numResults: 5, contents: { highlights: true } });
 	assert.equal(output.apiKey, "exa-paid-key");
 	assert.equal(output.integration, "pi-web-access");
-	assert.equal(output.result.answer, "Paid Exa answer");
+	assert.equal(output.result.answer, "Paid Exa answer\nSource: Exa Docs (https://exa.ai/docs)");
 	assert.deepEqual(output.result.results, [{ title: "Exa Docs", url: "https://exa.ai/docs", snippet: "" }]);
 	assert.equal(output.usage.count, 1000);
 });
@@ -720,7 +716,7 @@ test("Exa command source is lazy, overrides stale env, and rotates per request",
 		const keys = [];
 		globalThis.fetch = async (_url, init) => {
 			keys.push(init.headers["x-api-key"]);
-			return new Response(JSON.stringify({ answer: "ok", citations: [] }), {
+			return new Response(JSON.stringify({ results: [] }), {
 				status: 200,
 				headers: { "content-type": "application/json" },
 			});

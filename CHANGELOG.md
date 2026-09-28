@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Exa results without a title are now labeled with their site's hostname, such as `cdn.jsdelivr.net`, instead of `Source N`. Results whose URL has no hostname, such as `mailto:` or `file:` links, still use `Source N`. Thanks to [@SuTang-vain](https://github.com/SuTang-vain) for [PR #469](https://github.com/nicobailon/pi-web-access/pull/469).
+- Keyed Exa searches now always call Exa's `/search` endpoint, including default searches and `numResults: 5`, instead of switching to `/answer` for those. Results and answers are built from the returned search results and highlights. A custom `exaBaseUrl` gateway must now support `/search`, because keyed Exa no longer calls `/answer`. Thanks to [@SuTang-vain](https://github.com/SuTang-vain) for [issue #470](https://github.com/nicobailon/pi-web-access/issues/470).
 
 ## [0.33.0] - 2026-09-27
 
