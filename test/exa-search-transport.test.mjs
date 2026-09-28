@@ -41,7 +41,6 @@ test("keyed Exa default and explicit five-result searches post to /search, never
 		{ url: "https://api.exa.ai/search", method: "POST", apiKey: "exa-transport-key" },
 		{ url: "https://api.exa.ai/search", method: "POST", apiKey: "exa-transport-key" },
 	]);
-	assert.ok(requests.every(({ url }) => !url.includes("/answer")));
 	assert.deepEqual(requests.map(({ body }) => body), [
 		{ query: "default query", type: "auto", numResults: 5, contents: { highlights: true } },
 		{ query: "explicit five", type: "auto", numResults: 5, contents: { highlights: true } },

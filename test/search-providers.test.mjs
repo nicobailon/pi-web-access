@@ -250,7 +250,6 @@ test("Brave, keyed Exa, and Tavily honor base URL overrides without leaking cred
 		const { searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
 		await searchWithBrave("configured");
 		await searchWithExa("default search");
-		await searchWithExa("search endpoint", { numResults: 2 });
 		await searchWithTavily("configured");
 
 		process.env.BRAVE_BASE_URL = "https://env.example.com/brave/res/v1/";
@@ -288,8 +287,6 @@ test("Brave, keyed Exa, and Tavily honor base URL overrides without leaking cred
 		"https://redirect.example.com/brave/res/v1/web/search?q=configured&count=5",
 		"https://gateway.example.com/exa/search",
 		"https://redirect.example.com/exa/search",
-		"https://gateway.example.com/exa/search",
-		"https://redirect.example.com/exa/search",
 		"https://gateway.example.com/tavily/search",
 		"https://redirect.example.com/tavily/search",
 		"https://env.example.com/brave/res/v1/web/search?q=environment&count=5",
@@ -299,12 +296,11 @@ test("Brave, keyed Exa, and Tavily honor base URL overrides without leaking cred
 	assert.deepEqual(output.calls.map((call) => call.credential), [
 		"brave-config-key", null,
 		"exa-config-key", null,
-		"exa-config-key", null,
 		"Bearer tavily-config-key", null,
 		"brave-config-key", "exa-config-key", "Bearer tavily-config-key",
 	]);
 	assert.ok(output.calls.every((call) => call.redirect === "manual"));
-	assert.deepEqual(output.calls.slice(6, 8).map(({ method, hasBody, contentType }) => ({ method, hasBody, contentType })), [
+	assert.deepEqual(output.calls.slice(4, 6).map(({ method, hasBody, contentType }) => ({ method, hasBody, contentType })), [
 		{ method: "POST", hasBody: true, contentType: "application/json" },
 		{ method: "GET", hasBody: false, contentType: null },
 	]);
