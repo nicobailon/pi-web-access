@@ -206,3 +206,30 @@ test("authenticated fetch failure does not fall through to hosted providers", ()
 		rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test("authenticated Cloudflare challenge stays direct-only", (t) => {
+	if (!python) t.skip("fixture creation requires Python on macOS/Linux");
+	const root = mkdtempSync(join(tmpdir(), "pi-auth-fetch-challenge-"));
+	const bin = mkdtempSync(join(tmpdir(), "pi-auth-fetch-bin-"));
+	try {
+		writePasswordCommand(bin);
+		createCookieFixture(root, [["sid", "session", ".example.com", "/", null, "20000000000000000", ""]]);
+		writeFileSync(join(root, "web-search.json"), JSON.stringify({ authFetch: { work: ["example.com"] }, fetchRouting: { providers: ["http", "jina"], allowRemoteHostedProviders: true } }) + "\n");
+		const output = runModule(root, `
+			const calls = [];
+			globalThis.fetch = async (url) => {
+				calls.push(String(url));
+				return new Response("<html><head><title>Just a moment...</title></head><body></body></html>", { status: 200, headers: { "content-type": "text/html", "cf-mitigated": "challenge" } });
+			};
+			const { resolveAuthFetchProfile } = await import(${JSON.stringify(authFetchUrl)});
+			const { extractContent } = await import(${JSON.stringify(extractUrl)});
+			const result = await extractContent("https://app.example.com/private", undefined, { authFetchProfile: resolveAuthFetchProfile("work"), lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
+			console.log(JSON.stringify({ calls, result }));
+		`, { PATH: `${bin}:${process.env.PATH ?? ""}` });
+		assert.deepEqual(output.calls, ["https://app.example.com/private"]);
+		assert.match(output.result.error, /^HTTP 200: Blocked by Cloudflare challenge page/);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+		rmSync(bin, { recursive: true, force: true });
+	}
+});

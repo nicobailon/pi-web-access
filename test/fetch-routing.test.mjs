@@ -235,3 +235,73 @@ test("hosted providers cannot bypass redirect policy validation", async () => {
 	assert.deepEqual(output.calls, ["https://example.com/redirect"]);
 	assert.match(output.result.error, /Blocked internal address/);
 });
+
+const readableFiller = "<p>" + "Example.com needs to review the security of your connection before proceeding with this readable article text. ".repeat(8) + "</p>";
+const genericMomentPage = `<!DOCTYPE html><html><head><title>Just a moment...</title></head><body><article><h1>Just a moment...</h1>${readableFiller}${readableFiller}</article></body></html>`;
+const cloudflareChallengePage = `<!DOCTYPE html><html lang="en-US"><head><title>Just a moment...</title></head><body><article><h1>Verifying you are human</h1>${readableFiller}${readableFiller}</article><script>(function(){window._cf_chl_opt={cvId:'3',cType:'managed'};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1?ray=abc';document.head.appendChild(a);}());</script></body></html>`;
+
+async function runChallengeExtract(config, { body, headers = {}, mode } = {}) {
+	const root = await mkdtemp(join(tmpdir(), "pi-fetch-routing-challenge-"));
+	await writeFile(join(root, "web-search.json"), JSON.stringify(config) + "\n", "utf8");
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			const calls = [];
+			globalThis.fetch = async (url) => {
+				const text = String(url);
+				calls.push(text);
+				if (text === "https://example.com/challenge") {
+					return new Response(${JSON.stringify(body)}, { status: 200, headers: { "content-type": "text/html; charset=utf-8", ...${JSON.stringify(headers)} } });
+				}
+				if (text.startsWith("https://r.jina.ai/")) {
+					return new Response("Markdown Content:\\n# Routed\\n\\n" + "Jina routed content. ".repeat(12), { status: 200 });
+				}
+				throw new Error("Unexpected fetch " + text);
+			};
+			const { extractContent } = await import(${JSON.stringify(extractUrl)});
+			const result = await extractContent("https://example.com/challenge", undefined, { ${mode ? `mode: ${JSON.stringify(mode)}, ` : ""}lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
+			console.log(JSON.stringify({ calls, result }));
+		`,
+		encoding: "utf8",
+		env: cleanProviderEnv(root),
+		maxBuffer: 2 * 1024 * 1024,
+	});
+	assert.equal(child.status, 0, child.stderr);
+	return JSON.parse(child.stdout.trim());
+}
+
+const challengeFallbackRouting = { fetchRouting: { providers: ["http", "jina"], allowRemoteHostedProviders: true } };
+
+test("HTTP 200 with cf-mitigated: challenge falls back to configured providers", async () => {
+	const output = await runChallengeExtract(challengeFallbackRouting, { body: genericMomentPage, headers: { "cf-mitigated": "challenge" } });
+	assert.deepEqual(output.calls, ["https://example.com/challenge", "https://r.jina.ai/https://example.com/challenge"]);
+	assert.equal(output.result.error, null);
+	assert.equal(output.result.title, "Routed");
+});
+
+test("HTTP 200 Cloudflare challenge body signature falls back to configured providers", async () => {
+	const output = await runChallengeExtract(challengeFallbackRouting, { body: cloudflareChallengePage });
+	assert.deepEqual(output.calls, ["https://example.com/challenge", "https://r.jina.ai/https://example.com/challenge"]);
+	assert.equal(output.result.error, null);
+	assert.equal(output.result.title, "Routed");
+});
+
+test("generic Just a moment text alone is not treated as a challenge", async () => {
+	const output = await runChallengeExtract(challengeFallbackRouting, { body: genericMomentPage });
+	assert.deepEqual(output.calls, ["https://example.com/challenge"]);
+	assert.equal(output.result.error, null);
+	assert.match(output.result.content, /readable article text/);
+});
+
+test("HTTP-only routing reports a Cloudflare challenge as an HTTP extraction failure", async () => {
+	const output = await runChallengeExtract({}, { body: cloudflareChallengePage, headers: { "cf-mitigated": "challenge" } });
+	assert.deepEqual(output.calls, ["https://example.com/challenge"]);
+	assert.match(output.result.error, /^HTTP 200: Blocked by Cloudflare challenge page/);
+	assert.equal(output.result.content, "");
+});
+
+test("raw mode returns Cloudflare challenge bodies verbatim without fallback", async () => {
+	const output = await runChallengeExtract(challengeFallbackRouting, { body: cloudflareChallengePage, headers: { "cf-mitigated": "challenge" }, mode: "raw" });
+	assert.deepEqual(output.calls, ["https://example.com/challenge"]);
+	assert.equal(output.result.error, null);
+	assert.equal(output.result.content, cloudflareChallengePage);
+});
