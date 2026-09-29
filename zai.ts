@@ -77,7 +77,7 @@ function parseResults(text: string, limit: number, domain: string | undefined): 
 		}
 		if (url.protocol !== "http:" && url.protocol !== "https:") continue;
 		// The remote filter is undocumented, so enforce it locally too.
-		const host = url.hostname.toLowerCase();
+		const host = url.hostname.toLowerCase().replace(/\.+$/, "");
 		if (domain && host !== domain && !host.endsWith(`.${domain}`)) continue;
 		results.push({
 			title: typeof title === "string" && title.trim() ? title.trim() : `Source ${results.length + 1}`,
