@@ -17,8 +17,9 @@ let calls = [], requestedUrls = [], mode = "json";
 const items = [
 	{ refer: "ref_1", title: "First", link: "https://example.com/a", media: "Example", content: "First summary" },
 	{ refer: "ref_2", title: "Not web", link: "javascript:alert(1)", content: "dropped" },
-	{ refer: "ref_3", title: "", link: "https://example.org/b", content: "Second summary" },
-	{ refer: "ref_4", title: "Third", link: "https://example.net/c", content: "Third summary" },
+	{ refer: "ref_3", title: "Off domain", link: "https://example.org/x", content: "dropped by filter" },
+	{ refer: "ref_4", title: "", link: "https://docs.example.com/b", content: "Second summary" },
+	{ refer: "ref_5", title: "Third", link: "https://example.net/c", content: "Third summary" },
 ];
 
 async function writeConfig(config) {
@@ -47,8 +48,9 @@ before(async () => {
 		if (!rpc.id && rpc.id !== 0) { res.writeHead(202); res.end(); return; }
 		const text = mode === "not-json" ? `quota exhausted for ${key}` : JSON.stringify(JSON.stringify(items));
 		const result = mode === "tool-error" ? { content: [{ type: "text", text: `secret ${key}` }], isError: true } : { content: [{ type: "text", text }] };
+		const reply = mode === "rpc-error" ? { error: { code: -32603, message: `internal ${key}` } } : { result };
 		res.writeHead(200, { "content-type": "text/event-stream" });
-		res.end(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result })}\n\n`);
+		res.end(`event: message\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: rpc.id, ...reply })}\n\n`);
 	});
 	await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
 	origin = `http://127.0.0.1:${server.address().port}/mcp`;
@@ -79,7 +81,7 @@ test("Z.ai calls webSearchPrime with mapped filters and returns web results", as
 	});
 	assert.deepEqual(result.results, [
 		{ title: "First", url: "https://example.com/a", snippet: "First summary" },
-		{ title: "Source 2", url: "https://example.org/b", snippet: "Second summary" },
+		{ title: "Source 2", url: "https://docs.example.com/b", snippet: "Second summary" },
 	]);
 	assert.match(result.answer, /First summary\nSource: First \(https:\/\/example\.com\/a\)/);
 	assert.ok(calls.every(c => c.authCorrect));
@@ -108,6 +110,9 @@ test("Z.ai errors never disclose the key", async () => {
 		reset(variant);
 		await assert.rejects(searchWithZai("q"), err => !String(err).includes(key) && /Z\.ai/.test(String(err)));
 	}
+	// Routing classifies errors by message text, so a generic failure must not read as quota.
+	reset("rpc-error");
+	await assert.rejects(searchWithZai("q"), err => !String(err).includes(key) && !/quota/i.test(String(err)));
 	reset();
 	process.env.ZAI_API_KEY = "wrong-synthetic";
 	try {

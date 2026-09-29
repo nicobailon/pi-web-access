@@ -60,7 +60,7 @@ function searchArguments(query: string, options: SearchOptions): Record<string, 
 }
 
 /** The tool returns its result list as JSON text, sometimes encoded twice. */
-function parseResults(text: string, limit: number): SearchResponse["results"] {
+function parseResults(text: string, limit: number, domain: string | undefined): SearchResponse["results"] {
 	let value: unknown = JSON.parse(text);
 	if (typeof value === "string") value = JSON.parse(value);
 	if (!Array.isArray(value)) throw new Error("Z.ai returned invalid response: expected a result list");
@@ -76,6 +76,9 @@ function parseResults(text: string, limit: number): SearchResponse["results"] {
 			continue;
 		}
 		if (url.protocol !== "http:" && url.protocol !== "https:") continue;
+		// The remote filter is undocumented, so enforce it locally too.
+		const host = url.hostname.toLowerCase();
+		if (domain && host !== domain && !host.endsWith(`.${domain}`)) continue;
 		results.push({
 			title: typeof title === "string" && title.trim() ? title.trim() : `Source ${results.length + 1}`,
 			url: url.href,
@@ -124,7 +127,7 @@ export async function searchWithZai(query: string, options: SearchOptions = {}):
 		if (result.isError) throw new Error("Z.ai search tool returned an error");
 		const text = (Array.isArray(result.content) ? result.content : []).find((item) => item.type === "text" && typeof item.text === "string");
 		if (!text) throw new Error("Z.ai returned invalid response: no search text");
-		const results = parseResults(text.text as string, limit);
+		const results = parseResults(text.text as string, limit, args.search_domain_filter as string | undefined);
 		activityMonitor.logComplete(activityId, 200);
 		return { answer: formatSearchResultsAsAnswer(results), results };
 	} catch (err) {
@@ -140,7 +143,7 @@ export async function searchWithZai(query: string, options: SearchOptions = {}):
 				: err instanceof TypeError ? "Z.ai network request failed"
 				: err instanceof SyntaxError || code === -32700 || code === -32602 ? "Z.ai returned invalid response"
 				: err instanceof Error && /^Z\.ai (search tool returned an error|returned invalid response:)/.test(err.message) ? err.message
-				: "Z.ai MCP request failed; check your connection, GLM Coding Plan key and plan quota";
+				: "Z.ai MCP request failed; check your connection and GLM Coding Plan key";
 		}
 		activityMonitor.logError(activityId, redactCredential(message, apiKey));
 		throw new Error(message);
