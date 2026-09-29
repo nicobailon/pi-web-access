@@ -123,7 +123,12 @@ export async function searchWithZai(query: string, options: SearchOptions = {}):
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		await client.connect(transport, { signal, timeout: SEARCH_TIMEOUT_MS });
-		const result = await client.callTool({ name: "webSearchPrime", arguments: args }, undefined, { signal, timeout: SEARCH_TIMEOUT_MS });
+		// The live China server lists `web_search_prime` while both sites document
+		// `webSearchPrime`, so call whichever name this server exposes.
+		const { tools } = await client.listTools(undefined, { signal, timeout: SEARCH_TIMEOUT_MS });
+		const toolName = tools.find((tool) => tool.name === "web_search_prime" || tool.name === "webSearchPrime")?.name;
+		if (!toolName) throw new Error("Z.ai returned invalid response: web search tool not listed");
+		const result = await client.callTool({ name: toolName, arguments: args }, undefined, { signal, timeout: SEARCH_TIMEOUT_MS });
 		if (result.isError) throw new Error("Z.ai search tool returned an error");
 		const text = (Array.isArray(result.content) ? result.content : []).find((item) => item.type === "text" && typeof item.text === "string");
 		if (!text) throw new Error("Z.ai returned invalid response: no search text");

@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Search with Z.ai's GLM Coding Plan web search when you select `provider: "zai"`. Set `ZAI_API_KEY` or `zaiApiKey` to your plan key, and set `zaiEndpoint: "china"` if your key comes from bigmodel.cn. Searches use your plan quota instead of per-call billing. Thanks to [@nailuoGG](https://github.com/nailuoGG) for [issue #475](https://github.com/nicobailon/pi-web-access/issues/475).
+- Search with Z.ai's GLM Coding Plan web search when you select `provider: "zai"`. Set `ZAI_API_KEY` or `zaiApiKey` to your plan key, and set `zaiEndpoint: "china"` if your key comes from bigmodel.cn. Searches use your plan quota instead of per-call billing. Thanks to [@nailuoGG](https://github.com/nailuoGG) for [issue #475](https://github.com/nicobailon/pi-web-access/issues/475) and for live-testing the China endpoint in [issue #479](https://github.com/nicobailon/pi-web-access/issues/479).
 
 ### Changed
 

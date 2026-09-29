@@ -13,7 +13,7 @@ const endpoints = {
 const originalFetch = globalThis.fetch;
 const savedEnv = { ...process.env };
 let home, server, origin, searchWithZai, isZaiAvailable;
-let calls = [], requestedUrls = [], mode = "json";
+let calls = [], requestedUrls = [], mode = "json", listedTools = ["web_search_prime"];
 const items = [
 	{ refer: "ref_1", title: "First", link: "https://example.com/a", media: "Example", content: "First summary" },
 	{ refer: "ref_2", title: "Not web", link: "javascript:alert(1)", content: "dropped" },
@@ -46,6 +46,12 @@ before(async () => {
 			return;
 		}
 		if (!rpc.id && rpc.id !== 0) { res.writeHead(202); res.end(); return; }
+		if (rpc.method === "tools/list") {
+			const tools = listedTools.map(name => ({ name, inputSchema: { type: "object" } }));
+			res.writeHead(200, { "content-type": "application/json" });
+			res.end(JSON.stringify({ jsonrpc: "2.0", id: rpc.id, result: { tools } }));
+			return;
+		}
 		const text = mode === "not-json" ? `quota exhausted for ${key}` : JSON.stringify(JSON.stringify(items));
 		const result = mode === "tool-error" ? { content: [{ type: "text", text: `secret ${key}` }], isError: true } : { content: [{ type: "text", text }] };
 		const reply = mode === "rpc-error" ? { error: { code: -32603, message: `internal ${key}` } } : { result };
@@ -69,14 +75,14 @@ after(async () => {
 	await new Promise(resolve => server?.close(resolve));
 	await rm(home, { recursive: true, force: true });
 });
-function reset(nextMode = "json") { calls = []; requestedUrls = []; mode = nextMode; }
+function reset(nextMode = "json", tools = ["web_search_prime"]) { calls = []; requestedUrls = []; mode = nextMode; listedTools = tools; }
 
-test("Z.ai calls webSearchPrime with mapped filters and returns web results", async () => {
+test("Z.ai calls the listed web search tool with mapped filters and returns web results", async () => {
 	reset();
 	const result = await searchWithZai("  GLM news  ", { numResults: 2, recencyFilter: "week", domainFilter: ["https://example.com/path"] });
-	assert.deepEqual(calls.filter(c => c.rpc).map(c => c.rpc.method), ["initialize", "notifications/initialized", "tools/call"]);
+	assert.deepEqual(calls.filter(c => c.rpc).map(c => c.rpc.method), ["initialize", "notifications/initialized", "tools/list", "tools/call"]);
 	assert.deepEqual(calls.find(c => c.rpc?.method === "tools/call").rpc.params, {
-		name: "webSearchPrime",
+		name: "web_search_prime",
 		arguments: { search_query: "GLM news", search_recency_filter: "oneWeek", search_domain_filter: "example.com" },
 	});
 	assert.deepEqual(result.results, [
@@ -87,6 +93,16 @@ test("Z.ai calls webSearchPrime with mapped filters and returns web results", as
 	assert.ok(calls.every(c => c.authCorrect));
 	assert.equal(calls.at(-1).method, "DELETE");
 	assert.ok(requestedUrls.every(url => url === endpoints.global));
+});
+
+test("Z.ai uses the documented webSearchPrime name when the server lists it", async () => {
+	reset("json", ["webSearchPrime"]);
+	await searchWithZai("q");
+	assert.equal(calls.find(c => c.rpc?.method === "tools/call").rpc.params.name, "webSearchPrime");
+
+	reset("json", ["other_tool"]);
+	await assert.rejects(searchWithZai("q"), /Z\.ai returned invalid response: web search tool not listed/);
+	assert.ok(!calls.some(c => c.rpc?.method === "tools/call"));
 });
 
 test("zaiEndpoint selects the China endpoint and rejects unknown values", async () => {
