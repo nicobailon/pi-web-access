@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Search with Z.ai's GLM Coding Plan web search when you select `provider: "zai"`. Set `ZAI_API_KEY` or `zaiApiKey` to your plan key, and set `zaiEndpoint: "china"` if your key comes from bigmodel.cn. Searches use your plan quota instead of per-call billing. Thanks to [@nailuoGG](https://github.com/nailuoGG) for [issue #475](https://github.com/nicobailon/pi-web-access/issues/475).
+
 ### Changed
 
 - When `fetch_content` can't get a page, its list of fallback options now explains how to turn on the keyless Jina Reader fallback. It names only the setting you still need and keeps your current or default provider order. The hint doesn't appear if Jina already ran for that fetch. It also warns that Jina's servers fetch the target URLs. Thanks to [@SuTang-vain](https://github.com/SuTang-vain) for [PR #471](https://github.com/nicobailon/pi-web-access/pull/471).

@@ -48,6 +48,7 @@ function buildProviderButtons(
 		{ value: "serply", label: "Serply", available: available.serply },
 		{ value: "you", label: "You.com", available: available.you },
 		{ value: "baizhi", label: "Baizhi", available: available.baizhi },
+		{ value: "zai", label: "Z.ai", available: available.zai },
 		{ value: "valyu", label: "Valyu", available: available.valyu },
 	];
 
@@ -1475,7 +1476,7 @@ const SCRIPT = `(function() {
   var token = DATA.sessionToken;
   var timeoutSec = DATA.timeout;
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
-  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "searxng", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xcrawl", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "baizhi", "you"];
+  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "searxng", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xcrawl", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "baizhi", "you", "zai"];
   var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
   var workflow = "summary-review";
   var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";
@@ -1712,6 +1713,7 @@ const SCRIPT = `(function() {
     if (provider === "serply") return "Serply";
     if (provider === "you") return "You.com";
     if (provider === "baizhi") return "Baizhi";
+    if (provider === "zai") return "Z.ai";
     if (provider === "valyu") return "Valyu";
     return "Unknown";
   }
