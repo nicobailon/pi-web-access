@@ -249,7 +249,7 @@ function redactProxyUrl(value: string): string {
 	return parsed.toString();
 }
 
-function loadConfiguredProxy(): string | null {
+export function loadConfiguredProxy(): string | null {
 	let configured: unknown;
 	const path = getWebSearchConfigPath();
 	if (existsSync(path)) {

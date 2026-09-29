@@ -173,13 +173,14 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 async function fetchAuthenticatedRemoteUrl(
 	url: string,
 	init: RequestInit,
-	validationOptions: { ssrf: SsrfConfig; domainPolicy: DomainPolicy; lookup?: Lookup },
+	validationOptions: { ssrf: SsrfConfig; domainPolicy: DomainPolicy; lookup?: Lookup; proxy?: string },
 	profile: AuthFetchProfile,
 ): Promise<Response> {
 	let current = await validateRemoteUrl(url, {
 		allowRanges: validationOptions.ssrf.allowRanges,
 		trustEnvProxy: validationOptions.ssrf.trustEnvProxy,
 		domainPolicy: validationOptions.domainPolicy,
+		proxy: validationOptions.proxy,
 		...(validationOptions.lookup ? { lookup: validationOptions.lookup } : {}),
 	});
 	let requestInit = init;
@@ -196,6 +197,7 @@ async function fetchAuthenticatedRemoteUrl(
 			allowRanges: validationOptions.ssrf.allowRanges,
 			trustEnvProxy: validationOptions.ssrf.trustEnvProxy,
 			domainPolicy: validationOptions.domainPolicy,
+			proxy: validationOptions.proxy,
 			...(validationOptions.lookup ? { lookup: validationOptions.lookup } : {}),
 		});
 		authFetchRedirectGuard(profile, from, current);
@@ -542,6 +544,7 @@ export async function extractContent(
 				allowRanges: ssrf.allowRanges,
 				trustEnvProxy: ssrf.trustEnvProxy,
 				domainPolicy,
+				proxy: options?.proxy,
 				...(options?.lookup ? { lookup: options.lookup } : {}),
 			});
 		} catch (err) {
@@ -1191,7 +1194,6 @@ async function extractViaHttp(
 		const ssrf = loadSsrfConfig();
 		const domainPolicy = loadFetchContentDomainPolicy();
 		const authProfile = options?.authFetchProfile;
-		const trustEnvProxy = options?.proxy === undefined && ssrf.trustEnvProxy;
 		const requestInit: ProxiedRequestInit = {
 			signal: controller.signal,
 			__proxy: options?.proxy,
@@ -1208,14 +1210,15 @@ async function extractViaHttp(
 			},
 		};
 		const response = authProfile
-			? await fetchAuthenticatedRemoteUrl(url, requestInit, { ssrf: { ...ssrf, trustEnvProxy }, domainPolicy, ...(options?.lookup ? { lookup: options.lookup } : {}) }, authProfile)
+			? await fetchAuthenticatedRemoteUrl(url, requestInit, { ssrf, domainPolicy, proxy: options?.proxy, ...(options?.lookup ? { lookup: options.lookup } : {}) }, authProfile)
 			: await fetchRemoteUrl(
 				url,
 				requestInit,
 				{
 					allowRanges: ssrf.allowRanges,
-					trustEnvProxy,
+					trustEnvProxy: ssrf.trustEnvProxy,
 					domainPolicy,
+					proxy: options?.proxy,
 					...(options?.lookup ? { lookup: options.lookup } : {}),
 				},
 			);

@@ -242,6 +242,68 @@ test("omitted proxy preserves trusted environment proxy routing when no proxy is
 	`), { lookups: 0, scoped: false });
 });
 
+test("fetch_content lets a trusted configured proxy resolve hostnames that local DNS cannot", async (t) => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-proxy-trusted-dns-test-"));
+	await writeFile(join(dir, "web-search.json"), JSON.stringify({ proxy: "http://configured-proxy.example:3128", ssrf: { trustEnvProxy: true } }));
+	t.after(async () => {
+		await rm(dir, { recursive: true, force: true });
+	});
+	// `.test` never resolves, so success proves no local DNS preflight ran.
+	const url = "https://unresolvable.example.test/page";
+
+	await withFakeCurl(t, {
+		[url]: { status: 200, statusText: "OK", body: "<html><title>Proxied</title><body>Resolved by the proxy.</body></html>" },
+	}, async (logPath) => {
+		const child = spawnSync(process.execPath, ["--input-type=module"], {
+			input: `
+				const { default: initializeExtension } = await import(${JSON.stringify(indexUrl)});
+				const tools = [];
+				initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
+				const tool = tools.find((tool) => tool.name === "fetch_content");
+				const omitted = await tool.execute("omitted", { url: ${JSON.stringify(url)} });
+				const explicit = await tool.execute("explicit", { url: ${JSON.stringify(url)}, proxy: "http://configured-proxy.example:3128" });
+				console.log(JSON.stringify([omitted.details.successful, explicit.details.successful]));
+			`,
+			encoding: "utf8",
+			env: { ...process.env, PI_CODING_AGENT_DIR: dir },
+			maxBuffer: 2 * 1024 * 1024,
+		});
+		assert.equal(child.status, 0, child.stderr);
+		assert.deepEqual(JSON.parse(child.stdout.trim().split("\n").at(-1)), [1, 1]);
+		const pageCalls = (await readCurlCalls(logPath)).filter((args) => args.at(-1) === url);
+		assert.equal(pageCalls.length, 2);
+		assert.ok(pageCalls.every((args) => ["http://configured-proxy.example:3128", "http://configured-proxy.example:3128/"].includes(proxyArg(args))));
+	});
+});
+
+test("configured proxy DNS trust never extends to a different per-call proxy", async (t) => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-proxy-trust-scope-test-"));
+	await writeFile(join(dir, "web-search.json"), JSON.stringify({ proxy: "http://configured-proxy.example:3128" }));
+	t.after(async () => {
+		await rm(dir, { recursive: true, force: true });
+	});
+	const probe = (trustEnvProxy) => `
+		const privateLookup = async () => [{ address: "10.0.0.10", family: 4 }];
+		const outcome = async (fn) => { try { await fn(); return "trusted"; } catch (error) { return error.message; } };
+		const validate = (options = {}) => validateRemoteUrl("https://internal.example.test/", { trustEnvProxy: ${trustEnvProxy}, lookup: privateLookup, ...options });
+		console.log(JSON.stringify([
+			await runWithProxy(undefined, () => outcome(() => validate())),
+			await runWithProxy("http://model-proxy.example:3128", () => outcome(() => validate())),
+			await runWithProxy(undefined, () => outcome(() => validate({ proxy: "http://model-proxy.example:3128" }))),
+			await runWithProxy(undefined, () => outcome(() => validate({ lookup: async () => { throw new Error("getaddrinfo ENOTFOUND"); } }))),
+		]));
+	`;
+
+	const [trusted, perCall, pinned] = runConfigProbe(dir, probe(true));
+	assert.equal(trusted, "trusted");
+	assert.match(perCall, /Blocked internal address/);
+	assert.match(pinned, /Blocked internal address/);
+
+	const untrusted = runConfigProbe(dir, probe(false));
+	assert.match(untrusted[0], /Blocked internal address/);
+	assert.match(untrusted[3], /^Failed to resolve internal\.example\.test: getaddrinfo ENOTFOUND\. If your configured proxy resolves hostnames, set ssrf\.trustEnvProxy to true/);
+});
+
 test("invalid configured proxy fails closed instead of direct fetching", async (t) => {
 	const dir = await mkdtemp(join(tmpdir(), "pi-proxy-invalid-config-test-"));
 	await writeFile(join(dir, "web-search.json"), JSON.stringify({ proxy: "ftp://proxy.example:21" }));

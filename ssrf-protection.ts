@@ -1,11 +1,13 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import net from "node:net";
-import { getActiveProxy, getWebSearchConfigPath, hasScopedProxyDecision, isProxyBypassedUrl } from "./utils.ts";
+import { getActiveProxy, getWebSearchConfigPath, hasScopedProxyDecision, isProxyBypassedUrl, loadConfiguredProxy, normalizeProxyUrl } from "./utils.ts";
 
 const DEFAULT_MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const LOOPBACK_ALLOW_RANGES = ["127.0.0.0/8", "::1", "::ffff:127.0.0.0/104"];
+// Proxy schemes where the proxy, not curl, resolves the target hostname.
+const REMOTE_DNS_PROXY_PROTOCOLS = new Set(["http:", "https:", "socks4a:", "socks5h:"]);
 
 export type LookupAddress = { address: string; family: number };
 export type Lookup = (hostname: string) => Promise<LookupAddress[]>;
@@ -147,12 +149,15 @@ interface ValidationOptions {
 	 */
 	allowRanges?: string[];
 	/**
-	 * When true, trust an explicitly-configured HTTP(S) proxy for hostname
-	 * resolution instead of performing local DNS lookups inside the sandbox.
-	 * Literal IPs and localhost remain blocked, and NO_PROXY hosts still use
-	 * the local SSRF preflight. This does not configure proxy transport.
+	 * When true, let the proxy carrying the request resolve hostnames instead of
+	 * performing local DNS lookups: an HTTP(S) proxy from the environment, or the
+	 * `proxy` configured in web-search.json. A different per-call proxy never
+	 * qualifies. Literal IPs and localhost remain blocked, and NO_PROXY hosts still
+	 * use the local SSRF preflight. This does not configure proxy transport.
 	 */
 	trustEnvProxy?: boolean;
+	/** Proxy pinned on the request via `__proxy`; defaults to the scoped proxy, like the transport. */
+	proxy?: string;
 	/** Allow loopback URLs for explicit provider base endpoints, not fetched targets. */
 	allowLoopback?: boolean;
 }
@@ -207,14 +212,21 @@ export async function validateRemoteUrl(rawUrl: string | URL, options: Validatio
 		return url;
 	}
 
-	if (shouldTrustEnvProxy(url, options.trustEnvProxy === true)) return url;
+	const trustProxy = options.trustEnvProxy === true;
+	const proxy = options.proxy !== undefined
+		? normalizeProxyUrl(options.proxy, "proxy")
+		: hasScopedProxyDecision() ? getActiveProxy() : undefined;
+	if (proxy === undefined ? shouldTrustEnvProxy(url, trustProxy) : trustProxy && isConfiguredRemoteDnsProxy(url, proxy)) return url;
 
 	let addresses: LookupAddress[];
 	try {
 		addresses = await (options.lookup ?? defaultLookup)(hostname);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to resolve ${hostname}: ${message}`);
+		const hint = !trustProxy && proxy && isConfiguredRemoteDnsProxy(url, proxy)
+			? ". If your configured proxy resolves hostnames, set ssrf.trustEnvProxy to true in web-search.json."
+			: "";
+		throw new Error(`Failed to resolve ${hostname}: ${message}${hint}`);
 	}
 
 	if (addresses.length === 0) throw new Error(`Failed to resolve ${hostname}: no addresses returned`);
@@ -333,13 +345,18 @@ function hostnameMatchesNoProxy(hostname: string, port: string, entry: string): 
 
 function shouldTrustEnvProxy(url: URL, enabled: boolean): boolean {
 	if (!enabled || !getProxyForProtocol(url.protocol)) return false;
-	if (hasScopedProxyDecision()) return false;
-	const activeProxy = getActiveProxy();
-	if (activeProxy && !isProxyBypassedUrl(url)) return false;
 	const hostname = normalizeHostname(url.hostname);
 	const port = url.port || (url.protocol === "https:" ? "443" : "80");
 	const noProxy = process.env.NO_PROXY || process.env.no_proxy || "";
 	return !noProxy.split(",").some(entry => hostnameMatchesNoProxy(hostname, port, entry));
+}
+
+/** Only the operator's configured proxy qualifies: a model-supplied per-call proxy must not skip DNS validation. */
+function isConfiguredRemoteDnsProxy(url: URL, proxy: string | null): boolean {
+	return proxy !== null &&
+		REMOTE_DNS_PROXY_PROTOCOLS.has(new URL(proxy).protocol) &&
+		!isProxyBypassedUrl(url) &&
+		proxy === loadConfiguredProxy();
 }
 
 function assertPublicAddress(address: string, hostname: string, allowRanges: ParsedCidr[] = []): void {
