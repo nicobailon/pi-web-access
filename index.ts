@@ -47,7 +47,7 @@ import { isGeminiApiAvailable } from "./gemini-api.ts";
 import { getActiveGoogleEmail, getGeminiWebAvailabilityDiagnostic, getGeminiWebAvailabilityDiagnosticDetails, isGeminiWebAvailable } from "./gemini-web.ts";
 import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
 import { isBraveAvailable } from "./brave.ts";
-import { isCurrentModelHostedSearchEligible, isOpenAISearchAvailable } from "./openai-search.ts";
+import { isCurrentModelHostedSearchEligible, isOpenAISearchAvailable, isOpenAISubscriptionModelSelected } from "./openai-search.ts";
 import { isParallelAvailable } from "./parallel.ts";
 import { isParallelMcpAvailable } from "./parallel-mcp.ts";
 import { isTinyFishAvailable } from "./tinyfish.ts";
@@ -516,10 +516,6 @@ async function getOptionalGeminiWebAvailability() {
 	}
 }
 
-function shouldUseOpenAICodexDefault(ctx?: Pick<ExtensionContext, "model">): boolean {
-	return ctx?.model?.provider === "openai-codex";
-}
-
 function shouldPreferOpenAI(options: Pick<PendingCurate, "numResults" | "recencyFilter"> | undefined, preferOpenAICodexDefault: boolean): boolean {
 	if (options?.recencyFilter) return false;
 	if (typeof options?.numResults === "number" && Number.isFinite(options.numResults) && Math.floor(options.numResults) !== 5) {
@@ -546,10 +542,10 @@ async function loadCuratorBootstrap(
 export function resolveCuratorDefaultProvider(
 	provider: SearchProviderSelection,
 	available: ProviderAvailability,
-	ctx?: Pick<ExtensionContext, "model">,
+	ctx?: Parameters<typeof isOpenAISubscriptionModelSelected>[0],
 	options?: Pick<PendingCurate, "numResults" | "recencyFilter">,
 ): SearchProvider {
-	return resolveProvider(provider, available, options, shouldUseOpenAICodexDefault(ctx), ctx);
+	return resolveProvider(provider, available, options, isOpenAISubscriptionModelSelected(ctx), ctx);
 }
 
 function firstAvailableProvider(available: ProviderAvailability, preferOpenAI: boolean, fallback: ResolvedSearchProvider): ResolvedSearchProvider | "auto" {

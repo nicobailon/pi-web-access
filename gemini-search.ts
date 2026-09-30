@@ -11,6 +11,7 @@ import { isBraveAvailable, searchWithBrave } from "./brave.ts";
 import {
 	isCurrentModelHostedSearchEligible,
 	isOpenAISearchAvailable,
+	isOpenAISubscriptionModelSelected,
 	OpenAIAlphaSearchUnsupportedError,
 	searchWithCurrentModelOpenAI,
 	searchWithOpenAI,
@@ -271,10 +272,6 @@ function errorMessage(err: unknown): string {
 
 function isAbortError(err: unknown): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
-}
-
-function isOpenAICodexSelected(ctx?: ExtensionContext): boolean {
-	return ctx?.model?.provider === "openai-codex";
 }
 
 async function tryOpenAIInAuto(query: string, options: FullSearchOptions, fallbackErrors: string[]): Promise<AttributedSearchResponse | null> {
@@ -648,7 +645,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	let triedOpenAI = false;
-	if (allowed.has("openai") && (!options.extensionContext || isOpenAICodexSelected(options.extensionContext))) {
+	if (allowed.has("openai") && (!options.extensionContext || isOpenAISubscriptionModelSelected(options.extensionContext))) {
 		triedOpenAI = true;
 		const result = await tryOpenAIInAuto(query, options, fallbackErrors);
 		if (result) return result;

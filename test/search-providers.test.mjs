@@ -1068,6 +1068,9 @@ test("curator auto default follows the active model provider", async () => {
 
 	assert.equal(resolveCuratorDefaultProvider("auto", available, { model: { provider: "openai-codex" } }), "openai");
 	assert.equal(resolveCuratorDefaultProvider("auto", available, { model: { provider: "openai" } }), "exa");
+	const signIn = (isOAuth) => ({ model: { provider: "openai" }, modelRegistry: { isUsingOAuth: () => isOAuth } });
+	assert.equal(resolveCuratorDefaultProvider("auto", available, signIn(true)), "openai");
+	assert.equal(resolveCuratorDefaultProvider("auto", available, signIn(false)), "exa");
 	assert.equal(resolveCuratorDefaultProvider("auto", { ...available, exa: false }, { model: { provider: "openai" } }), "openai");
 	assert.equal(resolveCuratorDefaultProvider("auto", { ...available, openai: false, exa: false, bocha: true, ollama: true }), "bocha");
 });
@@ -1211,6 +1214,48 @@ test("auto search falls through to Exa when selected Codex-backed OpenAI fails",
 	assert.match(output.calls[1], /^https:\/\/mcp\.exa\.ai\/mcp/);
 });
 
+test("auto search prefers official OpenAI search when the selected openai model uses ChatGPT sign-in", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-auto-openai-oauth-selected-"));
+	const child = runChild(`
+		const requests = [];
+		globalThis.fetch = async (url, init) => {
+			requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init.headers)) });
+			if (String(url) !== "https://api.openai.com/v1/responses") throw new Error("Expected official OpenAI search first, got " + url);
+			return new Response(JSON.stringify({
+				output: [
+					{ type: "web_search_call", action: { sources: [] } },
+					{ type: "message", content: [{ type: "output_text", text: "chatgpt sign-in answer" }] },
+				],
+			}), { status: 200, headers: { "content-type": "application/json" } });
+		};
+
+		const token = "header." + Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "test-account" } })).toString("base64url") + ".signature";
+		const model = { provider: "openai", api: "openai-responses", id: "gpt-5.6-terra", baseUrl: "https://api.openai.com/v1" };
+		const ctx = {
+			model,
+			modelRegistry: {
+				getAll: () => [model],
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: token, headers: {} }),
+				isUsingOAuth: (candidate) => candidate.provider === "openai",
+			},
+		};
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const result = await search("current model search", { provider: "auto", extensionContext: ctx });
+		console.log(JSON.stringify({ provider: result.provider, answer: result.answer, requests }));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		PI_CODING_AGENT_DIR: home,
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.provider, "openai");
+	assert.equal(output.answer, "chatgpt sign-in answer");
+	assert.equal(output.requests.length, 1);
+	assert.equal(output.requests[0].headers["chatgpt-account-id"], undefined);
+});
+
 test("auto search uses Exa before OpenAI when the selected model is not openai-codex", async () => {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-auto-non-codex-selected-"));
 	const child = runChild(`
@@ -1233,6 +1278,7 @@ test("auto search uses Exa before OpenAI when the selected model is not openai-c
 			modelRegistry: {
 				getAll: () => [{ provider: "openai-codex", id: "gpt-5.6-terra" }],
 				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "codex-token", headers: {} }),
+				isUsingOAuth: () => false,
 			},
 		};
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});

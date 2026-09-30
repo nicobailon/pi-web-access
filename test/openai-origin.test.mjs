@@ -8,6 +8,10 @@ import { test } from "node:test";
 const moduleUrl = new URL("../openai-search.ts", import.meta.url).href;
 const official = "https://api.openai.com/v1/responses";
 const gateway = "http://127.0.0.1:8921/v1";
+// ChatGPT access tokens are JWTs with an api.openai.com auth claim, for both Codex and
+// Pi's "Sign in with ChatGPT" OAuth on the openai provider.
+const chatgptToken = `header.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "test-account" } })).toString("base64url")}.signature`;
+const codex = "https://chatgpt.com/backend-api/codex/responses";
 
 const cases = [
 	{ name: "invalid explicit endpoint remains an availability error", endpoint: "not a URL", configError: true },
@@ -24,6 +28,8 @@ const cases = [
 	{ name: "explicit official endpoint opts in", baseUrl: gateway, endpoint: official, expectedUrl: official },
 	{ name: "standalone API key keeps default", standalone: true, expectedUrl: official },
 	{ name: "Codex keeps its existing endpoint", provider: "openai-codex", baseUrl: "https://chatgpt.com/backend-api", expectedUrl: "https://chatgpt.com/backend-api/codex/responses" },
+	{ name: "ChatGPT sign-in on the official openai provider stays on the official API", baseUrl: "https://api.openai.com/v1", apiKey: chatgptToken, expectedUrl: official },
+	{ name: "ChatGPT token from another Pi provider keeps the Codex endpoint", provider: "openai-codex-work", apiKey: chatgptToken, expectedUrl: codex, accountId: "test-account" },
 ];
 
 for (const scenario of cases) {
@@ -32,6 +38,7 @@ for (const scenario of cases) {
 		try {
 			await writeFile(join(dir, "web-search.json"), JSON.stringify({
 				openaiResponsesUrl: scenario.endpoint,
+				openaiSearchProviders: scenario.provider ? [scenario.provider] : undefined,
 				// A blocked Pi credential must not silently fall through to this key.
 				openaiApiKey: "standalone-test-key",
 			}));
@@ -44,7 +51,7 @@ for (const scenario of cases) {
 					const model = { id: "gpt-5.6-terra", provider: scenario.provider ?? "openai", api: "openai-responses", baseUrl: scenario.baseUrl };
 					const ctx = scenario.standalone ? undefined : { modelRegistry: {
 						getAll: () => [model],
-						getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "pi-gateway-test-key", headers: { "X-Gateway": "test" }, baseUrl: scenario.authBaseUrl }),
+						getApiKeyAndHeaders: async () => ({ ok: true, apiKey: scenario.apiKey ?? "pi-gateway-test-key", headers: { "X-Gateway": "test" }, baseUrl: scenario.authBaseUrl }),
 					} };
 					globalThis.fetch = async (url, init) => {
 						requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init.headers)) });
@@ -77,7 +84,8 @@ for (const scenario of cases) {
 				assert.equal(output.available, true);
 				assert.equal(output.requests.length, 1);
 				assert.equal(output.requests[0].url, scenario.expectedUrl);
-				assert.equal(output.requests[0].headers.authorization, `Bearer ${scenario.standalone ? "standalone-test-key" : "pi-gateway-test-key"}`);
+				assert.equal(output.requests[0].headers.authorization, `Bearer ${scenario.standalone ? "standalone-test-key" : scenario.apiKey ?? "pi-gateway-test-key"}`);
+				assert.equal(output.requests[0].headers["chatgpt-account-id"], scenario.accountId);
 				if (!scenario.standalone) assert.equal(output.requests[0].headers["x-gateway"], "test");
 			}
 		} finally {

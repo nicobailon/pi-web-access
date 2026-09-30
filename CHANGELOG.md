@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - Brave searches now share an adaptive in-process queue that honors the provider's `X-RateLimit-*` and `Retry-After` headers. Concurrent batch queries no longer immediately exceed low-throughput plans, one HTTP 429 response is retried after the advertised short reset, and long quota resets fail fast while keeping the advertised cooldown active for later queued calls. The existing 30-second search deadline now covers queueing, cooldown waits, and both request attempts, and failure to cancel a retryable response body cannot discard the recorded cooldown or retry. Thanks to [@saschaSpoonbill](https://github.com/saschaSpoonbill) for [#487](https://github.com/nicobailon/pi-web-access/pull/487).
+- OpenAI web search now supports Pi's "Sign in with ChatGPT" login on the `openai` provider. The access token goes to the official `api.openai.com` Responses API, as Pi sends it, instead of the ChatGPT Codex endpoint, and `auto` search prefers OpenAI for this subscription login just as it does for `openai-codex`. An `openai` API key keeps the Exa-first order. Thanks to [@kasumikira](https://github.com/kasumikira) for [#488](https://github.com/nicobailon/pi-web-access/issues/488).
 
 ## [0.34.0] - 2026-09-30
 

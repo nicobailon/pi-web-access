@@ -91,6 +91,14 @@ function resolveCurrentModelSearchTarget(model: CurrentModel): CurrentModelSearc
 	throw new Error("Current model is not backed by an official OpenAI Responses endpoint");
 }
 
+// The active model draws on a ChatGPT subscription: openai-codex, or openai signed in
+// through Pi's "Sign in with ChatGPT" OAuth rather than an API key.
+export function isOpenAISubscriptionModelSelected(ctx?: Pick<ExtensionContext, "model"> & { modelRegistry?: Pick<ExtensionContext["modelRegistry"], "isUsingOAuth"> }): boolean {
+	const model = ctx?.model;
+	if (model?.provider === "openai-codex") return true;
+	return model?.provider === "openai" && ctx?.modelRegistry?.isUsingOAuth?.(model) === true;
+}
+
 export function isCurrentModelHostedSearchEligible(ctx?: Pick<ExtensionContext, "model">): boolean {
 	const model = ctx?.model;
 	if (!model || !/^gpt-/iu.test(model.id)) return false;
@@ -161,6 +169,15 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 function isCodexJwt(token: string): boolean {
 	const payload = decodeJwtPayload(token);
 	return !!payload?.["https://api.openai.com/auth"];
+}
+
+function isOfficialOpenAIBaseUrl(baseUrl: string | undefined): boolean {
+	if (baseUrl === undefined) return false;
+	try {
+		return new URL(baseUrl).toString().replace(/\/+$/u, "") === "https://api.openai.com/v1";
+	} catch {
+		return false;
+	}
 }
 
 function extractAccountId(token: string): string | undefined {
@@ -282,16 +299,12 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 		// Auth can override the model's base URL. Do not guess Responses/web_search
 		// support from a gateway URL, or pair its credential with the official API.
 		const baseUrl = resolved.baseUrl ?? preferred.baseUrl;
-		const useCodexEndpoint = provider === "openai-codex" || isCodexJwt(resolved.apiKey);
-		if (!hasExplicitResponsesUrl && !useProviderBaseUrl && !useCodexEndpoint && baseUrl !== undefined) {
-			let isOfficial = false;
-			try {
-				isOfficial = new URL(baseUrl).toString().replace(/\/+$/u, "") === "https://api.openai.com/v1";
-			} catch {
-			}
-			if (!isOfficial) {
-				throw new CustomOpenAIBaseUrlError(`OpenAI web search cannot reuse Pi credentials with a custom baseUrl by default. Set openaiResponsesUrl in ${CONFIG_PATH} to the full Responses endpoint for this credential.`);
-			}
+		const isOfficialBaseUrl = isOfficialOpenAIBaseUrl(baseUrl);
+		// Pi sends credentials for the official API base directly to api.openai.com, including
+		// "Sign in with ChatGPT" access tokens, which are ChatGPT JWTs but not Codex credentials.
+		const useCodexEndpoint = provider === "openai-codex" || (!isOfficialBaseUrl && isCodexJwt(resolved.apiKey));
+		if (!hasExplicitResponsesUrl && !useProviderBaseUrl && !useCodexEndpoint && baseUrl !== undefined && !isOfficialBaseUrl) {
+			throw new CustomOpenAIBaseUrlError(`OpenAI web search cannot reuse Pi credentials with a custom baseUrl by default. Set openaiResponsesUrl in ${CONFIG_PATH} to the full Responses endpoint for this credential.`);
 		}
 		let providerResponsesUrl = responsesUrl;
 		if (useProviderBaseUrl) {
@@ -309,6 +322,7 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 			model: modelOverride ?? preferred.id,
 			headers: resolved.headers ?? {},
 			responsesUrl: providerResponsesUrl,
+			useCodexEndpoint,
 			...(useProviderBaseUrl ? { useProviderBaseUrl: true } : {}),
 		};
 	}
