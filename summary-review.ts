@@ -63,7 +63,7 @@ function summarizeQueryResult(result: QueryResultData): string {
 	return lines.join("\n");
 }
 
-export function buildSummaryPrompt(results: QueryResultData[], feedback?: string): string {
+export function buildSummaryPrompt(results: QueryResultData[], feedback?: string, instructions?: string): string {
 	const sections = [
 		"You are writing the final web search summary for a coding assistant.",
 		"Write a concise, factual summary using only the provided search results.",
@@ -74,6 +74,11 @@ export function buildSummaryPrompt(results: QueryResultData[], feedback?: string
 		"- If evidence is weak or conflicting, say so explicitly.",
 		"- End with a short \"Sources\" section listing the most relevant URLs.",
 	];
+
+	const extraInstructions = typeof instructions === "string" ? instructions.trim() : "";
+	if (extraInstructions) {
+		sections.push(extraInstructions);
+	}
 
 	if (feedback) {
 		sections.push("- Incorporate the user feedback provided below into the summary.");
@@ -292,6 +297,7 @@ export async function generateSummaryDraft(
 	feedback?: string,
 	completeFn?: CompleteFunction,
 	deadlineMs = SUMMARY_GENERATION_DEADLINE_MS,
+	instructions?: string,
 ): Promise<{ summary: string; meta: SummaryMeta }> {
 	if (!ctx || !ctx.modelRegistry) {
 		throw new Error("Summary generation context unavailable");
@@ -349,7 +355,7 @@ export async function generateSummaryDraft(
 
 	try {
 		if (signal?.aborted) throw new Error("Aborted");
-		const prompt = buildSummaryPrompt(results, feedback);
+		const prompt = buildSummaryPrompt(results, feedback, instructions);
 		let resolved: Awaited<ReturnType<typeof resolveSummaryModelCandidates>>;
 		try {
 			checkSummaryDeadline();

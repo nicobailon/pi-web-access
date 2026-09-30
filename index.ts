@@ -173,6 +173,7 @@ interface WebSearchConfig {
 	curatorRemote?: unknown;
 	summaryModel?: string;
 	summaryGenerationDeadlineMs?: unknown;
+	summaryInstructions?: unknown;
 	maxInlineContentChars?: unknown;
 	fetch?: {
 		defaultMode?: unknown;
@@ -454,6 +455,13 @@ export function getSummaryGenerationDeadlineMs(): number {
 		return SUMMARY_GENERATION_DEADLINE_MS;
 	}
 	return Math.min(value, MAX_SUMMARY_GENERATION_DEADLINE_MS);
+}
+
+export function getSummaryInstructions(): string | undefined {
+	const value = loadConfig().summaryInstructions;
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function shouldAutoOpenCuratorBrowser(config: WebSearchConfig): boolean {
@@ -1279,6 +1287,7 @@ export default function (pi: ExtensionAPI) {
 				feedback,
 				undefined,
 				getSummaryGenerationDeadlineMs(),
+				getSummaryInstructions(),
 			);
 		} catch (err) {
 			const isEmptyResponse = err instanceof Error && err.message.includes("Summary model returned empty response");
@@ -2153,6 +2162,7 @@ export default function (pi: ExtensionAPI) {
 					undefined,
 					undefined,
 					getSummaryGenerationDeadlineMs(),
+					getSummaryInstructions(),
 				);
 				approvedSummary = generated.summary;
 				summaryMeta = generated.meta;
