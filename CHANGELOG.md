@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- The README now explains that `web_enable` can cause a prompt-cache miss on providers that can't add tools mid-conversation, and that `"toolActivation": "eager"` avoids it. Thanks to [@jordi9](https://github.com/jordi9) for [issue #481](https://github.com/nicobailon/pi-web-access/issues/481).
 - When `fetch_content` can't get a page, its list of fallback options now explains how to turn on the keyless Jina Reader fallback. It names only the setting you still need and keeps your current or default provider order. The hint doesn't appear if Jina already ran for that fetch. It also warns that Jina's servers fetch the target URLs. Thanks to [@SuTang-vain](https://github.com/SuTang-vain) for [PR #471](https://github.com/nicobailon/pi-web-access/pull/471).
 
 ### Fixed
