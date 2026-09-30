@@ -139,8 +139,8 @@ export class BraveRateLimitCoordinator {
 	}
 
 	async waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
-		this.assertWaitIsBounded(delayMs);
 		this.blockFor(delayMs, false);
+		this.assertWaitIsBounded(delayMs);
 		await this.waitForAvailability(signal);
 	}
 

@@ -156,11 +156,12 @@ export async function searchWithBrave(
 	}
 
 	try {
+		const searchDeadline = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
+		const searchSignal = options.signal
+			? AbortSignal.any([searchDeadline, options.signal])
+			: searchDeadline;
 		const response = await braveRateLimit.run(async () => {
 			for (let attempt = 0; attempt < 2; attempt++) {
-				const requestSignal = options.signal
-					? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-					: AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 				const current = await fetchWithCredentialRedirects(`${apiUrl}?${params.toString()}`, {
 					method: "GET",
 					headers: {
@@ -168,17 +169,18 @@ export async function searchWithBrave(
 						"Accept": "application/json",
 						"Accept-Encoding": "gzip",
 					},
-					signal: requestSignal,
+					signal: searchSignal,
 				}, ["X-Subscription-Token"]);
 
 				braveRateLimit.observe(current.headers);
 				if (current.status !== 429 || attempt === 1) return current;
 				const retryDelay = braveRateLimit.retryDelay(current.headers);
 				if (retryDelay === null) return current;
-				await braveRateLimit.waitForRetry(retryDelay, options.signal);
+				await current.body?.cancel();
+				await braveRateLimit.waitForRetry(retryDelay, searchSignal);
 			}
 			throw new Error("Brave Search retry loop exited unexpectedly");
-		}, options.signal);
+		}, searchSignal);
 
 		if (!response.ok) {
 			activityMonitor.logError(activityId, `HTTP ${response.status}`);

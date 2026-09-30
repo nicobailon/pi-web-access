@@ -104,6 +104,20 @@ test("aborting while queued prevents the queued operation from running", async (
 	assert.equal(ran, false);
 });
 
+test("a queued operation respects its caller deadline", async () => {
+	const { BraveRateLimitCoordinator } = await import(limiterModuleUrl);
+	const limiter = new BraveRateLimitCoordinator();
+	let release;
+	const first = limiter.run(() => new Promise(resolve => { release = resolve; }));
+	let ran = false;
+	const second = limiter.run(async () => { ran = true; }, AbortSignal.timeout(10));
+	await assert.rejects(second, /Aborted/);
+	release();
+	await first;
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(ran, false);
+});
+
 test("refuses a long quota wait instead of sleeping inside a search call", async () => {
 	const { BraveRateLimitCoordinator } = await import(limiterModuleUrl);
 	const limiter = new BraveRateLimitCoordinator({ maxWaitMs: 30_000 });
@@ -146,25 +160,46 @@ test("Retry-After accepts an HTTP date", async () => {
 	assert.equal(parseRetryAfterMs(new Headers({ "retry-after": "Thu, 01 Jan 1970 00:00:02 GMT" }), 1_000), 1_000);
 });
 
-test("Brave retries one 429 after Retry-After and succeeds", async () => {
+test("a rejected long Retry-After remains recorded for the next queued call", async () => {
+	const { BraveRateLimitCoordinator } = await import(limiterModuleUrl);
+	let now = 0;
+	let slept = false;
+	const limiter = new BraveRateLimitCoordinator({
+		now: () => now,
+		sleep: async () => { slept = true; },
+		maxWaitMs: 30_000,
+	});
+	await assert.rejects(limiter.waitForRetry(60_000), /quota exhausted/i);
+	await assert.rejects(limiter.run(async () => undefined), /quota exhausted/i);
+	assert.equal(slept, false);
+	now = 60_000;
+	assert.equal(await limiter.run(async () => "ready"), "ready");
+});
+
+test("Brave cancels a retryable 429 body before retrying", async () => {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-brave-retry-"));
 	const child = runChild(`
 		const calls = [];
+		let cancelled = false;
 		globalThis.fetch = async url => {
 			calls.push(String(url));
-			if (calls.length === 1) return new Response("slow down", {
-				status: 429,
-				headers: { "retry-after": "0", "x-ratelimit-limit": "1", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "0" },
-			});
+			if (calls.length === 1) {
+				const body = new ReadableStream({ cancel() { cancelled = true; } });
+				return new Response(body, {
+					status: 429,
+					headers: { "retry-after": "0", "x-ratelimit-limit": "1", "x-ratelimit-remaining": "0", "x-ratelimit-reset": "0" },
+				});
+			}
 			return new Response(JSON.stringify({ web: { results: [{ title: "Result", url: "https://example.com", description: "ok" }] } }), { status: 200 });
 		};
 		const { searchWithBrave } = await import(${JSON.stringify(braveModuleUrl)});
 		const result = await searchWithBrave("retry", { numResults: 1 });
-		console.log(JSON.stringify({ calls: calls.length, result }));
+		console.log(JSON.stringify({ calls: calls.length, cancelled, result }));
 	`, { HOME: home, USERPROFILE: home, BRAVE_API_KEY: "brave-test-key" });
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.calls, 2);
+	assert.equal(output.cancelled, true);
 	assert.equal(output.result.results[0].url, "https://example.com");
 });
 
