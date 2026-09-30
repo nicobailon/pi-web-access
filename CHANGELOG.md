@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `summaryInstructions` in `web-search.json` appends your own requirements to the summary prompt used by the curator and `auto-summary` workflow, for example to keep prices, limits, and versions verbatim. The built-in guardrails stay in place. Thanks to [@rcharrisg](https://github.com/rcharrisg) for [#489](https://github.com/nicobailon/pi-web-access/pull/489).
+
 ### Fixed
 
 - Brave searches now share an adaptive in-process queue that honors the provider's `X-RateLimit-*` and `Retry-After` headers. Concurrent batch queries no longer immediately exceed low-throughput plans, one HTTP 429 response is retried after the advertised short reset, and long quota resets fail fast while keeping the advertised cooldown active for later queued calls. The existing 30-second search deadline now covers queueing, cooldown waits, and both request attempts, and failure to cancel a retryable response body cannot discard the recorded cooldown or retry. Thanks to [@saschaSpoonbill](https://github.com/saschaSpoonbill) for [#487](https://github.com/nicobailon/pi-web-access/pull/487).
