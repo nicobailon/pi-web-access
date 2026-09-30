@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
+import { BraveRateLimitCoordinator } from "./brave-rate-limit.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
@@ -9,6 +10,7 @@ import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl
 const BRAVE_API_BASE_URL = "https://api.search.brave.com/res/v1";
 const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 30_000;
+const braveRateLimit = new BraveRateLimitCoordinator();
 
 interface WebSearchConfig {
 	braveApiKey?: unknown;
@@ -154,17 +156,29 @@ export async function searchWithBrave(
 	}
 
 	try {
-		const response = await fetchWithCredentialRedirects(`${apiUrl}?${params.toString()}`, {
-			method: "GET",
-			headers: {
-				"X-Subscription-Token": apiKey,
-				"Accept": "application/json",
-				"Accept-Encoding": "gzip",
-			},
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, ["X-Subscription-Token"]);
+		const response = await braveRateLimit.run(async () => {
+			for (let attempt = 0; attempt < 2; attempt++) {
+				const requestSignal = options.signal
+					? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
+					: AbortSignal.timeout(SEARCH_TIMEOUT_MS);
+				const current = await fetchWithCredentialRedirects(`${apiUrl}?${params.toString()}`, {
+					method: "GET",
+					headers: {
+						"X-Subscription-Token": apiKey,
+						"Accept": "application/json",
+						"Accept-Encoding": "gzip",
+					},
+					signal: requestSignal,
+				}, ["X-Subscription-Token"]);
+
+				braveRateLimit.observe(current.headers);
+				if (current.status !== 429 || attempt === 1) return current;
+				const retryDelay = braveRateLimit.retryDelay(current.headers);
+				if (retryDelay === null) return current;
+				await braveRateLimit.waitForRetry(retryDelay, options.signal);
+			}
+			throw new Error("Brave Search retry loop exited unexpectedly");
+		}, options.signal);
 
 		if (!response.ok) {
 			activityMonitor.logError(activityId, `HTTP ${response.status}`);

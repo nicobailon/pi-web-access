@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- Brave searches now share an adaptive in-process queue that honors the provider's `X-RateLimit-*` and `Retry-After` headers. Concurrent batch queries no longer immediately exceed low-throughput plans, one HTTP 429 response is retried after the advertised short reset, and long quota resets fail fast instead of holding a tool call open.
+
 ## [0.34.0] - 2026-09-30
 
 ### Highlights

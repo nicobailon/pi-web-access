@@ -190,7 +190,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator; fresh-install default), `summary-review` (open curator and auto-generate a summary draft), or `auto-summary` (generate a summary without opening the curator) |
 
-Batch searches run up to three queries concurrently. Provider routing and fallback within each query remain sequential.
+Batch searches run up to three queries concurrently. Provider routing and fallback within each query remain sequential. Brave requests share an in-process queue and honor the rate-limit buckets returned in `X-RateLimit-*`; exhausted short windows delay the next request with a small safety margin, while long quota resets fail fast instead of holding a tool call open. HTTP 429 responses are retried once after the advertised `Retry-After` or rate-limit reset. The queue coordinates one Pi process; separate Pi processes still rely on Brave's 429 response.
 
 ### fetch_content
 
