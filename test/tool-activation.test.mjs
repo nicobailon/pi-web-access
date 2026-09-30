@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const indexUrl = new URL("../index.ts", import.meta.url).href;
+// A model Pi can hand added tools without a transcript checkpoint; `model: null` means no model.
+const nativeAdditions = { api: "anthropic-messages", compat: { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true } };
 
 function run(config = {}, options = {}) {
 	const root = mkdtempSync(join(tmpdir(), "pi-web-access-activation-"));
@@ -14,6 +16,7 @@ function run(config = {}, options = {}) {
 		input: `
 			const { default: initializeExtension } = await import(${JSON.stringify(indexUrl)});
 			const options = ${JSON.stringify(options)};
+			const model = "model" in options ? options.model ?? undefined : ${JSON.stringify(nativeAdditions)};
 			const tools = new Map();
 			const handlers = new Map();
 			let active = ["read", "foreign_tool"];
@@ -33,7 +36,7 @@ function run(config = {}, options = {}) {
 				type: "message", id: "message-" + index, parentId: index ? "message-" + (index - 1) : null,
 				timestamp: new Date(index).toISOString(), message,
 			}));
-			const ctx = { sessionManager: { getBranch: () => entries } };
+			const ctx = { model, sessionManager: { getBranch: () => entries } };
 			for (const event of [].concat(options.event ?? "session_start")) {
 				for (const handler of handlers.get(event) ?? []) await handler(options.eventPayload ?? {}, ctx);
 			}
@@ -96,6 +99,48 @@ test("eager activation config registers no loader and keeps web tools active", (
 	const state = run({ toolActivation: "eager" });
 	assert.deepEqual(state.registered, defaultNames);
 	assert.deepEqual(state.before.filter(name => defaultNames.includes(name)), defaultNames);
+});
+
+test("auto starts with web_enable only on models that take added tools without a transcript checkpoint", () => {
+	const models = [
+		nativeAdditions,
+		{ api: "openai-completions", compat: { supportsMidConvoSystemMessages: true, supportsMidConvoToolAdditions: true } },
+		{ api: "openai-responses", compat: { supportsMidConvoSystemMessages: true, supportsAdditionalTools: true } },
+		{ api: "openai-codex-responses", compat: { supportsMidConvoSystemMessages: true, supportsToolSearch: true } },
+	];
+	for (const model of models) {
+		const state = run({ toolActivation: "auto" }, { model });
+		assert.deepEqual(state.before, ["read", "foreign_tool", "web_enable"], model.api);
+	}
+});
+
+test("auto keeps every web tool active from the start where web_enable would force a checkpoint", () => {
+	const models = [
+		null,
+		{ api: "openai-completions", provider: "deepseek", compat: { supportsMidConvoSystemMessages: true } },
+		{ api: "anthropic-messages", compat: { supportsMidConvoSystemMessages: true } },
+		{ api: "openai-responses", compat: { supportsAdditionalTools: true } },
+		{ api: "google-generative-ai", compat: { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true, supportsAdditionalTools: true } },
+	];
+	for (const model of models) {
+		const state = run({}, { model, event: ["session_start", "before_agent_start"] });
+		assert.ok(state.registered.includes("web_enable"));
+		assert.deepEqual(state.before, ["read", "foreign_tool", ...defaultNames], model?.api ?? "no model");
+	}
+});
+
+test("explicit dynamic activation keeps web_enable on models that would checkpoint", () => {
+	const state = run({ toolActivation: "dynamic" }, { model: null });
+	assert.deepEqual(state.before, ["read", "foreign_tool", "web_enable"]);
+});
+
+test("auto leaves recorded and legacy sessions with the tools they already had", () => {
+	const tool = name => ({ name, description: "", parameters: { type: "object" } });
+	const warm = run({}, { model: null, messages: [{ role: "system", content: "", toolsAdded: [tool("web_enable"), tool("web_search")], timestamp: 1 }] });
+	assert.deepEqual(warm.before, ["read", "foreign_tool", "web_search", "web_enable"]);
+
+	const legacy = run({}, { model: null, messages: [{ role: "user", content: [{ type: "text", text: "old session" }], timestamp: 1 }] });
+	assert.deepEqual(legacy.before, ["read", "foreign_tool", ...defaultNames, "web_enable"]);
 });
 
 test("excluded loader leaves permitted legacy tools active", () => {

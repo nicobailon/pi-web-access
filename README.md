@@ -499,7 +499,7 @@ Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_D
     "fetchContent": { "enabled": true },
     "getSearchContent": { "enabled": true }
   },
-  "toolActivation": "dynamic",
+  "toolActivation": "auto",
   "commands": {
     "websearch": { "enabled": true },
     "curator": { "enabled": true },
@@ -994,11 +994,17 @@ When `false`, a requested Curator session never tries to open a Glimpse window o
 
 ### Tool activation
 
-Pi starts normal sessions with the compact `web_enable` tool. Its guidance lists only the web capabilities enabled in `web-search.json`. The model can call it without a human toggle; the configured search, source-check, fetch, and stored-content tools then appear on the immediately following model request. Disabled tools stay unregistered, and alternate `toolNames` are preserved. Warm and resumed sessions retain their recorded tool selection, so a session recorded without `web_enable` does not gain it after an install or upgrade; start a new session to use web tools there.
+With dynamic activation, Pi starts a session with only the compact `web_enable` tool. Its guidance lists only the web capabilities enabled in `web-search.json`. The model can call it without a human toggle; the configured search, source-check, fetch, and stored-content tools then appear on the immediately following model request. Disabled tools stay unregistered, and alternate `toolNames` are preserved. Warm and resumed sessions retain their recorded tool selection, so a session recorded without `web_enable` does not gain it after an install or upgrade; start a new session to use web tools there.
 
-Enabling the tools mid-conversation can cost a prompt-cache miss. Some providers accept tools added partway through a conversation. For the others, Pi resends the whole conversation on the request after `web_enable`, which can invalidate the cached prefix for that request. Later requests can cache the updated conversation again.
+Enabling the tools mid-conversation can cost a prompt-cache miss. Some models accept tools added partway through a conversation. For the others, Pi resends the whole conversation on the request after `web_enable`, which can invalidate the cached prefix for that request. Later requests can cache the updated conversation again.
 
-Set `"toolActivation": "eager"` in `web-search.json` to skip `web_enable` and keep every enabled web tool available from the first request. This avoids that cache miss and suits models that rarely call `web_enable` on their own. The default is `"dynamic"`. Restart Pi after changing it. Dynamic activation needs Pi 0.86.0 or newer; older Pi logs a warning and keeps every enabled web tool available.
+`"toolActivation"` in `web-search.json` picks the behavior:
+
+- `"auto"` (the default) uses dynamic activation when the session's model accepts added tools, according to Pi's model catalog. Otherwise every enabled web tool is available from the first request, so `web_enable` never causes that cache miss. The choice is made once, from the model selected when a new session starts; switching models later doesn't change it, and warm or resumed sessions keep their recorded tools.
+- `"dynamic"` starts every new session with `web_enable`, even on models where enabling the tools can cause a cache miss.
+- `"eager"` never uses `web_enable` and keeps every enabled web tool available from the first request. It also suits models that rarely call `web_enable` on their own.
+
+Restart Pi after changing it. Dynamic activation needs Pi 0.86.0 or newer; older Pi logs a warning and keeps every enabled web tool available.
 
 ### Shortcuts
 

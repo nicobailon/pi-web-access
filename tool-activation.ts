@@ -27,6 +27,27 @@ function supportsDynamicTools(pi: ExtensionAPI): boolean {
 	return true;
 }
 
+// Mirrors pi-ai's per-API transcript handling: without these flags, Pi resends the whole transcript
+// as a checkpoint when web_enable changes the tools and prompt, which can miss the prompt cache.
+function addsToolsWithoutCheckpoint(model: ExtensionContext["model"]): boolean {
+	const compat = model?.compat as {
+		supportsMidConvoSystemMessages?: boolean;
+		supportsMidConvoToolChanges?: boolean;
+		supportsMidConvoToolAdditions?: boolean;
+		supportsAdditionalTools?: boolean;
+		supportsToolSearch?: boolean;
+	} | undefined;
+	if (!model || compat?.supportsMidConvoSystemMessages !== true) return false;
+	switch (model.api) {
+		case "anthropic-messages": return compat.supportsMidConvoToolChanges === true;
+		case "openai-completions": return compat.supportsMidConvoToolAdditions === true;
+		case "openai-responses":
+		case "openai-codex-responses":
+		case "azure-openai-responses": return compat.supportsAdditionalTools === true || compat.supportsToolSearch === true;
+		default: return false;
+	}
+}
+
 // Undefined when the transcript never declared tool changes.
 function transcriptToolNames(messages: SessionContext["messages"]): Set<string> | undefined {
 	let tools: Set<string> | undefined;
@@ -39,7 +60,7 @@ function transcriptToolNames(messages: SessionContext["messages"]): Set<string> 
 	return tools;
 }
 
-export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray<WebActivationTool>): void {
+export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray<WebActivationTool>, mode: "auto" | "dynamic"): void {
 	if (tools.length === 0) return;
 	if (!supportsDynamicTools(pi)) {
 		console.warn("[pi-web-access] Dynamic tool activation requires Pi 0.86.0 or newer; web tools remain eagerly available.");
@@ -105,9 +126,11 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 		try {
 			const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
 			const declared = transcriptToolNames(messages);
+			// "auto" decides once, for a fresh session; recorded sessions keep their tools.
+			const eager = mode === "auto" && !declared && messages.length === 0 && !addsToolsWithoutCheckpoint(ctx.model);
 			// Sessions from before transcript tool declarations keep every web tool; fresh ones start with none.
-			const recorded = declared ?? new Set(messages.length > 0 ? names : []);
-			loaderSelected = !declared || declared.has(LOADER_NAME);
+			const recorded = declared ?? new Set(messages.length > 0 || eager ? names : []);
+			loaderSelected = !eager && (!declared || declared.has(LOADER_NAME));
 			const others = pi.getActiveTools().filter(name => name !== LOADER_NAME && !names.includes(name));
 			pi.setActiveTools([...new Set([...others, ...names.filter(name => recorded.has(name)), ...(loaderSelected ? [LOADER_NAME] : [])])]);
 		} catch (error) {

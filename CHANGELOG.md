@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- `toolActivation` now defaults to `"auto"`. New sessions start with `web_enable` only on models that accept tools added mid-conversation. On other models, such as DeepSeek, every enabled web tool is available from the first request, so Pi no longer resends the whole conversation to enable them, which could cost a prompt-cache miss. Set `"dynamic"` to always start with `web_enable`, or `"eager"` to never use it. Warm and resumed sessions keep their recorded tools. Thanks to [@tinoy1336](https://github.com/tinoy1336) for [issue #484](https://github.com/nicobailon/pi-web-access/issues/484).
 - The README now explains that `web_enable` can cause a prompt-cache miss on providers that can't add tools mid-conversation, and that `"toolActivation": "eager"` avoids it. Thanks to [@jordi9](https://github.com/jordi9) for [issue #481](https://github.com/nicobailon/pi-web-access/issues/481).
 - When `fetch_content` can't get a page, its list of fallback options now explains how to turn on the keyless Jina Reader fallback. It names only the setting you still need and keeps your current or default provider order. The hint doesn't appear if Jina already ran for that fetch. It also warns that Jina's servers fetch the target URLs. Thanks to [@SuTang-vain](https://github.com/SuTang-vain) for [PR #471](https://github.com/nicobailon/pi-web-access/pull/471).
 

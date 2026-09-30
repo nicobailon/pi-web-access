@@ -1076,9 +1076,9 @@ function handleSessionChange(ctx: ExtensionContext): void {
 export default function (pi: ExtensionAPI) {
 	const initConfig = loadConfigForExtensionInit();
 	const fetchModeConfig = resolveFetchModeConfig(initConfig);
-	const toolActivation = initConfig.toolActivation ?? "dynamic";
-	if (toolActivation !== "dynamic" && toolActivation !== "eager") {
-		throw new Error(`toolActivation in ${WEB_SEARCH_CONFIG_PATH} must be "dynamic" or "eager"`);
+	const toolActivation = initConfig.toolActivation ?? "auto";
+	if (toolActivation !== "auto" && toolActivation !== "dynamic" && toolActivation !== "eager") {
+		throw new Error(`toolActivation in ${WEB_SEARCH_CONFIG_PATH} must be "auto", "dynamic", or "eager"`);
 	}
 	const allowedSearchProviders = initConfig.webSearch?.allowedProviders === undefined ? RESOLVED_SEARCH_PROVIDERS : getAllowedSearchProviders();
 	const allEligibleProviders = allowedSearchProviders.filter(provider => ALL_SEARCH_PROVIDERS.includes(provider));
@@ -3258,12 +3258,12 @@ export default function (pi: ExtensionAPI) {
 	});
 	}
 
-	if (toolActivation === "dynamic") registerWebToolActivation(pi, [
+	if (toolActivation !== "eager") registerWebToolActivation(pi, [
 		...(webSearchEnabled ? [{ name: toolNames.webSearch, capability: "search" as const }] : []),
 		...(sourceCheckEnabled ? [{ name: toolNames.sourceCheck, capability: "source-check" as const }] : []),
 		...(fetchContentEnabled ? [{ name: toolNames.fetchContent, capability: "fetch" as const }] : []),
 		...(getSearchContentEnabled ? [{ name: toolNames.getSearchContent, capability: "stored-content" as const }] : []),
-	]);
+	], toolActivation);
 
 	if (isCommandEnabled(initConfig, "websearch")) pi.registerCommand("websearch", {
 		description: "Open web search curator",

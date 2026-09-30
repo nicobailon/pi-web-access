@@ -40,7 +40,7 @@ const hostRedirectHook = `
 
 function run({ messages = [], hook = "", legacyHost = false } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "pi-web-access-version-"));
-	writeFileSync(join(root, "web-search.json"), JSON.stringify({}), "utf8");
+	writeFileSync(join(root, "web-search.json"), JSON.stringify({ toolActivation: "dynamic" }), "utf8");
 	const child = spawnSync(process.execPath, ["--input-type=module"], {
 		input: `
 			${hook}
