@@ -138,10 +138,17 @@ export class BraveRateLimitCoordinator {
 		return Math.max(advertised ?? 0, bucketDelay ?? 0) + this.safetyMarginMs;
 	}
 
-	async waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+	recordRetryDelay(delayMs: number): void {
 		this.blockFor(delayMs, false);
-		this.assertWaitIsBounded(delayMs);
+	}
+
+	async waitForRecordedCooldown(signal?: AbortSignal): Promise<void> {
 		await this.waitForAvailability(signal);
+	}
+
+	async waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
+		this.recordRetryDelay(delayMs);
+		await this.waitForRecordedCooldown(signal);
 	}
 
 	private blockFor(delayMs: number, addMargin = true): void {

@@ -176,8 +176,9 @@ export async function searchWithBrave(
 				if (current.status !== 429 || attempt === 1) return current;
 				const retryDelay = braveRateLimit.retryDelay(current.headers);
 				if (retryDelay === null) return current;
-				await current.body?.cancel();
-				await braveRateLimit.waitForRetry(retryDelay, searchSignal);
+				braveRateLimit.recordRetryDelay(retryDelay);
+				await current.body?.cancel().catch(() => undefined);
+				await braveRateLimit.waitForRecordedCooldown(searchSignal);
 			}
 			throw new Error("Brave Search retry loop exited unexpectedly");
 		}, searchSignal);

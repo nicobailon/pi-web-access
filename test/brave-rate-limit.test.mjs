@@ -176,6 +176,30 @@ test("a rejected long Retry-After remains recorded for the next queued call", as
 	assert.equal(await limiter.run(async () => "ready"), "ready");
 });
 
+test("Brave records cooldown and retries when cancelling the 429 body rejects", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-brave-cancel-reject-"));
+	const child = runChild(`
+		const calls = [];
+		let cancelCalls = 0;
+		globalThis.fetch = async url => {
+			calls.push({ url: String(url), at: Date.now() });
+			if (calls.length === 1) {
+				const body = new ReadableStream({ cancel() { cancelCalls++; throw new Error("cancel failed"); } });
+				return new Response(body, { status: 429, headers: { "retry-after": "0.01" } });
+			}
+			return new Response(JSON.stringify({ web: { results: [] } }), { status: 200 });
+		};
+		const { searchWithBrave } = await import(${JSON.stringify(braveModuleUrl)});
+		await searchWithBrave("cancel rejection");
+		console.log(JSON.stringify({ calls: calls.length, cancelCalls, elapsed: calls[1].at - calls[0].at }));
+	`, { HOME: home, USERPROFILE: home, BRAVE_API_KEY: "brave-test-key" });
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.calls, 2);
+	assert.equal(output.cancelCalls, 1);
+	assert.ok(output.elapsed >= 90, `retry happened before recorded cooldown: ${output.elapsed}ms`);
+});
+
 test("Brave cancels a retryable 429 body before retrying", async () => {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-brave-retry-"));
 	const child = runChild(`
