@@ -64,6 +64,12 @@ export function parseRetryAfterMs(headers: Headers, now = Date.now()): number | 
 	return Math.max(0, date - now);
 }
 
+// Prepaid plans report a monthly bucket with limit 0: it always reads
+// remaining 0 but never gates requests.
+function exhaustedBuckets(headers: Headers): BraveRateLimitBucket[] {
+	return parseBraveRateLimitHeaders(headers).filter(bucket => bucket.limit > 0 && bucket.remaining === 0);
+}
+
 function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
 	if (signal?.aborted) return Promise.reject(new Error("Aborted"));
 	return new Promise((resolve, reject) => {
@@ -122,7 +128,7 @@ export class BraveRateLimitCoordinator {
 	}
 
 	observe(headers: Headers): void {
-		const exhausted = parseBraveRateLimitHeaders(headers).filter(bucket => bucket.remaining === 0);
+		const exhausted = exhaustedBuckets(headers);
 		if (exhausted.length === 0) return;
 		const resetMs = Math.max(...exhausted.map(bucket => bucket.resetSeconds * 1000));
 		this.blockFor(resetMs);
@@ -130,7 +136,7 @@ export class BraveRateLimitCoordinator {
 
 	retryDelay(headers: Headers): number | null {
 		const advertised = parseRetryAfterMs(headers, this.now());
-		const exhausted = parseBraveRateLimitHeaders(headers).filter(bucket => bucket.remaining === 0);
+		const exhausted = exhaustedBuckets(headers);
 		const bucketDelay = exhausted.length > 0
 			? Math.max(...exhausted.map(bucket => bucket.resetSeconds * 1000))
 			: null;
