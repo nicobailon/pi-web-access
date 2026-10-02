@@ -1175,6 +1175,13 @@ function responseSizeLimitError(maxBytes: number): Error {
 	return new Error(`Response too large (${Math.round(maxBytes / 1024 / 1024)}MB)`);
 }
 
+const BROWSER_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8";
+// Servers that support markdown content negotiation (Cloudflare Markdown for
+// Agents, Mintlify, Vercel) return markdown directly; others see the same
+// relative preferences as BROWSER_ACCEPT. Raw mode keeps BROWSER_ACCEPT so it
+// returns the server's normal representation.
+const MARKDOWN_FIRST_ACCEPT = "text/markdown,text/html;q=0.9,application/xhtml+xml;q=0.9,application/xml;q=0.8,image/avif;q=0.9,image/webp;q=0.9,image/apng;q=0.9,*/*;q=0.7";
+
 async function extractViaHttp(
 	url: string,
 	timeoutMs: number,
@@ -1199,7 +1206,7 @@ async function extractViaHttp(
 			__proxy: options?.proxy,
 			headers: {
 				"User-Agent": "OpenAI File Downloader, XaiImageApiFetch/1.0",
-				"Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+				"Accept": options?.mode === "raw" ? BROWSER_ACCEPT : MARKDOWN_FIRST_ACCEPT,
 				"Accept-Language": "en-US,en;q=0.9",
 				"Cache-Control": "no-cache",
 				"Sec-Fetch-Dest": "document",

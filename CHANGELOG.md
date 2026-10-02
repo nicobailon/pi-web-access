@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - `web_search` can restrict Exa results to a category such as `news` or `research paper` with the new `category` parameter. It works with and without an Exa API key, and other providers ignore it. Thanks to [@SuTang-vain](https://github.com/SuTang-vain) for [PR #493](https://github.com/nicobailon/pi-web-access/pull/493).
+- `fetch_content` asks servers for markdown first, so sites that publish markdown versions of pages (Cloudflare, Mintlify, and other docs hosts) return clean markdown directly. `mode: "raw"` still asks for the server's normal representation. Thanks to [@erwinkramer](https://github.com/erwinkramer) for [issue #495](https://github.com/nicobailon/pi-web-access/issues/495).
 
 ### Fixed
 

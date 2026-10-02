@@ -364,7 +364,7 @@ fetch_content(url)
   → Video file?  Gemini API (Files API) → Gemini Web (if browser cookies enabled)
   → GitHub URL?  Clone repo, return file contents + local path
   → YouTube URL? Gemini Web (if browser cookies enabled) → Gemini API → Perplexity
-  → HTTP fetch → PDF? Datalab → Gemini API → local text extraction, save to temp pi-web-pdf
+  → HTTP fetch (asks for markdown first; raw mode does not) → PDF? Datalab → Gemini API → local text extraction, save to temp pi-web-pdf
                → HTML? Readability (+ declared Link/rel discovery) → RSC parser → Firecrawl → Crawl4AI (each if configured) → third-party hosted fallbacks only when fetchRouting.allowRemoteHostedProviders is enabled
                → Text/JSON/Markdown? Return directly
 ```

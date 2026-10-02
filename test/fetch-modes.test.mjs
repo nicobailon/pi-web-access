@@ -19,6 +19,29 @@ test("local HTTP fetch sends the compatible User-Agent", async () => {
 	assert.equal(userAgent, "OpenAI File Downloader, XaiImageApiFetch/1.0");
 });
 
+test("readable fetch prefers server markdown while raw mode keeps the normal representation", async () => {
+	const accepts = [];
+	const markdown = "# Install Guide\n\nRun `npm install`.\n";
+	globalThis.fetch = async (_url, init) => {
+		const accept = new Headers(init.headers).get("accept");
+		accepts.push(accept);
+		return accept.startsWith("text/markdown")
+			? new Response(markdown, { headers: { "content-type": "text/markdown; charset=utf-8" } })
+			: new Response("<html><body><p>html</p></body></html>", { headers: { "content-type": "text/html" } });
+	};
+
+	const readable = await extractContent("https://docs.example.com/install", undefined, { lookup });
+	assert.equal(readable.error, null);
+	assert.equal(readable.title, "Install Guide");
+	assert.equal(readable.content, markdown);
+
+	const raw = await extractContent("https://docs.example.com/install", undefined, { mode: "raw", lookup });
+	assert.match(raw.content, /<p>html<\/p>/);
+	assert.equal(accepts.length, 2);
+	assert.doesNotMatch(accepts[1], /text\/markdown/);
+	assert.match(accepts[1], /^text\/html/);
+});
+
 test("raw mode returns textual non-2xx bodies but rejects images", async () => {
 	globalThis.fetch = async (url) => String(url).endsWith(".png")
 		? new Response(png, { status: 200, headers: { "content-type": "image/png" } })
