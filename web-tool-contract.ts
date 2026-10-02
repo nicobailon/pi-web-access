@@ -21,6 +21,7 @@ export interface WebSearchCallParams {
 	includeContent?: boolean;
 	recencyFilter?: RecencyFilter;
 	domainFilter?: string[];
+	category?: string;
 	provider?: string | string[];
 	proxy?: string;
 }

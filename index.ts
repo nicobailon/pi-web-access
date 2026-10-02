@@ -1,30 +1,22 @@
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, type KeyId } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import pLimit from "p-limit";
-import type { ImageContent, TextContent } from "@earendil-works/pi-ai/compat";
-import type { ExtractedContent, ExtractOptions } from "./extract.ts";
+import type { ExtractedContent } from "./extract.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
-import { resolveAuthFetchProfile, type AuthFetchProfile } from "./auth-fetch.ts";
-import { findContent, type FindMode } from "./content-find.ts";
 import { answerFromPage } from "./page-query.ts";
 import { rewriteSearchQuery } from "./query-rewrite.ts";
 import { clearCloneCache } from "./github-extract.ts";
-import { ALL_SEARCH_PROVIDERS, assertSearchProviderSelectionAllowed, getAllowedSearchProviders, getConfiguredSearchRouting, normalizeSearchProviderSelection, providerLabel, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
+import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getConfiguredSearchRouting, providerLabel, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
-import type { SearchResult } from "./perplexity.ts";
-import { formatSeconds, getWebSearchConfigDir, getWebSearchConfigPath, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
+import { formatSeconds, getWebSearchConfigDir, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
 import {
 	clearResults,
 	deleteResult,
 	generateId,
 	getAllResults,
-	getResult,
 	restoreFromSession,
 	storeFetchedContentResult,
-	storeResult,
 	type QueryResultData,
-	type StoredSearchData,
 } from "./storage.ts";
 import { activityMonitor, type ActivityEntry } from "./activity.ts";
 import { startCuratorServer, type CuratorSearchEntry, type CuratorServerHandle, type IndexedCuratorSearchEntry } from "./curator-server.ts";
@@ -81,15 +73,36 @@ import { isXcrawlAvailable } from "./xcrawl.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
 import { findModelWithProviderRouting, isModelInScope, splitThinkingSuffix } from "./summary-model-scope.ts";
 import { registerCuratorRunLifecycle, resolveWebSearchWorkflow, type WebSearchWorkflow } from "./curator-run.ts";
-import {
-	buildResearchArtifact,
-	withClaimAssessment,
-	storeResearchArtifact,
-	getResearchArtifact,
-	type RecencyFilter,
-	type ResearchArtifact,
-} from "./source-check.ts";
 import { registerWebToolActivation } from "./tool-activation.ts";
+import {
+	createWebToolCore,
+	DEFAULT_TOOL_NAMES,
+	expandQueryString,
+	fetchAllContent,
+	getMaxInlineContentChars,
+	isToolEnabled,
+	loadConfig,
+	normalizeProviderInput,
+	normalizeQueryList,
+	normalizeRecencyFilter,
+	parseConfigRoot,
+	registeredFetchToolNames,
+	resolveFetchModeConfig,
+	resolveRequestedProvider,
+	runSearchQueries,
+	storedContentSourceNames,
+	stripThumbnails,
+	toCuratorProvider,
+	WEB_SEARCH_CONFIG_PATH,
+	withRegisteredFetchOptions,
+	type FetchedContentData,
+	type FetchMode,
+	type SearchReturnOptions,
+	type SummaryWorkflow,
+	type ToolNames,
+	type WebSearchCallOptions,
+	type WebSearchConfig,
+} from "./web-tool-core.ts";
 
 // Match pi-ai's StringEnum without loading its compat barrel during registration.
 function StringEnum<T extends string[]>(values: T, options?: { description?: string; default?: T[number] }) {
@@ -102,34 +115,6 @@ function StringEnum<T extends string[]>(values: T, options?: { description?: str
 }
 
 type ExtensionTheme = ExtensionContext["ui"]["theme"];
-
-const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
-
-let extractModulePromise: Promise<typeof import("./extract.ts")> | undefined;
-async function fetchAllContent(
-	urls: string[],
-	signal?: AbortSignal,
-	options?: ExtractOptions,
-): Promise<ExtractedContent[]> {
-	const extractModule = await (extractModulePromise ??= import("./extract.ts"));
-	return extractModule.fetchAllContent(urls, signal, options);
-}
-
-function withRegisteredFetchOptions(
-	options: ExtractOptions | undefined,
-	toolNames: ExtractOptions["toolNames"],
-	proxy?: string,
-): ExtractOptions {
-	return {
-		...(options ?? {}),
-		toolNames,
-		...(proxy !== undefined ? { proxy } : {}),
-	};
-}
-
-function isAbortError(err: unknown): boolean {
-	return (err instanceof Error ? err.message : String(err)).toLowerCase().includes("abort");
-}
 
 /** Shared collapsed/expanded renderer for an error/cancel plan produced by
  * buildSearchErrorPlan(). Used by every tool renderResult's error branch so
@@ -149,84 +134,13 @@ function renderSearchErrorPlan(plan: SearchErrorPlan, expanded: boolean, theme: 
 	return box;
 }
 
-interface WebSearchConfig {
-	anysearchApiKey?: unknown;
-	xcrawlApiKey?: unknown;
-	brightdataApiKey?: unknown;
-	brightdataSerpZone?: unknown;
-	kagiApiKey?: unknown;
-	ollamaApiKey?: unknown;
-	serpbaseApiKey?: unknown;
-	serpapiApiKey?: unknown;
-	serperApiKey?: unknown;
-	serplyApiKey?: unknown;
-	youApiKey?: unknown;
-	baizhiApiKey?: unknown;
-	zaiApiKey?: unknown;
-	tinyfishApiKey?: unknown;
-	valyuApiKey?: unknown;
-	xaiApiKey?: unknown;
-	provider?: unknown;
-	searchProvider?: unknown;
-	workflow?: string;
-	curatorTimeoutSeconds?: unknown;
-	autoOpenBrowser?: unknown;
-	curatorRemote?: unknown;
-	summaryModel?: string;
-	summaryGenerationDeadlineMs?: unknown;
-	summaryInstructions?: unknown;
-	maxInlineContentChars?: unknown;
-	fetch?: {
-		defaultMode?: unknown;
-		allowedModes?: unknown;
-	};
-	webSearch?: {
-		enabled?: boolean;
-		allowedProviders?: unknown;
-	};
-	tools?: Partial<Record<keyof ToolNames, { enabled?: boolean }>>;
-	toolActivation?: unknown;
-	commands?: Partial<Record<"websearch" | "curator" | "search" | "google-account", { enabled?: boolean }>>;
-	toolNames?: Partial<ToolNames>;
-	shortcuts?: {
-		curate?: KeyId;
-		activity?: KeyId;
-	};
-	ssrf?: {
-		/** CIDR ranges exempted from the SSRF guard (e.g. fake-IP proxy ranges). */
-		allowRanges?: string[];
-		/** Skip local hostname DNS preflight when an HTTP(S)_PROXY env var applies. */
-		trustEnvProxy?: boolean;
-	};
-}
-
 type CuratorWorkflow = "summary-review";
 export type CuratorProvider = SearchProvider;
-type SummaryWorkflow = "summary-review" | "auto-summary";
 
 interface CuratorBootstrap {
 	availableProviders: ProviderAvailability;
 	defaultProvider: SearchProvider;
 	timeoutSeconds: number;
-}
-
-function parseConfigRoot(raw: string): Record<string, unknown> {
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		throw new Error(`Failed to parse ${WEB_SEARCH_CONFIG_PATH}: ${message}`);
-	}
-	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		throw new Error(`Invalid config in ${WEB_SEARCH_CONFIG_PATH}: expected a JSON object`);
-	}
-	return parsed as Record<string, unknown>;
-}
-
-function loadConfig(): WebSearchConfig {
-	if (!existsSync(WEB_SEARCH_CONFIG_PATH)) return {};
-	return parseConfigRoot(readFileSync(WEB_SEARCH_CONFIG_PATH, "utf-8")) as WebSearchConfig;
 }
 
 function saveConfig(updates: Partial<WebSearchConfig>): void {
@@ -241,56 +155,17 @@ function saveConfig(updates: Partial<WebSearchConfig>): void {
 	writeFileSync(WEB_SEARCH_CONFIG_PATH, JSON.stringify(config, null, 2) + "\n");
 }
 
-type ToolNames = {
-	webSearch: string;
-	sourceCheck: string;
-	fetchContent: string;
-	getSearchContent: string;
-};
-
-const DEFAULT_TOOL_NAMES: ToolNames = {
-	webSearch: "web_search",
-	sourceCheck: "source_check",
-	fetchContent: "fetch_content",
-	getSearchContent: "get_search_content",
-};
 const TOOL_NAME_PATTERN = /^[A-Za-z][A-Za-z0-9_-]{0,63}$/;
 const DEFAULT_SHORTCUTS = { curate: "ctrl+shift+s", activity: "ctrl+shift+w" } satisfies Record<string, KeyId>;
 const DEFAULT_CURATOR_TIMEOUT_SECONDS = 20;
 const DEFAULT_REMOTE_CURATOR_TIMEOUT_SECONDS = 60;
 const MAX_CURATOR_TIMEOUT_SECONDS = 600;
 const MAX_SUMMARY_GENERATION_DEADLINE_MS = 600_000;
-const SEARCH_QUERY_CONCURRENCY = 3;
-const FETCH_MODES = ["readable", "raw", "answer"] as const;
-type FetchMode = typeof FETCH_MODES[number];
 const FETCH_MODE_DESCRIPTIONS: Record<FetchMode, string> = {
 	readable: "extract readable content as markdown",
 	raw: "return the exact textual body using direct HTTP only",
 	answer: "answer a prompt using only fetched content",
 };
-
-function resolveFetchModeConfig(config: WebSearchConfig): { defaultMode: FetchMode; allowedModes: FetchMode[] } {
-	const configuredModes = config.fetch?.allowedModes ?? FETCH_MODES;
-	if (!Array.isArray(configuredModes) || configuredModes.length === 0 || configuredModes.some(mode => !FETCH_MODES.includes(mode as FetchMode))) {
-		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty array containing only "readable", "raw", or "answer"`);
-	}
-	const allowedModes = configuredModes as FetchMode[];
-	const duplicateMode = allowedModes.find((mode, index) => allowedModes.indexOf(mode) !== index);
-	if (duplicateMode) {
-		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must not contain duplicates: "${duplicateMode}"`);
-	}
-	const defaultMode = config.fetch?.defaultMode ?? "readable";
-	if (!allowedModes.includes(defaultMode as FetchMode)) {
-		throw new Error(`fetch.defaultMode in ${WEB_SEARCH_CONFIG_PATH} must be one of fetch.allowedModes`);
-	}
-	return { defaultMode: defaultMode as FetchMode, allowedModes };
-}
-
-// Limit each batch independently so separate Pi tool calls can still run in parallel.
-function runSearchQueries<T>(queries: string[], run: (query: string, index: number) => Promise<T>): Promise<T[]> {
-	const limit = pLimit(SEARCH_QUERY_CONCURRENCY);
-	return Promise.all(queries.map((query, index) => limit(() => run(query, index))));
-}
 
 // Keep primary query indexes stable for curator slots, then interleave additional
 // provider entries deterministically instead of assigning by completion order.
@@ -309,21 +184,8 @@ function searchProviderSchema(description: string, allowedProviders: readonly Re
 	], { description });
 }
 
-function isToolEnabled(config: WebSearchConfig, key: keyof ToolNames): boolean {
-	const override = config.tools?.[key]?.enabled;
-	if (typeof override === "boolean") return override;
-	return key !== "webSearch" && key !== "sourceCheck" || config.webSearch?.enabled !== false;
-}
-
 function isCommandEnabled(config: WebSearchConfig, name: "websearch" | "curator" | "search" | "google-account"): boolean {
 	return config.commands?.[name]?.enabled !== false;
-}
-
-function joinToolNames(names: string[]): string {
-	if (names.length === 0) return "stored content";
-	if (names.length === 1) return names[0];
-	if (names.length === 2) return `${names[0]} or ${names[1]}`;
-	return `${names.slice(0, -1).join(", ")}, or ${names[names.length - 1]}`;
 }
 
 function resolveToolNames(config: WebSearchConfig): ToolNames {
@@ -364,38 +226,10 @@ function loadConfigForExtensionInit(): WebSearchConfig {
 	}
 }
 
-function normalizeProviderInput(value: unknown, label = "provider"): SearchProviderSelection | undefined {
-	if (value === undefined) return undefined;
-	return normalizeSearchProviderSelection(value, label);
-}
-
-function resolveRequestedProvider(requested: unknown): SearchProviderSelection {
-	const normalizedRequested = normalizeProviderInput(requested);
-	if (normalizedRequested && normalizedRequested !== "auto") {
-		assertSearchProviderSelectionAllowed(normalizedRequested, "Requested provider");
-		return normalizedRequested;
-	}
-	const config = loadConfig();
-	const provider = normalizeProviderInput(config.searchProvider ?? config.provider, `provider in ${WEB_SEARCH_CONFIG_PATH}`) ?? "auto";
-	assertSearchProviderSelectionAllowed(provider, `configured provider in ${WEB_SEARCH_CONFIG_PATH}`);
-	return provider;
-}
-
-function toCuratorProvider(provider: SearchProviderSelection): SearchProvider | undefined {
-	if (Array.isArray(provider)) return "all";
-	return provider === "auto" ? undefined : provider;
-}
-
 function resolveCuratorSearchProvider(requested: unknown, current: SearchProviderSelection): SearchProviderSelection {
 	const normalized = normalizeProviderInput(requested);
 	if (!normalized || normalized === "auto") return current;
 	return normalized === "all" && Array.isArray(current) ? current : normalized;
-}
-
-function normalizeRecencyFilter(value: unknown): RecencyFilter | undefined {
-	return value === "day" || value === "week" || value === "month" || value === "year"
-		? value
-		: undefined;
 }
 
 function normalizeCuratorTimeoutSeconds(value: unknown): number | undefined {
@@ -403,43 +237,6 @@ function normalizeCuratorTimeoutSeconds(value: unknown): number | undefined {
 	const normalized = Math.floor(value);
 	if (normalized < 1) return undefined;
 	return Math.min(normalized, MAX_CURATOR_TIMEOUT_SECONDS);
-}
-
-function normalizeQueryList(queryList: unknown[]): string[] {
-	const normalized: string[] = [];
-	for (const query of queryList) {
-		if (typeof query !== "string") continue;
-		const trimmed = query.trim();
-		if (trimmed.length > 0) normalized.push(trimmed);
-	}
-	return normalized;
-}
-
-// Some local models serialize a multi-query list into the single-string `query`
-// field as a JSON array (query: "[\"a\", \"b\"]") instead of using the
-// `queries` parameter. Forwarding that raw string verbatim makes every backend
-// search for the literal array text and return zero results, with no signal to
-// the model that its argument shape was wrong. Expand a string that parses as a
-// JSON array of strings so each element is searched independently.
-function expandQueryString(query: unknown): string[] {
-	if (typeof query !== "string") return [];
-	const trimmed = query.trim();
-	if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-		try {
-			const parsed: unknown = JSON.parse(trimmed);
-			// Only expand an unambiguously string-only array. Mixed or non-string
-			// arrays are kept as the literal query so we never silently drop
-			// members or collapse them into an empty search.
-			if (Array.isArray(parsed) && parsed.every((entry): entry is string => typeof entry === "string")) {
-				return parsed
-					.map((entry) => entry.trim())
-					.filter((entry) => entry.length > 0);
-			}
-		} catch {
-			// Not JSON — treat as a literal query string.
-		}
-	}
-	return [query];
 }
 
 function getCuratorTimeoutSeconds(): number {
@@ -635,194 +432,6 @@ interface PendingCurate {
 	cancel: (reason?: "user" | "stale") => void;
 	browserPromise?: Promise<void>;
 	browserOpenError?: string;
-}
-
-
-const DEFAULT_MAX_INLINE_CONTENT_CHARS = 30_000;
-const MIN_INLINE_CONTENT_CHARS = 1_000;
-const MAX_INLINE_CONTENT_CHARS = 200_000;
-
-function getMaxInlineContentChars(config = loadConfig()): number {
-	const value = config.maxInlineContentChars;
-	if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value < MIN_INLINE_CONTENT_CHARS) {
-		return DEFAULT_MAX_INLINE_CONTENT_CHARS;
-	}
-	return Math.min(value, MAX_INLINE_CONTENT_CHARS);
-}
-
-function stripThumbnails(results: ExtractedContent[]): ExtractedContent[] {
-	return results.map(({ thumbnail, frames, ...rest }) => rest);
-}
-
-function storeFetchResult(pi: { appendEntry(type: string, data: unknown): void }, responseId: string, data: StoredSearchData & { type: "fetch"; urls: ExtractedContent[] }, authProfile?: AuthFetchProfile): boolean {
-	if (authProfile?.cache === "off") return false;
-	pi.appendEntry("web-search-results", storeFetchedContentResult(responseId, data));
-	return true;
-}
-
-function initialContentSlice(content: string, maxChars: number): {
-	text: string;
-	endOffset: number;
-	totalBytes: number;
-	totalLines: number;
-	shownBytes: number;
-	shownLines: number;
-} {
-	let endOffset = Math.min(content.length, maxChars);
-	if (endOffset < content.length) {
-		const lineBreak = content.lastIndexOf("\n", endOffset);
-		if (lineBreak >= Math.floor(maxChars * 0.8)) endOffset = lineBreak + 1;
-	}
-	const text = content.slice(0, endOffset);
-	return {
-		text,
-		endOffset,
-		totalBytes: Buffer.byteLength(content),
-		totalLines: content.length === 0 ? 0 : content.split("\n").length,
-		shownBytes: Buffer.byteLength(text),
-		shownLines: text.length === 0 ? 0 : text.split("\n").length,
-	};
-}
-
-function normalizeFindQueries(value: string | string[]): string[] {
-	const queries = (Array.isArray(value) ? value : [value]).map(query => query.trim()).filter(Boolean);
-	if (queries.length === 0) throw new Error("findText must contain at least one non-empty string");
-	return queries;
-}
-
-interface GetSearchContentParams {
-	responseId: string;
-	query?: string;
-	queryIndex?: number;
-	url?: string;
-	urlIndex?: number;
-	offset?: number;
-	limit?: number;
-	findText?: string | string[];
-	findMode?: FindMode;
-}
-
-type RawGetSearchContentParams = Omit<GetSearchContentParams, "findMode"> & { findMode?: unknown };
-
-function normalizeFindMode(value: unknown): FindMode | undefined {
-	if (value === undefined) return undefined;
-	if (value === "exact" || value === "case-insensitive" || value === "fuzzy") return value;
-	throw new Error('findMode must be "exact", "case-insensitive", or "fuzzy"');
-}
-
-function normalizeGetSearchContentParams(params: RawGetSearchContentParams): GetSearchContentParams {
-	const normalized: GetSearchContentParams = { ...params, findMode: normalizeFindMode(params.findMode) };
-
-	if (normalized.query?.trim() === "") delete normalized.query;
-	if (normalized.url?.trim() === "") delete normalized.url;
-
-	if (normalized.findText !== undefined) {
-		delete normalized.offset;
-		delete normalized.limit;
-	}
-
-	return normalized;
-}
-
-function formatInputValue(value: unknown): string {
-	if (typeof value === "string") return JSON.stringify(value);
-	if (typeof value === "number") return Number.isNaN(value) ? "NaN" : String(value);
-	try {
-		const serialized = JSON.stringify(value);
-		return serialized === undefined ? String(value) : serialized;
-	} catch {
-		return String(value);
-	}
-}
-
-function formatSearchSummary(results: SearchResult[], answer: string): string {
-	if (results.length === 0) {
-		return answer ? `${answer}\n\n---\n\n**Sources:**\nNo sources returned.` : "No results found.";
-	}
-	let output = answer ? `${answer}\n\n---\n\n**Sources:**\n` : "";
-	output += results.map((r, i) => `${i + 1}. ${r.title}\n   ${r.url}`).join("\n\n");
-	return output;
-}
-
-function formatSourceCheckResult(artifact: ResearchArtifact, getSearchContentTool: string | null = DEFAULT_TOOL_NAMES.getSearchContent): string {
-	const assessment = artifact.claims?.[0];
-	const lines = [`# Source check: ${artifact.query}`, ""];
-	if (assessment) {
-		lines.push(`**Status:** ${assessment.status} (confidence ${assessment.confidence.toFixed(2)})`);
-		lines.push(`**Rationale:** ${assessment.rationale}`);
-		if (assessment.supporting_passages.length > 0) lines.push(`**Supporting passages:** ${assessment.supporting_passages.join(", ")}`);
-		if (assessment.contradicting_passages.length > 0) lines.push(`**Contradicting passages:** ${assessment.contradicting_passages.join(", ")}`);
-		lines.push("");
-	}
-	if (artifact.sources.length > 0) {
-		lines.push("## Sources");
-		for (const source of artifact.sources) lines.push(`${source.rank}. [${source.quality}] ${source.title}\n   ${source.url}`);
-		lines.push("");
-	}
-	if (artifact.errors?.length) lines.push(`Search errors: ${artifact.errors.map((entry) => `${entry.query}: ${entry.error}`).join("; ")}`);
-	lines.push(getSearchContentTool
-		? `Artifact responseId: ${artifact.id} (retrievable via ${getSearchContentTool}).`
-		: `Artifact responseId: ${artifact.id}. Content retrieval is not registered.`);
-	return lines.join("\n");
-}
-
-function duplicateQuerySet(results: QueryResultData[]): Set<string> {
-	const counts = new Map<string, number>();
-	for (const result of results) {
-		counts.set(result.query, (counts.get(result.query) ?? 0) + 1);
-	}
-	const duplicates = new Set<string>();
-	for (const [query, count] of counts) {
-		if (count > 1) duplicates.add(query);
-	}
-	return duplicates;
-}
-
-function formatQueryHeader(query: string, provider: string | undefined, duplicateQueries: Set<string>): string {
-	const suffix = duplicateQueries.has(query) && provider ? ` (${provider})` : "";
-	return `## Query: "${query}"${suffix}\n\n`;
-}
-
-function hasFullInlineCoverage(urls: string[], inlineContent: ExtractedContent[] | undefined): boolean {
-	if (!inlineContent || inlineContent.length === 0) return false;
-	const coveredUrls = new Set(inlineContent.map(c => c.url));
-	return urls.every(url => coveredUrls.has(url));
-}
-
-function formatFullResults(queryData: QueryResultData): string {
-	let output = `## Results for: "${queryData.query}"\n\n`;
-	const providers = queryData.providers ?? (queryData.provider ? [queryData.provider] : []);
-	if (providers.length > 0) output += `**Provider${providers.length === 1 ? "" : "s"}:** ${providers.join(", ")}\n\n`;
-	if (queryData.answer) {
-		output += `${queryData.answer}\n\n---\n\n`;
-	}
-	for (const r of queryData.results) {
-		output += `### ${r.title}\n${r.url}${r.snippet ? `\n\n${r.snippet}` : ""}\n\n`;
-	}
-	return output;
-}
-
-function boundSearchPresentation(
-	text: string,
-	guidance: string,
-	truncationGuidance: string,
-	maxChars: number,
-): { text: string; truncated: boolean; originalChars: number; returnedChars: number; omittedChars: number } {
-	const fullText = `${text}${guidance}`;
-	if (fullText.length <= maxChars) {
-		return { text: fullText, truncated: false, originalChars: text.length, returnedChars: text.length, omittedChars: 0 };
-	}
-	const marker = `\n\n---\n[Output truncated.]${truncationGuidance}`;
-	// Reserve marker space so the complete model-visible response never exceeds the configured ceiling.
-	const prefixLength = maxChars - marker.length;
-	const bounded = `${text.slice(0, prefixLength)}${marker}`;
-	return {
-		text: bounded,
-		truncated: true,
-		originalChars: text.length,
-		returnedChars: prefixLength,
-		omittedChars: text.length - prefixLength,
-	};
 }
 
 function abortPendingFetches(): void {
@@ -1100,17 +709,21 @@ export default function (pi: ExtensionAPI) {
 	const sourceCheckEnabled = isToolEnabled(initConfig, "sourceCheck");
 	const fetchContentEnabled = isToolEnabled(initConfig, "fetchContent");
 	const getSearchContentEnabled = isToolEnabled(initConfig, "getSearchContent");
+	const coreSettings = {
+		toolNames,
+		enabledTools: {
+			webSearch: webSearchEnabled,
+			sourceCheck: sourceCheckEnabled,
+			fetchContent: fetchContentEnabled,
+			getSearchContent: getSearchContentEnabled,
+		},
+		maxInlineContentChars: getMaxInlineContentChars(initConfig),
+		fetchModes: fetchModeConfig,
+	};
 	// Names as registered this session, so fetch failure guidance never points
 	// at tools that are disabled or were renamed after init.
-	const registeredToolNames = {
-		...(webSearchEnabled ? { webSearch: toolNames.webSearch } : {}),
-		...(fetchContentEnabled ? { fetchContent: toolNames.fetchContent } : {}),
-	};
-	const storedContentSources = joinToolNames([
-		...(webSearchEnabled ? [toolNames.webSearch] : []),
-		...(sourceCheckEnabled ? [toolNames.sourceCheck] : []),
-		...(fetchContentEnabled ? [toolNames.fetchContent] : []),
-	]);
+	const registeredToolNames = registeredFetchToolNames(coreSettings);
+	const storedContentSources = storedContentSourceNames(coreSettings);
 	const searchQueryDescription = webSearchEnabled
 		? `Get content for this query (${toolNames.webSearch})`
 		: "Get content for a stored search query";
@@ -1137,7 +750,7 @@ export default function (pi: ExtensionAPI) {
 					type: "fetch",
 					timestamp: Date.now(),
 					urls: stripThumbnails(fetched),
-				} satisfies StoredSearchData & { type: "fetch"; urls: ExtractedContent[] };
+				} satisfies FetchedContentData;
 				pi.appendEntry("web-search-results", storeFetchedContentResult(fetchId, data));
 				const ok = fetched.filter(f => !f.error).length;
 				const availability = ok === fetched.length
@@ -1173,29 +786,18 @@ export default function (pi: ExtensionAPI) {
 		return fetchId;
 	}
 
-	function storeAndPublishSearch(results: QueryResultData[]): string {
-		const id = generateId();
-		const data: StoredSearchData = {
-			id, type: "search", timestamp: Date.now(), queries: results,
-		};
-		storeResult(id, data);
-		pi.appendEntry("web-search-results", data);
-		return id;
-	}
-
-	interface SearchReturnOptions {
-		queryList: string[];
-		results: QueryResultData[];
-		urls: string[];
-		includeContent: boolean;
-		inlineContent?: ExtractedContent[];
-		curated?: boolean;
-		curatedFrom?: number;
-		workflow?: SummaryWorkflow;
-		approvedSummary?: string;
-		summaryMeta?: SummaryMeta;
-		proxy?: string;
-	}
+	const core = createWebToolCore({
+		settings: coreSettings,
+		storeFetchedContent(id, data) {
+			pi.appendEntry("web-search-results", storeFetchedContentResult(id, data));
+		},
+		publishResult(data) {
+			pi.appendEntry("web-search-results", data);
+		},
+		startBackgroundFetch,
+		answerFromPage: (request, ctx, signal) => answerFromPage(request, ctx!, signal),
+	});
+	const buildSearchReturn = core.buildSearchReturn;
 
 	function normalizeSummaryMeta(meta: SummaryMeta | undefined, summaryText: string): SummaryMeta {
 		const normalizedText = summaryText.trim();
@@ -1395,127 +997,6 @@ export default function (pi: ExtensionAPI) {
 		return {
 			approvedSummary: deterministic.summary,
 			summaryMeta: deterministic.meta,
-		};
-	}
-
-	function buildSearchReturn(opts: SearchReturnOptions): AgentToolResult<Record<string, unknown>> {
-		const sc = opts.results.filter(r => !r.error).length;
-		const tr = opts.results.reduce((sum, r) => sum + r.results.length, 0);
-
-		const hasApprovedSummary = typeof opts.approvedSummary === "string" && opts.approvedSummary.trim().length > 0;
-		const maxInlineContentChars = getMaxInlineContentChars(initConfig);
-		let output = "";
-		if (hasApprovedSummary) {
-			output = opts.approvedSummary!.trim();
-		} else {
-			if (opts.curated) {
-				output += "[These results were manually curated by the user in the browser. Use them as-is — do not re-search or discard.]\n\n";
-			}
-			const providerNames = opts.results.map(result => {
-				const providers = result.providers ?? (result.provider ? [result.provider] : []);
-				return providers.join(", ") || "unknown";
-			});
-			output += opts.results.length === 1
-				? `**Provider:** ${providerNames[0]}\n\n`
-				: `**Providers used:** ${providerNames.map((name, index) => `Query ${index + 1}: ${name}`).join("; ")}\n\n`;
-			const duplicateQueries = opts.curated ? duplicateQuerySet(opts.results) : new Set<string>();
-			for (const { query, answer, results, error, provider } of opts.results) {
-				if (opts.queryList.length > 1) {
-					output += opts.curated
-						? formatQueryHeader(query, provider, duplicateQueries)
-						: `## Query: "${query}"\n\n`;
-				}
-				if (error) output += `Error: ${error}\n\n`;
-				else output += formatSearchSummary(results, answer) + "\n\n";
-			}
-		}
-
-		const hasInlineReady = hasFullInlineCoverage(opts.urls, opts.inlineContent);
-		let fetchId: string | null = null;
-		if (hasInlineReady && opts.inlineContent) {
-			fetchId = generateId();
-			const data = {
-				id: fetchId,
-				type: "fetch",
-				timestamp: Date.now(),
-				urls: opts.inlineContent,
-			} satisfies StoredSearchData & { type: "fetch"; urls: ExtractedContent[] };
-			pi.appendEntry("web-search-results", storeFetchedContentResult(fetchId, data));
-		} else if (opts.includeContent) {
-			fetchId = startBackgroundFetch(opts.urls, opts.proxy);
-		}
-
-		const searchId = storeAndPublishSearch(opts.results);
-		const isBackgroundFetch = fetchId !== null && !hasInlineReady;
-		const unboundedPresentation = output.trim();
-		const buildGuidance = (forTruncation: boolean): string => {
-			let value = "";
-			if (hasInlineReady && opts.inlineContent && fetchId) {
-				value += `\n---\nFull content for ${opts.inlineContent.length} sources is ready as responseId "${fetchId}". `;
-				value += getSearchContentEnabled
-					? `Use ${toolNames.getSearchContent}({ responseId: "${fetchId}", urlIndex: 0, offset: 0, limit: ${maxInlineContentChars} }) to retrieve the first bounded page.`
-					: forTruncation ? `Enable ${toolNames.getSearchContent} to retrieve the full stored content.` : "";
-			} else if (isBackgroundFetch && fetchId) {
-				value += `\n---\nContent fetching in background as responseId "${fetchId}". Will notify when ready.`;
-			}
-			if (getSearchContentEnabled || forTruncation) {
-				value += `\n---\nFull search results are stored as responseId "${searchId}". `;
-				value += getSearchContentEnabled
-					? `Use ${toolNames.getSearchContent}({ responseId: "${searchId}", queryIndex: 0, offset: 0, limit: ${maxInlineContentChars} }) to retrieve the first bounded page${opts.results.length > 1 ? `; repeat with queryIndex 1 through ${opts.results.length - 1}` : ""}.`
-					: `Enable ${toolNames.getSearchContent} to retrieve the full stored results.`;
-			}
-			return value;
-		};
-		const presentation = hasApprovedSummary
-			? { text: unboundedPresentation, truncated: false, originalChars: unboundedPresentation.length, returnedChars: unboundedPresentation.length, omittedChars: 0 }
-			: boundSearchPresentation(unboundedPresentation, buildGuidance(false), buildGuidance(true), maxInlineContentChars);
-
-		return {
-			content: [{ type: "text", text: presentation.text }],
-			details: {
-				queries: opts.queryList,
-				queryCount: opts.queryList.length,
-				successfulQueries: sc,
-				totalResults: tr,
-				includeContent: opts.includeContent,
-				fetchId,
-				fetchUrls: isBackgroundFetch ? opts.urls : undefined,
-				searchId,
-				queryProviders: opts.results.map(result => ({
-					query: result.query,
-					providers: result.providers ?? (result.provider ? [result.provider] : []),
-				})),
-				truncated: presentation.truncated,
-				originalChars: presentation.originalChars,
-				returnedChars: presentation.returnedChars,
-				omittedChars: presentation.omittedChars,
-				...(opts.curated ? {
-					curated: true,
-					curatedFrom: opts.curatedFrom,
-					curatedQueries: opts.results.map(r => ({
-						query: r.query,
-						provider: r.provider || null,
-						answer: r.answer || null,
-						sources: r.results.map(s => ({ title: s.title, url: s.url })),
-						error: r.error,
-					})),
-				} : {}),
-				...((opts.workflow && hasApprovedSummary)
-					? {
-						summary: {
-							text: opts.approvedSummary!.trim(),
-							workflow: opts.workflow,
-							model: opts.summaryMeta?.model ?? null,
-							durationMs: opts.summaryMeta?.durationMs ?? 0,
-							tokenEstimate: opts.summaryMeta?.tokenEstimate ?? 0,
-							fallbackUsed: opts.summaryMeta?.fallbackUsed === true,
-							fallbackReason: opts.summaryMeta?.fallbackReason,
-							phase: opts.summaryMeta?.phase,
-							edited: opts.summaryMeta?.edited === true,
-						},
-					}
-					: {}),
-			},
 		};
 	}
 
@@ -2086,103 +1567,40 @@ export default function (pi: ExtensionAPI) {
 				return promise;
 			}
 
-			let completedSearches = 0;
-			const allUrls: string[] = [];
-			const allInlineContent: ExtractedContent[] = [];
-			const resolvedProvider = resolveRequestedProvider(params.provider);
-
-			const queryResponses = await runSearchQueries(queryList, async (query) => {
-				signal?.throwIfAborted();
-				onUpdate?.({
-					content: [{ type: "text", text: `Searching "${query}" (${completedSearches}/${queryList.length} complete)...` }],
-					details: { phase: "search", progress: completedSearches / queryList.length, currentQuery: query },
-				});
-
-				try {
-					const { answer, results, inlineContent, provider, providerResponses } = await search(query, {
-						provider: resolvedProvider,
-						numResults: params.numResults,
-						recencyFilter,
-						domainFilter: params.domainFilter,
-						includeContent: params.includeContent,
-						category: params.category,
-						signal,
-						extensionContext: ctx,
-					});
-
-					const providers = providerResponses?.map(response => response.provider) ?? [provider];
-					return { result: { query, answer, results, error: null, provider, providers } satisfies QueryResultData, inlineContent };
-				} catch (err) {
-					if (signal?.aborted || isAbortError(err)) throw err;
-					const message = err instanceof Error ? err.message : String(err);
-					const requestedProvider = toCuratorProvider(resolvedProvider);
-					return {
-						result: { query, answer: "", results: [], error: message, provider: requestedProvider } satisfies QueryResultData,
-						inlineContent: undefined,
-					};
-				} finally {
-					completedSearches++;
-					if (!signal?.aborted) {
-						onUpdate?.({
-							content: [{ type: "text", text: `Completed ${completedSearches}/${queryList.length} searches.` }],
-							details: { phase: "search", progress: completedSearches / queryList.length, currentQuery: query },
-						});
-					}
-				}
-			});
-			const searchResults = queryResponses.map(response => response.result);
-			for (const response of queryResponses) {
-				for (const result of response.result.results) {
-					if (!allUrls.includes(result.url)) allUrls.push(result.url);
-				}
-				if (response.inlineContent) allInlineContent.push(...response.inlineContent);
-			}
-
-			let approvedSummary: string | undefined;
-			let summaryMeta: SummaryMeta | undefined;
+			let summarize: WebSearchCallOptions["summarize"];
 			if (workflow === "auto-summary") {
-				if (!ctx) {
-					return {
-						content: [{ type: "text", text: "Error: Auto-summary requires an active extension context." }],
-						details: { error: "Missing extension context" },
+				summarize = async (searchResults) => {
+					if (!ctx) {
+						return {
+							content: [{ type: "text", text: "Error: Auto-summary requires an active extension context." }],
+							details: { error: "Missing extension context" },
+						};
+					}
+					onUpdate?.({
+						content: [{ type: "text", text: "Generating summary..." }],
+						details: { phase: "generating-summary", progress: 1 },
+					});
+					const summaryContext: SummaryGenerationContext = {
+						model: ctx.model,
+						modelRegistry: ctx.modelRegistry,
+						sessionManager: ctx.sessionManager,
+						scopedModels: ctx.scopedModels,
 					};
-				}
-				onUpdate?.({
-					content: [{ type: "text", text: "Generating summary..." }],
-					details: { phase: "generating-summary", progress: 1 },
-				});
-				const summaryContext: SummaryGenerationContext = {
-					model: ctx.model,
-					modelRegistry: ctx.modelRegistry,
-					sessionManager: ctx.sessionManager,
-					scopedModels: ctx.scopedModels,
+					const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
+					const generated = await generateSummaryDraft(
+						searchResults,
+						summaryContext,
+						signal,
+						summaryModelChoices.defaultSummaryModel ?? undefined,
+						undefined,
+						undefined,
+						getSummaryGenerationDeadlineMs(),
+						getSummaryInstructions(),
+					);
+					return { approvedSummary: generated.summary, summaryMeta: generated.meta };
 				};
-				const summaryModelChoices = await loadSummaryModelChoices(summaryContext);
-				const generated = await generateSummaryDraft(
-					searchResults,
-					summaryContext,
-					signal,
-					summaryModelChoices.defaultSummaryModel ?? undefined,
-					undefined,
-					undefined,
-					getSummaryGenerationDeadlineMs(),
-					getSummaryInstructions(),
-				);
-				approvedSummary = generated.summary;
-				summaryMeta = generated.meta;
 			}
-
-			return buildSearchReturn({
-				queryList,
-				results: searchResults,
-				urls: allUrls,
-				includeContent: params.includeContent ?? false,
-				inlineContent: allInlineContent.length > 0 ? allInlineContent : undefined,
-				workflow: workflow === "auto-summary" ? "auto-summary" : undefined,
-				approvedSummary,
-				summaryMeta,
-				proxy: typeof params.proxy === "string" ? params.proxy : undefined,
-			});
+			return core.webSearch(params, signal, { extensionContext: ctx, onUpdate, summarize });
 			});
 		},
 
@@ -2458,84 +1876,7 @@ export default function (pi: ExtensionAPI) {
 			})),
 		}),
 		async execute(_callId, params, signal, _onUpdate, ctx) {
-			return runWithProxy(typeof params.proxy === "string" ? params.proxy : undefined, async () => {
-				const claim = typeof params.claim === "string" ? params.claim.trim() : "";
-				if (!claim) {
-					return { content: [{ type: "text", text: "Error: 'claim' is required." }], details: { error: "Missing claim" } };
-				}
-
-				const requestedQueries = Array.isArray(params.queries)
-					? params.queries.filter((query): query is string => typeof query === "string").map((query) => query.trim()).filter(Boolean)
-					: [];
-				const queries = (requestedQueries.length > 0 ? requestedQueries : [claim]).slice(0, 8);
-				const numResults = typeof params.numResults === "number" && Number.isFinite(params.numResults)
-					? Math.min(20, Math.max(1, Math.floor(params.numResults)))
-					: 5;
-				const domainFilter = Array.isArray(params.domainFilter)
-					? params.domainFilter.filter((domain): domain is string => typeof domain === "string")
-					: undefined;
-				const recencyFilter = normalizeRecencyFilter(params.recencyFilter);
-				const resultsByUrl = new Map<string, SearchResult>();
-				const summaries: string[] = [];
-				const errors: Array<{ query: string; error: string }> = [];
-				let provider: string | undefined;
-
-				for (const query of queries) {
-					if (signal?.aborted) break;
-					try {
-						const response = await search(query, {
-							provider: resolveRequestedProvider(params.provider),
-							numResults,
-							recencyFilter,
-							domainFilter,
-							signal,
-							extensionContext: ctx,
-						});
-						if (signal?.aborted) break;
-						provider ??= response.provider;
-						if (response.answer) summaries.push(`${query}: ${response.answer}`);
-						for (const result of response.results) {
-							if (!resultsByUrl.has(result.url)) resultsByUrl.set(result.url, result);
-						}
-					} catch (err) {
-						if (signal?.aborted || isAbortError(err)) break;
-						errors.push({ query, error: err instanceof Error ? err.message : String(err) });
-					}
-				}
-
-				const results = [...resultsByUrl.values()].slice(0, 20).map((result, index) => ({ ...result, rank: index + 1 }));
-				let fetched: ExtractedContent[] = [];
-				if (params.fetchContent && results.length > 0) {
-					const urls = results.slice(0, 5).map((result) => result.url);
-					try {
-						fetched = await fetchAllContent(urls, signal, withRegisteredFetchOptions(undefined, registeredToolNames, typeof params.proxy === "string" ? params.proxy : undefined));
-					} catch (err) {
-						if (signal?.aborted || isAbortError(err)) throw err;
-						fetched = urls.map((url) => ({ url, title: "", content: "", error: err instanceof Error ? err.message : String(err) }));
-					}
-				}
-				const artifact = withClaimAssessment(buildResearchArtifact({
-					query: claim,
-					provider,
-					summary: summaries.length > 0 ? summaries.join("\n\n") : undefined,
-					results,
-					fetched,
-					recency: recencyFilter,
-					domainFilter,
-				}), [claim]);
-				if (errors.length > 0) artifact.errors = errors;
-				storeResearchArtifact(artifact);
-				pi.appendEntry("web-search-results", {
-					id: artifact.id,
-					type: "research",
-					timestamp: artifact.timestamp,
-					artifact,
-				});
-				return {
-					content: [{ type: "text", text: formatSourceCheckResult(artifact, getSearchContentEnabled ? toolNames.getSearchContent : null) }],
-					details: { responseId: artifact.id, artifact, sourceCount: artifact.sources.length, passageCount: artifact.passages.length },
-				};
-			});
+			return core.sourceCheck(params, signal, { extensionContext: ctx });
 		},
 	});
 
@@ -2584,175 +1925,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<Record<string, unknown>>> {
-			let normalized: ReturnType<typeof normalizeFetchContentParams>;
-			try {
-				normalized = normalizeFetchContentParams(params);
-			} catch (err) {
-				const error = err instanceof Error ? err.message : String(err);
-				return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
-			}
-			const { urlList, options } = normalized;
-			const mode = options.mode ?? fetchModeConfig.defaultMode;
-			if (!fetchModeConfig.allowedModes.includes(mode)) {
-				const error = `Fetch mode "${mode}" is disabled by fetch.allowedModes.`;
-				return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
-			}
-			return runWithProxy(options.proxy, async () => {
-				if (mode === "answer" && !options.prompt) {
-					return { content: [{ type: "text", text: "Error: mode answer requires prompt." }], details: { error: "mode answer requires prompt" } };
-				}
-				if (mode === "raw" && (options.forceClone === true || options.timestamp || options.frames || options.prompt || options.model || options.answerModel)) {
-					return { content: [{ type: "text", text: "Error: mode raw cannot be combined with forceClone, prompt, timestamp, frames, model, or answerModel." }], details: { error: "Incompatible raw mode options" } };
-				}
-				if (mode !== "answer" && options.answerModel) {
-					return { content: [{ type: "text", text: "Error: answerModel requires mode answer." }], details: { error: "answerModel requires mode answer" } };
-				}
-				if (mode === "answer" && options.model) {
-					return { content: [{ type: "text", text: "Error: use answerModel, not model, with mode answer." }], details: { error: "model is incompatible with mode answer" } };
-				}
-				if (mode === "answer" && options.auth !== undefined) {
-					return { content: [{ type: "text", text: "Error: auth cannot be combined with mode answer." }], details: { error: "auth cannot be combined with mode answer" } };
-				}
-				let authFetchProfile: AuthFetchProfile | undefined;
-				if (options.auth !== undefined) {
-					try {
-						authFetchProfile = resolveAuthFetchProfile(options.auth);
-					} catch (err) {
-						const error = err instanceof Error ? err.message : String(err);
-						return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
-					}
-				}
-				if (urlList.length === 0) {
-					return {
-						content: [{ type: "text", text: "Error: No URL provided." }],
-						details: { error: "No URL provided" },
-					};
-				}
-
-				onUpdate?.({
-					content: [{ type: "text", text: `Fetching ${urlList.length} URL(s)...` }],
-					details: { phase: "fetch", progress: 0 },
-				});
-
-				const { answerModel: _answerModel, auth: _auth, ...extractionOptions } = { ...options, mode };
-				const { prompt: _prompt, ...answerExtractionOptions } = extractionOptions;
-				const fetchOptions = {
-					...(mode === "answer" ? answerExtractionOptions : extractionOptions),
-					...(authFetchProfile ? { authFetchProfile } : {}),
-				};
-				const fetchResults = await fetchAllContent(urlList, signal, withRegisteredFetchOptions(fetchOptions, registeredToolNames, options.proxy));
-				const presentedResults = mode === "answer"
-					? await Promise.all(fetchResults.map(async result => {
-						if (result.error) return result;
-						if (result.thumbnail || result.mimeType?.startsWith("image/")) {
-							return { ...result, error: "Page answer requires textual fetched content" };
-						}
-						try {
-							const answer = await answerFromPage({
-								question: options.prompt!,
-								pageText: result.content,
-								sourceUrl: result.url,
-								...(options.answerModel ? { model: options.answerModel } : {}),
-							}, ctx, signal);
-							return { ...result, content: answer.text };
-						} catch (err) {
-							return { ...result, error: `Page answer failed: ${err instanceof Error ? err.message : String(err)}` };
-						}
-					}))
-					: fetchResults;
-				const successful = presentedResults.filter((r) => !r.error).length;
-				const totalChars = presentedResults.reduce((sum, r) => sum + r.content.length, 0);
-
-				const responseId = generateId();
-				const data = {
-					id: responseId,
-					type: "fetch",
-					timestamp: Date.now(),
-					urls: stripThumbnails(fetchResults),
-				} satisfies StoredSearchData & { type: "fetch"; urls: ExtractedContent[] };
-				const storedContent = storeFetchResult(pi, responseId, data, authFetchProfile);
-
-				if (urlList.length === 1) {
-					const result = presentedResults[0];
-					if (result.error) {
-						return {
-							content: [{ type: "text", text: `Error: ${result.error}` }],
-							details: { urls: urlList, urlCount: 1, successful: 0, error: result.error, ...(storedContent ? { responseId } : {}), prompt: params.prompt, timestamp: params.timestamp, frames: params.frames },
-						};
-					}
-
-					const fullLength = result.content.length;
-					const slice = initialContentSlice(result.content, getMaxInlineContentChars());
-					const truncated = slice.endOffset < fullLength;
-					let output = slice.text;
-
-					if (truncated) {
-						output += `\n\n---\nShowing ${slice.endOffset} of ${fullLength} chars, ${slice.shownBytes} of ${slice.totalBytes} bytes, and ${slice.shownLines} of ${slice.totalLines} lines. `;
-						output += storedContent
-							? getSearchContentEnabled
-								? `Use ${toolNames.getSearchContent}({ responseId: "${responseId}", urlIndex: 0, offset: ${slice.endOffset} }) for the next slice.`
-								: "Content retrieval is not registered."
-							: "Authenticated fetch cache is off; repeat the fetch to read more.";
-					}
-
-					const content: Array<TextContent | ImageContent> = [];
-					if (result.frames?.length) {
-						for (const frame of result.frames) {
-							content.push({ type: "image", data: frame.data, mimeType: frame.mimeType });
-							content.push({ type: "text", text: `Frame at ${frame.timestamp}` });
-						}
-					} else if (result.thumbnail) {
-						content.push({ type: "image", data: result.thumbnail.data, mimeType: result.thumbnail.mimeType });
-					}
-					content.push({ type: "text", text: output });
-
-					const imageCount = (result.frames?.length ?? 0) + (result.thumbnail ? 1 : 0);
-					return {
-						content,
-						details: {
-							urls: urlList,
-							urlCount: 1,
-							successful: 1,
-							totalChars: fullLength,
-							title: result.title,
-							...(storedContent ? { responseId } : {}),
-							truncated,
-							hasImage: imageCount > 0,
-							imageCount,
-							prompt: params.prompt,
-							timestamp: params.timestamp,
-							frames: params.frames,
-							duration: result.duration,
-							mode,
-							mimeType: result.mimeType,
-							status: result.status,
-							totalBytes: slice.totalBytes,
-							totalLines: slice.totalLines,
-							shownBytes: slice.shownBytes,
-							shownLines: slice.shownLines,
-						},
-					};
-				}
-
-				let output = "## Fetched URLs\n\n";
-				for (const { url, title, content, error } of presentedResults) {
-					if (error) {
-						output += `- ${url}: Error - ${error}\n`;
-					} else {
-						output += `- ${title || url} (${content.length} chars)\n`;
-					}
-				}
-				output += storedContent
-					? getSearchContentEnabled
-						? `\n---\nUse ${toolNames.getSearchContent}({ responseId: "${responseId}", urlIndex: 0 }) to retrieve bounded content slices.`
-						: "\n---\nContent retrieval is not registered."
-					: "\n---\nAuthenticated fetch cache is off; repeat the fetch to read content.";
-
-				return {
-					content: [{ type: "text", text: output }],
-					details: { urls: urlList, urlCount: urlList.length, successful, totalChars, ...(storedContent ? { responseId } : {}) },
-				};
-			});
+			return core.fetchContent(params, signal, { extensionContext: ctx, onUpdate });
 		},
 
 		renderCall(args, theme) {
@@ -2916,291 +2089,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 
 		async execute(_toolCallId, rawParams): Promise<AgentToolResult<Record<string, unknown>>> {
-			const params = normalizeGetSearchContentParams(rawParams);
-			if (params.findMode !== undefined && params.findText === undefined) {
-				return {
-					content: [{ type: "text", text: `findMode ${formatInputValue(params.findMode)} requires findText; provide findText or omit findMode.` }],
-					details: { error: "findMode requires findText" },
-				};
-			}
-			const data = getResult(params.responseId);
-			if (!data) {
-				return {
-					content: [{ type: "text", text: `Error: No stored results for responseId ${formatInputValue(params.responseId)}. Use a responseId returned by ${storedContentSources}.` }],
-					details: { error: "Not found", responseId: params.responseId },
-				};
-			}
-
-			if (data.type === "research") {
-				const artifact = getResearchArtifact(params.responseId);
-				if (!artifact) {
-					return {
-						content: [{ type: "text", text: `Error: stored research artifact for responseId ${formatInputValue(params.responseId)} was not found. Use a responseId returned by ${storedContentSources}.` }],
-						details: { error: "Artifact not found", responseId: params.responseId },
-					};
-				}
-				const serialized = JSON.stringify(artifact, null, 2);
-				if (params.findText !== undefined) {
-					try {
-						const found = findContent(serialized, normalizeFindQueries(params.findText), params.findMode ?? "case-insensitive");
-						const { text, ...findDetails } = found;
-						return {
-							content: [{ type: "text", text }],
-							details: { responseId: artifact.id, type: "research", contentLength: serialized.length, findMode: params.findMode ?? "case-insensitive", ...findDetails },
-						};
-					} catch (err) {
-						const error = err instanceof Error ? err.message : String(err);
-						return {
-							content: [{ type: "text", text: `Unable to find ${formatInputValue(params.findText)} in research artifact for responseId ${formatInputValue(params.responseId)}: ${error}. Check findText and use a supported findMode.` }],
-							details: { error, responseId: params.responseId, type: "research" },
-						};
-					}
-				}
-				const offset = params.offset ?? 0;
-				const limit = params.limit ?? maxInlineContentChars;
-				if (!Number.isInteger(offset) || offset < 0) {
-					return {
-						content: [{ type: "text", text: `Invalid offset: received ${formatInputValue(offset)} for responseId ${formatInputValue(params.responseId)}; offset must be a non-negative integer. Use 0 or a larger integer.` }],
-						details: { error: "Invalid offset", offset },
-					};
-				}
-				if (!Number.isInteger(limit) || limit <= 0 || limit > maxInlineContentChars) {
-					return {
-						content: [{ type: "text", text: `Invalid limit: received ${formatInputValue(limit)} for responseId ${formatInputValue(params.responseId)}; limit must be an integer from 1 to ${maxInlineContentChars}. Use a value in that range.` }],
-						details: { error: "Invalid limit", limit, maxLimit: maxInlineContentChars },
-					};
-				}
-				if (offset > serialized.length) {
-					return {
-						content: [{ type: "text", text: `Offset ${offset} is out of range for responseId ${formatInputValue(params.responseId)}. Received offset ${offset}; valid range is 0-${serialized.length}. Use an offset within that range.` }],
-						details: { error: "Offset out of range", offset, contentLength: serialized.length },
-					};
-				}
-				const endOffset = Math.min(offset + limit, serialized.length);
-				const artifactSlice = serialized.slice(offset, endOffset);
-				const hasMore = endOffset < serialized.length;
-				return {
-					content: [{ type: "text", text: artifactSlice }],
-					details: { responseId: artifact.id, type: "research", contentLength: serialized.length, offset, limit, returnedChars: artifactSlice.length, nextOffset: hasMore ? endOffset : null, truncated: hasMore },
-				};
-			}
-
-			if (data.type === "search" && data.queries) {
-				let queryData: QueryResultData | undefined;
-
-				if (params.query !== undefined) {
-					queryData = data.queries.find((q) => q.query === params.query);
-					if (!queryData) {
-						const available = data.queries.map((q) => `"${q.query}"`).join(", ");
-						return {
-							content: [{ type: "text", text: `Query ${formatInputValue(params.query)} was not found for responseId ${formatInputValue(params.responseId)}. Received query=${formatInputValue(params.query)}. Available queries: ${available || "none"}. Use one of the available queries or queryIndex.` }],
-							details: { error: "Query not found" },
-						};
-					}
-				} else if (params.queryIndex !== undefined) {
-					queryData = data.queries[params.queryIndex];
-					if (!queryData) {
-						const available = data.queries.map((q, i) => `${i}: "${q.query}"`).join(", ");
-						return {
-							content: [{ type: "text", text: `Query index ${formatInputValue(params.queryIndex)} is out of range for responseId ${formatInputValue(params.responseId)}. Received queryIndex=${formatInputValue(params.queryIndex)}; valid indexes are 0-${data.queries.length - 1}. Available queries: ${available || "none"}. Use one of the available indexes.` }],
-							details: { error: "Index out of range" },
-						};
-					}
-				} else {
-					const available = data.queries.map((q, i) => `${i}: "${q.query}"`).join(", ");
-					return {
-						content: [{ type: "text", text: `Specify query or queryIndex for responseId ${formatInputValue(params.responseId)}. Available queries: ${available || "none"}.` }],
-						details: { error: "No query specified" },
-					};
-				}
-
-				if (queryData.error) {
-					return {
-						content: [{ type: "text", text: `Error retrieving query ${formatInputValue(queryData.query)} from responseId ${formatInputValue(params.responseId)}: ${queryData.error}. Check the stored search result and retry with another query or queryIndex if needed.` }],
-						details: { error: queryData.error, query: queryData.query },
-					};
-				}
-
-				const fullResults = formatFullResults(queryData);
-				if (params.findText !== undefined) {
-					try {
-						const found = findContent(fullResults, normalizeFindQueries(params.findText), params.findMode ?? "case-insensitive");
-						const { text, ...findDetails } = found;
-						return {
-							content: [{ type: "text", text }],
-							details: { responseId: params.responseId, query: queryData.query, resultCount: queryData.results.length, contentLength: fullResults.length, findMode: params.findMode ?? "case-insensitive", ...findDetails },
-						};
-					} catch (err) {
-						const error = err instanceof Error ? err.message : String(err);
-						return {
-							content: [{ type: "text", text: `Unable to find ${formatInputValue(params.findText)} in query ${formatInputValue(queryData.query)} for responseId ${formatInputValue(params.responseId)}: ${error}. Check findText and use a supported findMode.` }],
-							details: { error, query: queryData.query },
-						};
-					}
-				}
-
-				const offset = params.offset ?? 0;
-				const limit = params.limit ?? maxInlineContentChars;
-				if (!Number.isInteger(offset) || offset < 0) {
-					return {
-						content: [{ type: "text", text: `Invalid offset: received ${formatInputValue(offset)} for query ${formatInputValue(queryData.query)}; offset must be a non-negative integer. Use 0 or a larger integer.` }],
-						details: { error: "Invalid offset", offset },
-					};
-				}
-				if (!Number.isInteger(limit) || limit <= 0 || limit > maxInlineContentChars) {
-					return {
-						content: [{ type: "text", text: `Invalid limit: received ${formatInputValue(limit)} for query ${formatInputValue(queryData.query)}; limit must be an integer from 1 to ${maxInlineContentChars}. Use a value in that range.` }],
-						details: { error: "Invalid limit", limit, maxLimit: maxInlineContentChars },
-					};
-				}
-				if (offset > fullResults.length) {
-					return {
-						content: [{ type: "text", text: `Offset ${offset} is out of range for query ${formatInputValue(queryData.query)} in responseId ${formatInputValue(params.responseId)}. Received offset ${offset}; valid range is 0-${fullResults.length}. Use an offset within that range.` }],
-						details: { error: "Offset out of range", offset, contentLength: fullResults.length },
-					};
-				}
-				const queryIndex = data.queries.indexOf(queryData);
-				let returnedChars = Math.min(limit, fullResults.length - offset);
-				let endOffset = offset + returnedChars;
-				let continuation = "";
-				while (endOffset < fullResults.length) {
-					continuation = `\n\n---\nShowing chars ${offset}-${endOffset} of ${fullResults.length}. Use ${toolNames.getSearchContent}({ responseId: "${params.responseId}", queryIndex: ${queryIndex}, offset: ${endOffset}, limit: ${limit} }) for the next slice.`;
-					const overflow = returnedChars + continuation.length - maxInlineContentChars;
-					if (overflow <= 0) break;
-					returnedChars -= overflow;
-					endOffset = offset + returnedChars;
-				}
-				const resultSlice = fullResults.slice(offset, endOffset);
-				const hasMore = endOffset < fullResults.length;
-				const text = `${resultSlice}${hasMore ? continuation : ""}`;
-				return {
-					content: [{ type: "text", text }],
-					details: {
-						responseId: params.responseId,
-						query: queryData.query,
-						resultCount: queryData.results.length,
-						contentLength: fullResults.length,
-						offset,
-						limit,
-						returnedChars,
-						nextOffset: hasMore ? endOffset : null,
-						truncated: hasMore,
-					},
-				};
-			}
-
-			if (data.type === "fetch" && data.urls) {
-				let urlData: ExtractedContent | undefined;
-				let selectedUrlIndex = -1;
-
-				if (params.url !== undefined) {
-					selectedUrlIndex = data.urls.findIndex((u) => u.url === params.url);
-					urlData = data.urls[selectedUrlIndex];
-					if (!urlData) {
-						const available = data.urls.map((u) => u.url).join("\n  ");
-						return {
-							content: [{ type: "text", text: `URL ${formatInputValue(params.url)} was not found for responseId ${formatInputValue(params.responseId)}. Received url=${formatInputValue(params.url)}. Available URLs:\n  ${available || "  none"}\nUse one of the available URLs or urlIndex.` }],
-							details: { error: "URL not found" },
-						};
-					}
-				} else if (params.urlIndex !== undefined) {
-					selectedUrlIndex = params.urlIndex;
-					urlData = data.urls[selectedUrlIndex];
-					if (!urlData) {
-						const available = data.urls.map((u, i) => `${i}: ${u.url}`).join("\n  ");
-						return {
-							content: [{ type: "text", text: `URL index ${formatInputValue(params.urlIndex)} is out of range for responseId ${formatInputValue(params.responseId)}. Received urlIndex=${formatInputValue(params.urlIndex)}; valid indexes are 0-${data.urls.length - 1}. Available URLs:\n  ${available || "  none"}\nUse one of the available indexes.` }],
-							details: { error: "Index out of range" },
-						};
-					}
-				} else if (data.urls.length === 1) {
-					// Single stored URL: default to it so calls that omit url and urlIndex
-					// (common with findText on single-URL fetches) succeed without a retry.
-					selectedUrlIndex = 0;
-					urlData = data.urls[0];
-				} else {
-					const available = data.urls.map((u, i) => `${i}: ${u.url}`).join("\n  ");
-					return {
-						content: [{ type: "text", text: `Specify url or urlIndex for responseId ${formatInputValue(params.responseId)}. Available URLs:\n  ${available || "  none"}` }],
-						details: { error: "No URL specified" },
-					};
-				}
-
-				if (urlData.error) {
-					return {
-						content: [{ type: "text", text: `Error retrieving URL ${formatInputValue(urlData.url)} from responseId ${formatInputValue(params.responseId)}: ${urlData.error}. Check the stored fetch result and retry with another URL or urlIndex if needed.` }],
-						details: { error: urlData.error, url: urlData.url },
-					};
-				}
-
-				if (params.findText !== undefined) {
-					try {
-						const found = findContent(urlData.content, normalizeFindQueries(params.findText), params.findMode ?? "case-insensitive");
-						const { text, ...findDetails } = found;
-						return {
-							content: [{ type: "text", text: `# ${urlData.title || urlData.url}\n\n${text}` }],
-							details: { url: urlData.url, title: urlData.title, contentLength: urlData.content.length, findMode: params.findMode ?? "case-insensitive", ...findDetails },
-						};
-					} catch (err) {
-						const error = err instanceof Error ? err.message : String(err);
-						return {
-							content: [{ type: "text", text: `Unable to find ${formatInputValue(params.findText)} in URL ${formatInputValue(urlData.url)} for responseId ${formatInputValue(params.responseId)}: ${error}. Check findText and use a supported findMode.` }],
-							details: { error, url: urlData.url },
-						};
-					}
-				}
-
-				const offset = params.offset ?? 0;
-				const limit = params.limit ?? maxInlineContentChars;
-				if (!Number.isInteger(offset) || offset < 0) {
-					return {
-						content: [{ type: "text", text: `Invalid offset: received ${formatInputValue(offset)} for URL ${formatInputValue(urlData.url)}; offset must be a non-negative integer. Use 0 or a larger integer.` }],
-						details: { error: "Invalid offset", offset },
-					};
-				}
-				if (!Number.isInteger(limit) || limit <= 0 || limit > maxInlineContentChars) {
-					return {
-						content: [{ type: "text", text: `Invalid limit: received ${formatInputValue(limit)} for URL ${formatInputValue(urlData.url)}; limit must be an integer from 1 to ${maxInlineContentChars}. Use a value in that range.` }],
-						details: { error: "Invalid limit", limit, maxLimit: maxInlineContentChars },
-					};
-				}
-				if (offset > urlData.content.length) {
-					return {
-						content: [{ type: "text", text: `Offset ${offset} is out of range for URL ${formatInputValue(urlData.url)} in responseId ${formatInputValue(params.responseId)}. Received offset ${offset}; valid range is 0-${urlData.content.length}. Use an offset within that range.` }],
-						details: { error: "Offset out of range", offset, contentLength: urlData.content.length },
-					};
-				}
-
-				const endOffset = Math.min(offset + limit, urlData.content.length);
-				const contentSlice = urlData.content.slice(offset, endOffset);
-				const hasMore = endOffset < urlData.content.length;
-				let text = `# ${urlData.title || urlData.url}\n\n${contentSlice}`;
-				if (hasMore || offset > 0) {
-					text += `\n\n---\nShowing chars ${offset}-${endOffset} of ${urlData.content.length}.`;
-					if (hasMore) {
-						text += ` Use ${toolNames.getSearchContent}({ responseId: "${params.responseId}", urlIndex: ${selectedUrlIndex}, offset: ${endOffset}, limit: ${limit} }) for the next slice.`;
-					}
-				}
-
-				return {
-					content: [{ type: "text", text }],
-					details: {
-						url: urlData.url,
-						title: urlData.title,
-						contentLength: urlData.content.length,
-						offset,
-						limit,
-						returnedChars: contentSlice.length,
-						nextOffset: hasMore ? endOffset : null,
-						truncated: hasMore,
-					},
-				};
-			}
-
-			return {
-				content: [{ type: "text", text: `Invalid stored data for responseId ${formatInputValue(params.responseId)}: received type ${formatInputValue(data.type)}. Use a responseId returned by ${storedContentSources}.` }],
-				details: { error: "Invalid data" },
-			};
+			return core.getSearchContent(rawParams);
 		},
 
 		renderCall(args, theme) {

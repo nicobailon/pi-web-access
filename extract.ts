@@ -366,6 +366,9 @@ export interface ExtractOptions {
 	toolNames?: RegisteredToolNames;
 	/** Optional HTTP(S) or SOCKS proxy URL; routed through the curl-backed transport. */
 	proxy?: string;
+	/** Reject direct image URLs with this error instead of decoding them with Pi's
+	 * resizeImage. Hosts without the Pi runtime set it; Pi leaves it unset. */
+	rejectDirectImages?: string;
 	/** Custom DNS resolver used for SSRF validation. Primarily a test seam. */
 	lookup?: Lookup;
 }
@@ -817,7 +820,7 @@ export async function extractContent(
 		declaredLinks = discoveredLinks;
 		if (signal?.aborted) return abortedResult(url);
 		if (!httpResult.error) return httpResult;
-		if (isNonRecoverableHttpError(httpResult.error)) {
+		if (isNonRecoverableHttpError(httpResult.error) || httpResult.error === options?.rejectDirectImages) {
 			return httpResult;
 		}
 		return null;
@@ -1288,6 +1291,10 @@ async function extractViaHttp(
 			if (disabled) {
 				activityMonitor.logComplete(activityId, response.status);
 				return { url, title: "", content: "", error: disabled, mimeType, status: response.status };
+			}
+			if (options?.rejectDirectImages) {
+				activityMonitor.logComplete(activityId, response.status);
+				return { url, title: "", content: "", error: options.rejectDirectImages, mimeType, status: response.status };
 			}
 			try {
 				const buffer = await readResponseBufferWithLimit(response, maxResponseSize, () => responseSizeLimitError(maxResponseSize));
