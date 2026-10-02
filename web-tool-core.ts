@@ -128,7 +128,7 @@ export const DEFAULT_TOOL_NAMES: ToolNames = {
 	getSearchContent: "get_search_content",
 };
 const SEARCH_QUERY_CONCURRENCY = 3;
-export const FETCH_MODES = ["readable", "raw", "answer"] as const;
+const FETCH_MODES = ["readable", "raw", "answer"] as const;
 export type FetchMode = typeof FETCH_MODES[number];
 export type FetchModeConfig = { defaultMode: FetchMode; allowedModes: FetchMode[] };
 
@@ -161,7 +161,7 @@ export function isToolEnabled(config: WebSearchConfig, key: keyof ToolNames): bo
 	return key !== "webSearch" && key !== "sourceCheck" || config.webSearch?.enabled !== false;
 }
 
-export function joinToolNames(names: string[]): string {
+function joinToolNames(names: string[]): string {
 	if (names.length === 0) return "stored content";
 	if (names.length === 1) return names[0];
 	if (names.length === 2) return `${names[0]} or ${names[1]}`;
@@ -497,12 +497,11 @@ export interface WebSearchCallOptions extends WebToolCallOptions {
 export type WebSearchParams = Omit<WebSearchCallParams, "recencyFilter"> & { recencyFilter?: string; workflow?: string };
 export type FetchContentToolParams = FetchContentCallParams & FetchContentParams;
 export type SourceCheckParams = Omit<SourceCheckCallParams, "recencyFilter"> & { recencyFilter?: string };
-export type { WebToolResult } from "./web-tool-contract.ts";
 
 export interface WebToolCoreInstance extends WebToolCore {
 	webSearch(params: WebSearchParams, signal?: AbortSignal, call?: WebSearchCallOptions): Promise<WebToolResult>;
 	fetchContent(params: FetchContentToolParams, signal?: AbortSignal, call?: WebToolCallOptions): Promise<WebToolResult>;
-	getSearchContent(params: GetSearchContentCallParams | RawGetSearchContentParams, signal?: AbortSignal): Promise<WebToolResult>;
+	getSearchContent(params: RawGetSearchContentParams, signal?: AbortSignal): Promise<WebToolResult>;
 	sourceCheck(params: SourceCheckParams, signal?: AbortSignal, call?: WebToolCallOptions): Promise<WebToolResult>;
 	/** Formats and stores search results; the Pi curator reuses it for curated returns. */
 	buildSearchReturn(opts: SearchReturnOptions): WebToolResult;
@@ -1029,7 +1028,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 		});
 	}
 
-	async function getSearchContent(rawParams: GetSearchContentCallParams | RawGetSearchContentParams): Promise<WebToolResult> {
+	async function getSearchContent(rawParams: RawGetSearchContentParams): Promise<WebToolResult> {
 		const maxInlineContentChars = settings.maxInlineContentChars;
 		const params = normalizeGetSearchContentParams(rawParams);
 		if (params.findMode !== undefined && params.findText === undefined) {
@@ -1321,7 +1320,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 	return {
 		webSearch,
 		fetchContent,
-		getSearchContent: (params) => getSearchContent(params),
+		getSearchContent,
 		sourceCheck,
 		buildSearchReturn,
 	};
