@@ -1338,11 +1338,15 @@ function standaloneError(error: string): WebToolResult {
 	return { content: [{ type: "text", text: `Error: ${error}` }], details: { error }, isError: true };
 }
 
-// A web_search whose every query failed is an error too; zero matches is not.
+// A call where nothing requested succeeded is an error: every web_search query,
+// every fetch_content URL, or every source_check search failed. A working search
+// with zero matches is not.
 function markStandaloneError(result: WebToolResult): WebToolResult {
-	const { error, queryCount, successfulQueries } = result.details;
-	const allQueriesFailed = typeof queryCount === "number" && queryCount > 0 && successfulQueries === 0;
-	return error !== undefined || allQueriesFailed ? { ...result, isError: true } : result;
+	const { error, queryCount, successfulQueries, urlCount, successful, sourceCount, artifact } = result.details;
+	const nothingSucceeded = (typeof queryCount === "number" && queryCount > 0 && successfulQueries === 0)
+		|| (typeof urlCount === "number" && urlCount > 0 && successful === 0)
+		|| (sourceCount === 0 && ((artifact as ResearchArtifact | undefined)?.errors?.length ?? 0) > 0);
+	return error !== undefined || nothingSucceeded ? { ...result, isError: true } : result;
 }
 
 // Explicit requests for providers that need Pi's model registry or login state

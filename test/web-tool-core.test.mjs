@@ -80,13 +80,15 @@ function runStandalone(body, { config = {}, env = {} } = {}) {
 	}
 }
 
-test("standalone auto search skips Pi-only routes and only an all-failed search is an error", () => {
+test("standalone auto search skips Pi-only routes and only calls where nothing succeeded are errors", () => {
 	const { out, blocked } = runStandalone(`
 		const core = createStandaloneWebToolCore();
 		return {
 			auto: await core.webSearch({ query: "standalone core" }),
 			failed: await core.webSearch({ query: "brave-fails", provider: "brave" }),
 			mixed: await core.webSearch({ queries: ["standalone core", "brave-fails"], provider: "brave" }),
+			failedFetch: await core.fetchContent({ urls: ["http://93.184.216.34/missing-a", "http://93.184.216.34/missing-b"] }),
+			failedCheck: await core.sourceCheck({ claim: "brave-fails", provider: "brave" }),
 		};
 	`, { config: { searchRouting: { providers: ["openai", "brave"], useCurrentModel: true, fallbackOn: ["transient"] } } });
 	assert.deepEqual(blocked, []);
@@ -97,6 +99,9 @@ test("standalone auto search skips Pi-only routes and only an all-failed search 
 	assert.match(out.failed.content[0].text, /Brave Search API error 401/);
 	assert.equal(out.mixed.isError, undefined);
 	assert.equal(out.mixed.details.successfulQueries, 1);
+	assert.equal(out.failedFetch.isError, true);
+	assert.equal(out.failedFetch.details.successful, 0);
+	assert.equal(out.failedCheck.isError, true);
 });
 
 test("standalone includeContent waits for page content before returning", () => {
