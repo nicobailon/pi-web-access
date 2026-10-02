@@ -21,25 +21,37 @@ test("local HTTP fetch sends the compatible User-Agent", async () => {
 
 test("readable fetch prefers server markdown while raw mode keeps the normal representation", async () => {
 	const accepts = [];
-	const markdown = "# Install Guide\n\nRun `npm install`.\n";
+	const markdown = `# Install Guide\n\n${"Run `npm install` and configure the project. ".repeat(15)}\n`;
 	globalThis.fetch = async (_url, init) => {
 		const accept = new Headers(init.headers).get("accept");
 		accepts.push(accept);
 		return accept.startsWith("text/markdown")
-			? new Response(markdown, { headers: { "content-type": "text/markdown; charset=utf-8" } })
+			? new Response(markdown, { headers: { "content-type": "text/markdown; charset=utf-8", link: '</openapi.json>; rel="service-desc"' } })
 			: new Response("<html><body><p>html</p></body></html>", { headers: { "content-type": "text/html" } });
 	};
 
 	const readable = await extractContent("https://docs.example.com/install", undefined, { lookup });
 	assert.equal(readable.error, null);
 	assert.equal(readable.title, "Install Guide");
-	assert.equal(readable.content, markdown);
+	assert.ok(readable.content.startsWith(markdown.trim()));
+	assert.match(readable.content, /https:\/\/docs\.example\.com\/openapi\.json/);
 
 	const raw = await extractContent("https://docs.example.com/install", undefined, { mode: "raw", lookup });
 	assert.match(raw.content, /<p>html<\/p>/);
 	assert.equal(accepts.length, 2);
 	assert.doesNotMatch(accepts[1], /text\/markdown/);
 	assert.match(accepts[1], /^text\/html/);
+});
+
+test("a near-empty negotiated markdown reply falls back to the page's HTML", async () => {
+	const article = `<html><head><title>Guide</title></head><body><article><h1>Guide</h1>${"<p>The full guide explains every configuration option in detail.</p>".repeat(20)}</article></body></html>`;
+	globalThis.fetch = async (_url, init) => new Headers(init.headers).get("accept").startsWith("text/markdown")
+		? new Response("# Loading", { headers: { "content-type": "text/markdown" } })
+		: new Response(article, { headers: { "content-type": "text/html" } });
+
+	const result = await extractContent("https://spa.example.com/guide", undefined, { lookup });
+	assert.equal(result.error, null);
+	assert.match(result.content, /explains every configuration option/);
 });
 
 test("raw mode returns textual non-2xx bodies but rejects images", async () => {

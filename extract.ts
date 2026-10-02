@@ -1187,6 +1187,7 @@ async function extractViaHttp(
 	timeoutMs: number,
 	signal?: AbortSignal,
 	options?: ExtractOptions,
+	preferMarkdown = options?.mode !== "raw",
 ): Promise<HttpExtractedContent> {
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
 
@@ -1206,7 +1207,7 @@ async function extractViaHttp(
 			__proxy: options?.proxy,
 			headers: {
 				"User-Agent": "OpenAI File Downloader, XaiImageApiFetch/1.0",
-				"Accept": options?.mode === "raw" ? BROWSER_ACCEPT : MARKDOWN_FIRST_ACCEPT,
+				"Accept": preferMarkdown ? MARKDOWN_FIRST_ACCEPT : BROWSER_ACCEPT,
 				"Accept-Language": "en-US,en;q=0.9",
 				"Cache-Control": "no-cache",
 				"Sec-Fetch-Dest": "document",
@@ -1356,6 +1357,16 @@ async function extractViaHttp(
 
 		if (!isHTML) {
 			activityMonitor.logComplete(activityId, response.status);
+			if (preferMarkdown && (mimeType === "text/markdown" || mimeType === "text/x-markdown")) {
+				// A near-empty negotiated version (e.g. converted from a JS shell) must not
+				// end extraction: ask again for the normal representation so the HTML
+				// checks and fallbacks apply. Markdown-only servers return the same body.
+				if (text.trim().length < MIN_USEFUL_CONTENT) {
+					return await extractViaHttp(url, Math.max(1, timeoutMs - (Date.now() - startedAt)), signal, options, false);
+				}
+				const declaredLinks = discoverDeclaredWebLinks(null, response.headers.get("link"), response.url || url);
+				return { url, title: extractTextTitle(text, url), content: appendDeclaredWebLinks(text, declaredLinks), error: null, declaredLinks };
+			}
 			const title = extractTextTitle(text, url);
 			return { url, title, content: text, error: null };
 		}
