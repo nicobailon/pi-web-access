@@ -849,7 +849,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			});
 			return {
 				content: [{ type: "text", text: formatSourceCheckResult(artifact, getSearchContentEnabled ? toolNames.getSearchContent : null) }],
-				details: { responseId: artifact.id, artifact, sourceCount: artifact.sources.length, passageCount: artifact.passages.length },
+				details: { responseId: artifact.id, artifact, sourceCount: artifact.sources.length, passageCount: artifact.passages.length, searchCount: queries.length },
 			};
 		});
 	}
@@ -1342,10 +1342,10 @@ function standaloneError(error: string): WebToolResult {
 // every fetch_content URL, or every source_check search failed. A working search
 // with zero matches is not.
 function markStandaloneError(result: WebToolResult): WebToolResult {
-	const { error, queryCount, successfulQueries, urlCount, successful, sourceCount, artifact } = result.details;
+	const { error, queryCount, successfulQueries, urlCount, successful, searchCount, artifact } = result.details;
 	const nothingSucceeded = (typeof queryCount === "number" && queryCount > 0 && successfulQueries === 0)
 		|| (typeof urlCount === "number" && urlCount > 0 && successful === 0)
-		|| (sourceCount === 0 && ((artifact as ResearchArtifact | undefined)?.errors?.length ?? 0) > 0);
+		|| (typeof searchCount === "number" && searchCount > 0 && (artifact as ResearchArtifact).errors?.length === searchCount);
 	return error !== undefined || nothingSucceeded ? { ...result, isError: true } : result;
 }
 

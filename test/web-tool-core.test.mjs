@@ -36,6 +36,7 @@ globalThis.fetch = async (input) => {
 	const url = String(input instanceof Request ? input.url : input);
 	requests.push(url);
 	if (url.startsWith("https://api.search.brave.com/") && url.includes("brave-fails")) return new Response("provider failed", { status: 401 });
+	if (url.startsWith("https://api.search.brave.com/") && url.includes("brave-empty")) return Response.json({ web: { results: [] } });
 	if (url.startsWith("https://api.search.brave.com/")) {
 		return Response.json({ web: { results: [{ title: "Standalone Article", url: ${JSON.stringify(ARTICLE_URL)}, description: "Brave snippet" }] } });
 	}
@@ -89,6 +90,7 @@ test("standalone auto search skips Pi-only routes and only calls where nothing s
 			mixed: await core.webSearch({ queries: ["standalone core", "brave-fails"], provider: "brave" }),
 			failedFetch: await core.fetchContent({ urls: ["http://93.184.216.34/missing-a", "http://93.184.216.34/missing-b"] }),
 			failedCheck: await core.sourceCheck({ claim: "brave-fails", provider: "brave" }),
+			partialCheck: await core.sourceCheck({ claim: "brave-empty", queries: ["brave-empty", "brave-fails"], provider: "brave" }),
 		};
 	`, { config: { searchRouting: { providers: ["openai", "brave"], useCurrentModel: true, fallbackOn: ["transient"] } } });
 	assert.deepEqual(blocked, []);
@@ -102,6 +104,7 @@ test("standalone auto search skips Pi-only routes and only calls where nothing s
 	assert.equal(out.failedFetch.isError, true);
 	assert.equal(out.failedFetch.details.successful, 0);
 	assert.equal(out.failedCheck.isError, true);
+	assert.equal(out.partialCheck.isError, undefined);
 });
 
 test("standalone includeContent waits for page content before returning", () => {
