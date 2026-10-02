@@ -10,7 +10,8 @@ import { createStandaloneWebToolCore } from "./web-tool-core.ts";
 // Keep stray console output from dependencies off the JSON-RPC stream.
 console.log = console.info = console.debug = console.error;
 
-const server = createMcpServer(createStandaloneWebToolCore(), { name: "pi-web-access", version: pkg.version });
+const core = createStandaloneWebToolCore();
+const server = createMcpServer(core, { name: "pi-web-access", version: pkg.version }, core.enabledToolNames);
 const transport = new StdioServerTransport();
 
 let closing = false;

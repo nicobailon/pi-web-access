@@ -38,6 +38,7 @@ export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 			includeContent: Type.Optional(Type.Boolean({ description: "Also fetch full page content for the results, retrievable with get_search_content." })),
 			recencyFilter: Type.Optional(recencySchema),
 			domainFilter: Type.Optional(domainFilterSchema),
+			category: Type.Optional(Type.String({ description: "Exa only: result category, e.g. news, research paper." })),
 			provider: Type.Optional(providerSchema),
 			proxy: Type.Optional(proxySchema),
 		}, { additionalProperties: false }),
@@ -86,10 +87,6 @@ export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 		}, { additionalProperties: false }),
 	},
 ];
-
-export function findMcpToolDefinition(name: string): McpToolDefinition | undefined {
-	return MCP_TOOL_DEFINITIONS.find((tool) => tool.name === name);
-}
 
 /** Returns human-readable validation problems; an empty array means the arguments are valid. */
 export function validateMcpToolArguments(tool: McpToolDefinition, args: unknown): string[] {

@@ -10,7 +10,7 @@ import {
 	ListToolsRequestSchema,
 	McpError,
 } from "@modelcontextprotocol/sdk/types.js";
-import { findMcpToolDefinition, MCP_TOOL_DEFINITIONS, validateMcpToolArguments } from "./mcp-tool-definitions.ts";
+import { MCP_TOOL_DEFINITIONS, validateMcpToolArguments } from "./mcp-tool-definitions.ts";
 import type {
 	FetchContentCallParams,
 	GetSearchContentCallParams,
@@ -56,11 +56,13 @@ function toCallToolResult(result: WebToolResult): CallToolResult {
 	};
 }
 
-export function createMcpServer(core: WebToolCore, info: McpServerInfo): Server {
+/** Serves the tools named in enabledTools (default: all four MCP tools). */
+export function createMcpServer(core: WebToolCore, info: McpServerInfo, enabledTools?: readonly string[]): Server {
 	const server = new Server(info, { capabilities: { tools: {} } });
+	const tools = enabledTools ? MCP_TOOL_DEFINITIONS.filter((tool) => enabledTools.includes(tool.name)) : MCP_TOOL_DEFINITIONS;
 
 	server.setRequestHandler(ListToolsRequestSchema, async () => ({
-		tools: MCP_TOOL_DEFINITIONS.map((tool) => ({
+		tools: tools.map((tool) => ({
 			name: tool.name,
 			description: tool.description,
 			inputSchema: tool.inputSchema as ToolInputSchema,
@@ -69,7 +71,7 @@ export function createMcpServer(core: WebToolCore, info: McpServerInfo): Server 
 
 	server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
 		const { name } = request.params;
-		const tool = findMcpToolDefinition(name);
+		const tool = tools.find((candidate) => candidate.name === name);
 		const run = TOOL_RUNNERS[name];
 		if (!tool || !run) throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${name}`);
 
@@ -86,4 +88,3 @@ export function createMcpServer(core: WebToolCore, info: McpServerInfo): Server 
 
 	return server;
 }
-

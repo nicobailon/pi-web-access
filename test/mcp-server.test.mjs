@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -172,41 +172,138 @@ test("client cancellation aborts the signal passed to the core", { timeout: 5_00
 	}
 });
 
-// Runs the built bin from a directory whose node_modules mirrors the repo's
-// without typebox, proving the bundle carries typebox and needs no peers from pi.
-test("built pi-web-access-mcp bin serves tools/list over stdio with JSON-RPC-only stdout", { timeout: 30_000 }, async () => {
+// The built bin runs from a directory whose node_modules mirrors the repo's
+// without typebox or @earendil-works/*, proving the bundle carries typebox and
+// needs no Pi packages. A preload mocks globalThis.fetch; config is isolated.
+const ARTICLE_URL = "http://93.184.216.34/article";
+const IMAGE_URL = "http://93.184.216.34/pixel.png";
+const fetchMock = `
+import { appendFileSync } from "node:fs";
+const articleHtml = "<html><head><title>MCP Article</title></head><body><article><h1>MCP Article</h1>"
+	+ "<p>" + "The MCP server fetched this readable paragraph without the Pi runtime. ".repeat(12) + "</p></article></body></html>";
+const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+globalThis.fetch = async (input, init) => {
+	const url = String(input instanceof Request ? input.url : input);
+	appendFileSync(process.env.MCP_TEST_REQUEST_LOG, JSON.stringify({ url, body: typeof init?.body === "string" ? init.body : undefined }) + "\\n");
+	if (url.startsWith("https://api.search.brave.com/")) {
+		return Response.json({ web: { results: [{ title: "MCP Article", url: ${JSON.stringify(ARTICLE_URL)}, description: "Brave snippet" }] } });
+	}
+	if (url === "https://api.exa.ai/search") return Response.json({ results: [] });
+	if (url === ${JSON.stringify(ARTICLE_URL)}) return new Response(articleHtml, { headers: { "content-type": "text/html; charset=utf-8" } });
+	if (url === ${JSON.stringify(IMAGE_URL)}) return new Response(png, { headers: { "content-type": "image/png" } });
+	throw new Error("Unexpected fetch: " + url);
+};
+`;
+
+let binDir;
+async function builtBinDir() {
+	if (binDir) return binDir;
 	const build = spawnSync("npm", ["run", "build"], { cwd: repoRoot, encoding: "utf8", shell: process.platform === "win32" });
 	assert.equal(build.status, 0, `${build.stdout}${build.stderr}`);
-
 	const dir = await mkdtemp(join(tmpdir(), "pi-web-access-mcp-bin-"));
-	try {
-		await writeFile(join(dir, "package.json"), JSON.stringify({ type: "module" }));
-		await copyFile(join(repoRoot, "dist", "mcp-cli.js"), join(dir, "mcp-cli.js"));
-		const modules = join(dir, "node_modules");
-		await mkdir(modules);
-		for (const entry of await readdir(join(repoRoot, "node_modules"))) {
-			if (entry === "typebox" || entry.startsWith(".")) continue;
-			await symlink(join(repoRoot, "node_modules", entry), join(modules, entry));
-		}
+	await writeFile(join(dir, "package.json"), JSON.stringify({ type: "module" }));
+	await copyFile(join(repoRoot, "dist", "mcp-cli.js"), join(dir, "mcp-cli.js"));
+	await writeFile(join(dir, "mock-fetch.mjs"), fetchMock);
+	const modules = join(dir, "node_modules");
+	await mkdir(modules);
+	for (const entry of await readdir(join(repoRoot, "node_modules"))) {
+		if (entry === "typebox" || entry === "@earendil-works" || entry.startsWith(".")) continue;
+		await symlink(join(repoRoot, "node_modules", entry), join(modules, entry));
+	}
+	binDir = dir;
+	return dir;
+}
+after(async () => { if (binDir) await rm(binDir, { recursive: true, force: true }); });
 
-		const transport = new StdioClientTransport({ command: process.execPath, args: [join(dir, "mcp-cli.js")], cwd: dir, stderr: "pipe" });
-		const transportErrors = [];
-		let stderr = "";
-		transport.stderr.on("data", (chunk) => { stderr += chunk; });
-		const client = new Client({ name: "stdio-smoke", version: "0.0.0" });
-		client.onerror = (error) => transportErrors.push(error);
-		await client.connect(transport);
-		const { tools } = await client.listTools();
-		assert.deepEqual(tools.map((tool) => tool.name).sort(), TOOL_NAMES);
+async function startBin(config) {
+	const dir = await builtBinDir();
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-mcp-home-"));
+	await writeFile(join(home, "web-search.json"), JSON.stringify(config));
+	const requestLog = join(home, "requests.log");
+	await writeFile(requestLog, "");
+	const transport = new StdioClientTransport({
+		command: process.execPath,
+		args: ["--import", join(dir, "mock-fetch.mjs"), join(dir, "mcp-cli.js")],
+		cwd: dir,
+		env: { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home, BRAVE_API_KEY: "mcp-test-key", EXA_API_KEY: "mcp-test-key", MCP_TEST_REQUEST_LOG: requestLog },
+		stderr: "pipe",
+	});
+	const transportErrors = [];
+	let stderr = "";
+	transport.stderr.on("data", (chunk) => { stderr += chunk; });
+	const client = new Client({ name: "mcp-e2e", version: "0.0.0" });
+	client.onerror = (error) => transportErrors.push(error);
+	await client.connect(transport);
+	return {
+		client,
+		transportErrors,
+		stderr: () => stderr,
+		requests: async () => (await readFile(requestLog, "utf8")).split("\n").filter(Boolean).map((line) => JSON.parse(line)),
+		cleanup: () => rm(home, { recursive: true, force: true }),
+	};
+}
+
+const text = (result) => result.content.map((part) => part.text ?? "").join("\n");
+
+test("built pi-web-access-mcp bin runs the real tools over stdio without Pi packages", { timeout: 30_000 }, async () => {
+	const bin = await startBin({});
+	const { client } = bin;
+	try {
 		assert.equal(client.getServerVersion().name, "pi-web-access");
+		assert.deepEqual((await client.listTools()).tools.map((tool) => tool.name).sort(), TOOL_NAMES);
+
+		const search = await client.callTool({ name: "web_search", arguments: { query: "mcp e2e", provider: "brave" } });
+		assert.notEqual(search.isError, true, text(search));
+		assert.match(text(search), /MCP Article\n {3}http:\/\/93\.184\.216\.34\/article/);
+		const responseId = search.structuredContent.searchId;
+		const stored = await client.callTool({ name: "get_search_content", arguments: { responseId, queryIndex: 0 } });
+		assert.notEqual(stored.isError, true, text(stored));
+		assert.match(text(stored), /### MCP Article\nhttp:\/\/93\.184\.216\.34\/article\n\nBrave snippet/);
+
+		const fetched = await client.callTool({ name: "fetch_content", arguments: { url: ARTICLE_URL } });
+		assert.notEqual(fetched.isError, true, text(fetched));
+		assert.match(text(fetched), /readable paragraph without the Pi runtime/);
+		assert.doesNotMatch(text(fetched), /<p>|<article>/);
+
+		const checked = await client.callTool({ name: "source_check", arguments: { claim: "The MCP server fetched a page", provider: "brave", fetchContent: true } });
+		assert.notEqual(checked.isError, true, text(checked));
+		assert.match(text(checked), /# Source check: The MCP server fetched a page[\s\S]*## Sources[\s\S]*http:\/\/93\.184\.216\.34\/article/);
+
+		await client.callTool({ name: "web_search", arguments: { query: "papers", provider: "exa", category: "research paper" } });
+		const exaBody = JSON.parse((await bin.requests()).find((request) => request.url === "https://api.exa.ai/search").body);
+		assert.equal(exaBody.category, "research paper");
+
+		const requestsBefore = (await bin.requests()).length;
+		const kimi = await client.callTool({ name: "web_search", arguments: { query: "q", provider: "kimi" } });
+		assert.equal(kimi.isError, true);
+		assert.match(text(kimi), /Kimi search is not supported over MCP.*Choose another provider/);
+		const image = await client.callTool({ name: "fetch_content", arguments: { url: IMAGE_URL } });
+		assert.equal(image.isError, true);
+		assert.match(text(image), /Direct image fetch is not supported over MCP/);
+		const thrown = await client.callTool({ name: "web_search", arguments: { query: "q", provider: ["not-a-provider"] } });
+		assert.equal(thrown.isError, true);
+		assert.match(text(thrown), /invalid provider: not-a-provider/);
+		assert.deepEqual((await bin.requests()).slice(requestsBefore).map((request) => request.url), [IMAGE_URL]);
 
 		const closeStarted = Date.now();
 		await client.close();
 		// StdioClientTransport sends SIGTERM only if the child is still running 2s after stdin ends.
 		assert.ok(Date.now() - closeStarted < 1900, "server did not exit when stdin closed");
 		// Any non-JSON-RPC stdout line would surface as a transport parse error.
-		assert.deepEqual(transportErrors, [], stderr);
+		assert.deepEqual(bin.transportErrors, [], bin.stderr());
 	} finally {
-		await rm(dir, { recursive: true, force: true });
+		await client.close();
+		await bin.cleanup();
+	}
+});
+
+test("built bin lists only the tools enabled in web-search.json", { timeout: 30_000 }, async () => {
+	const bin = await startBin({ webSearch: { enabled: false } });
+	try {
+		assert.deepEqual((await bin.client.listTools()).tools.map((tool) => tool.name).sort(), ["fetch_content", "get_search_content"]);
+		await assert.rejects(bin.client.callTool({ name: "web_search", arguments: { query: "q" } }), /Unknown tool: web_search/);
+	} finally {
+		await bin.client.close();
+		await bin.cleanup();
 	}
 });

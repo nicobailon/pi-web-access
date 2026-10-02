@@ -1347,6 +1347,11 @@ export interface StandaloneWebToolCoreOptions {
 	maxStoredResults?: number;
 }
 
+export interface StandaloneWebToolCore extends WebToolCore {
+	/** Default names of the tools web-search.json enables; hosts list only these. */
+	enabledToolNames: string[];
+}
+
 function standaloneError(error: string): WebToolResult {
 	return { content: [{ type: "text", text: `Error: ${error}` }], details: { error }, isError: true };
 }
@@ -1411,7 +1416,7 @@ function standaloneFetchRejection(params: FetchContentCallParams, fetchModes: Fe
 
 /** Core for hosts without Pi: no extension context, curator, or summaries; results
  * live in a bounded in-memory store; includeContent waits for the page fetch. */
-export function createStandaloneWebToolCore(options: StandaloneWebToolCoreOptions = {}): WebToolCore {
+export function createStandaloneWebToolCore(options: StandaloneWebToolCoreOptions = {}): StandaloneWebToolCore {
 	const maxStoredResults = options.maxStoredResults ?? DEFAULT_MAX_STORED_RESULTS;
 	if (!Number.isInteger(maxStoredResults) || maxStoredResults < 1) {
 		throw new Error("maxStoredResults must be a positive integer");
@@ -1446,6 +1451,9 @@ export function createStandaloneWebToolCore(options: StandaloneWebToolCoreOption
 	});
 
 	return {
+		enabledToolNames: (Object.keys(DEFAULT_TOOL_NAMES) as (keyof ToolNames)[])
+			.filter((key) => settings.enabledTools[key])
+			.map((key) => DEFAULT_TOOL_NAMES[key]),
 		async webSearch(params, signal) {
 			const rejection = await standaloneProviderRejection(params.provider);
 			return rejection ? standaloneError(rejection) : markStandaloneError(await core.webSearch(params, signal));
