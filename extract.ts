@@ -1367,7 +1367,7 @@ async function extractViaHttp(
 				// servers return the same body. If that yields no content, keep this one
 				// but mark it incomplete so configured fallbacks still run.
 				const normal = await extractViaHttp(url, Math.max(1, timeoutMs - (Date.now() - startedAt)), signal, options, false);
-				if (!normal.error || signal?.aborted || normal.content.trim()) return normal;
+				if (signal?.aborted || normal.content.trim()) return normal;
 				return { ...negotiated, error: "Extracted content appears incomplete" };
 			}
 			const title = extractTextTitle(text, url);
