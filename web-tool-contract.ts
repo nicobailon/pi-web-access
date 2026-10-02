@@ -2,6 +2,9 @@
 // MCP server (mcp-server.ts) both drive tools through WebToolCore so tool
 // behavior lives in one place; each host keeps its own schemas and transport.
 
+import type { FindMode } from "./content-find.ts";
+import type { RecencyFilter } from "./source-check.ts";
+
 export type WebToolContent =
 	| { type: "text"; text: string }
 	| { type: "image"; data: string; mimeType: string };
@@ -11,8 +14,6 @@ export interface WebToolResult {
 	details: Record<string, unknown>;
 	isError?: boolean;
 }
-
-export type RecencyFilter = "day" | "week" | "month" | "year";
 
 export interface WebSearchCallParams {
 	query?: string;
@@ -43,7 +44,7 @@ export interface GetSearchContentCallParams {
 	offset?: number;
 	limit?: number;
 	findText?: string | string[];
-	findMode?: "exact" | "case-insensitive" | "fuzzy";
+	findMode?: FindMode;
 }
 
 export interface SourceCheckCallParams {

@@ -188,7 +188,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | `numResults` | Results per query (default: 5, max: 20) |
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
-| `category` | Exa only: restrict results to a category such as `news` or `research paper`; other providers ignore it |
+| `category` | Exa only: restrict results to a category such as `news` or `research paper`; other providers ignore it. Without an API key, if Exa's filtered search is unavailable, the category is added to the query instead |
 | `provider` | Configured provider when omitted or set to `auto`; `all` searches every eligible provider except Parallel MCP, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Baizhi, and Z.ai simultaneously; otherwise `openai`, `brave`, `parallel`, `parallel-mcp`, `tinyfish`, `search1api`, `searchinfinity`, `querit`, `tavily`, `you`, `firecrawl`, `jina`, `serpdive`, `kagi`, `bocha`, `ollama`, `anysearch`, `xcrawl`, `valyu`, `xai`, `mistral`, `brightdata`, `serpbase`, `serpapi`, `serper`, `serply`, `baizhi`, `zai`, `searxng`, `duckduckgo`, `exa`, `perplexity`, `gemini`, or `kimi` (auto-selects when no provider or routing is configured; Parallel MCP, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Baizhi, and Z.ai are explicit-only) |
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator; fresh-install default), `summary-review` (open curator and auto-generate a summary draft), or `auto-summary` (generate a summary without opening the curator) |

@@ -1386,7 +1386,7 @@ async function standaloneProviderRejection(requested: unknown): Promise<string |
 		try {
 			available = await isOpenAISearchAvailable();
 		} catch {
-			return undefined;
+			return undefined; // The core reports the same configuration error.
 		}
 		if (!available) {
 			return `OpenAI search over MCP needs an API key: set openaiApiKey in ${WEB_SEARCH_CONFIG_PATH} or OPENAI_API_KEY. ChatGPT/Codex sign-in, openaiUseProviderBaseUrl, and Pi model credentials work only inside Pi.`;

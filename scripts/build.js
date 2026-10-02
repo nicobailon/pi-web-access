@@ -8,7 +8,7 @@
 // node:* builtins are covered by platform "node".
 //
 // The standalone MCP bin (dist/mcp-cli.js) bundles typebox: it stays a
-// pi-hosted peer for the extension, but the bin must run without pi or peers.
+// pi-hosted peer for the extension, but the bin must run without Pi installed.
 import { chmodSync, readFileSync } from "node:fs";
 import { buildSync } from "esbuild";
 
