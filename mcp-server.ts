@@ -36,24 +36,12 @@ const TOOL_RUNNERS: Record<string, ToolRunner> = {
 	source_check: (core, args, signal) => core.sourceCheck(args as unknown as SourceCheckCallParams, signal),
 };
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
-	const proto = Object.getPrototypeOf(value);
-	return proto === Object.prototype || proto === null;
-}
-
 function errorResult(text: string): CallToolResult {
 	return { content: [{ type: "text", text }], isError: true };
 }
 
 function toCallToolResult(result: WebToolResult): CallToolResult {
-	return {
-		content: result.content.map((part) => part.type === "image"
-			? { type: "image", data: part.data, mimeType: part.mimeType }
-			: { type: "text", text: part.text }),
-		...(isPlainObject(result.details) && { structuredContent: result.details }),
-		...(result.isError && { isError: true }),
-	};
+	return { content: result.content, structuredContent: result.details, ...(result.isError && { isError: true }) };
 }
 
 /** Serves the tools named in enabledTools (default: all four MCP tools). */

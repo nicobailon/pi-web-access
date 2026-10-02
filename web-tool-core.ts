@@ -1328,7 +1328,6 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 
 const MAX_STORED_RESULTS = 50;
 const STANDALONE_DIRECT_IMAGE_ERROR = "Direct image fetch is not supported over MCP; fetch_content returns text there. Fetch images from the Pi extension instead.";
-const PI_ONLY_FETCH_FIELDS = ["prompt", "timestamp", "frames", "model", "answerModel"] as const;
 
 export interface StandaloneWebToolCore extends WebToolCore {
 	/** Default names of the tools web-search.json enables; hosts list only these. */
@@ -1356,7 +1355,7 @@ async function standaloneProviderRejection(requested: unknown): Promise<string |
 	} catch {
 		return undefined; // The core reports the same validation error.
 	}
-	const explicit = Array.isArray(selection) ? selection : selection === "auto" || selection === "all" ? [] : [selection];
+	const explicit: string[] = Array.isArray(selection) ? selection : [selection];
 	if (explicit.includes("kimi")) {
 		return "Kimi search is not supported over MCP: it authenticates only through Pi's /login kimi-coding. Choose another provider, or search from Pi.";
 	}
@@ -1375,12 +1374,6 @@ async function standaloneProviderRejection(requested: unknown): Promise<string |
 }
 
 function standaloneFetchRejection(params: FetchContentCallParams, fetchModes: FetchModeConfig): string | undefined {
-	const raw = params as Record<string, unknown>;
-	for (const field of PI_ONLY_FETCH_FIELDS) {
-		if (raw[field] !== undefined) {
-			return `fetch_content ${field} is not supported over MCP: page answers and video frame/model analysis run only inside Pi. Omit ${field}.`;
-		}
-	}
 	if (params.mode === "answer") {
 		return "fetch_content mode \"answer\" is not supported over MCP: page answers use Pi's models. Use mode \"readable\" or \"raw\".";
 	}

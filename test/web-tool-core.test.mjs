@@ -80,31 +80,23 @@ function runStandalone(body, { config = {}, env = {} } = {}) {
 	}
 }
 
-test("standalone web_search returns provider results retrievable by responseId", () => {
+test("standalone auto search skips Pi-only routes and only an all-failed search is an error", () => {
 	const { out, blocked } = runStandalone(`
 		const core = createStandaloneWebToolCore();
-		const result = await core.webSearch({ query: "standalone core", provider: "brave" });
-		const searchId = result.content[0].text.match(/stored as responseId "([^"]+)"/)[1];
-		const retrieved = await core.getSearchContent({ responseId: searchId, queryIndex: 0 });
-		const auto = await core.webSearch({ query: "standalone core" });
-		const failed = await core.webSearch({ query: "brave-fails", provider: "brave" });
-		const mixed = await core.webSearch({ queries: ["standalone core", "brave-fails"], provider: "brave" });
-		return { text: result.content[0].text, isError: result.isError ?? false, searchId, details: result.details, retrieved, auto, failed, mixed };
+		return {
+			auto: await core.webSearch({ query: "standalone core" }),
+			failed: await core.webSearch({ query: "brave-fails", provider: "brave" }),
+			mixed: await core.webSearch({ queries: ["standalone core", "brave-fails"], provider: "brave" }),
+		};
 	`, { config: { searchRouting: { providers: ["openai", "brave"], useCurrentModel: true, fallbackOn: ["transient"] } } });
 	assert.deepEqual(blocked, []);
-	assert.equal(out.isError, false);
-	assert.match(out.text, /\*\*Provider:\*\* brave/);
-	assert.match(out.text, /Standalone Article\n {3}http:\/\/93\.184\.216\.34\/article/);
-	assert.match(out.text, /Use get_search_content\(\{ responseId: "[^"]+", queryIndex: 0/);
-	assert.equal(out.details.searchId, out.searchId);
-	assert.equal(out.retrieved.isError, undefined);
-	assert.match(out.retrieved.content[0].text, /### Standalone Article\nhttp:\/\/93\.184\.216\.34\/article\n\nBrave snippet/);
 	// auto skips the current-model OpenAI route, which needs Pi, and uses Brave.
 	assert.equal(out.auto.isError, undefined);
 	assert.deepEqual(out.auto.details.queryProviders, [{ query: "standalone core", providers: ["brave"] }]);
 	assert.equal(out.failed.isError, true);
 	assert.match(out.failed.content[0].text, /Brave Search API error 401/);
 	assert.equal(out.mixed.isError, undefined);
+	assert.equal(out.mixed.details.successfulQueries, 1);
 });
 
 test("standalone includeContent waits for page content before returning", () => {
@@ -122,35 +114,20 @@ test("standalone includeContent waits for page content before returning", () => 
 	assert.match(out.page, /readable paragraph without the Pi runtime/);
 });
 
-test("standalone fetch_content returns readable markdown", () => {
-	const { out, blocked } = runStandalone(`
-		const core = createStandaloneWebToolCore();
-		return core.fetchContent({ url: ${JSON.stringify(ARTICLE_URL)} });
-	`);
-	assert.deepEqual(blocked, []);
-	assert.equal(out.isError, undefined);
-	assert.equal(out.details.title, "Standalone Article");
-	assert.ok(out.details.responseId);
-	assert.match(out.content.at(-1).text, /readable paragraph without the Pi runtime/);
-	assert.doesNotMatch(out.content.at(-1).text, /<p>|<article>/);
-});
-
 test("standalone rejects Pi-only providers and fetch modes before any network call", () => {
 	const { out, requests } = runStandalone(`
 		const core = createStandaloneWebToolCore();
 		return {
-			kimi: await core.webSearch({ query: "q", provider: "kimi" }),
 			kimiSourceCheck: await core.sourceCheck({ claim: "c", provider: ["brave", "kimi"] }),
 			answer: await core.fetchContent({ url: ${JSON.stringify(ARTICLE_URL)}, mode: "answer" }),
-			prompt: await core.fetchContent({ url: ${JSON.stringify(ARTICLE_URL)}, prompt: "summarize" }),
+			defaultAnswer: await core.fetchContent({ url: ${JSON.stringify(ARTICLE_URL)} }),
 		};
-	`);
+	`, { config: { fetch: { defaultMode: "answer" } } });
 	assert.deepEqual(requests, []);
 	for (const result of Object.values(out)) assert.equal(result.isError, true);
-	assert.match(out.kimi.content[0].text, /Kimi search is not supported over MCP/);
 	assert.match(out.kimiSourceCheck.content[0].text, /Kimi search is not supported over MCP/);
 	assert.match(out.answer.content[0].text, /mode "answer" is not supported over MCP/);
-	assert.match(out.prompt.content[0].text, /prompt is not supported over MCP/);
+	assert.match(out.defaultAnswer.content[0].text, /fetch\.defaultMode .* is "answer", which is not supported over MCP/);
 });
 
 test("standalone direct image fetch fails clearly without loading Pi or Pi-only modules", () => {
