@@ -1375,7 +1375,8 @@ async function extractViaHttp(
 			const normal = await extractViaHttp(url, Math.max(1, timeoutMs - (Date.now() - startedAt)), signal, options, false);
 			if (signal?.aborted || isNonRecoverableHttpError(normal.error) ||
 				normal.status === 404 || normal.status === 410 || isAbortError(normal.error)) return normal;
-			if (normal.content.trim() || !markdown.content.trim()) return normal;
+			const normalHasBody = normal.content.trim() !== appendDeclaredWebLinks("", normal.declaredLinks ?? []).trim();
+			if (normalHasBody || !markdown.content.trim()) return normal;
 			return {
 				...normal,
 				...markdown,

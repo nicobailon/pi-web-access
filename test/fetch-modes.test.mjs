@@ -74,6 +74,7 @@ test("short negotiated markdown is kept only when the browser retry has no conte
 
 	for (const [normal, status, retryError] of [
 		[text(""), undefined, null],
+		[() => new Response("", { headers: { "content-type": "text/markdown", link: '</openapi.json>; rel="service-desc"' } }), undefined, null],
 		[() => new Response("unavailable", { status: 503, statusText: "Service Unavailable" }), 503, "HTTP 503: Service Unavailable"],
 	]) {
 		const { result } = await negotiate(normal);
