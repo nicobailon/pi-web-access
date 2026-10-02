@@ -14,14 +14,16 @@ import { resolveAuthFetchProfile, type AuthFetchProfile } from "./auth-fetch.ts"
 import { findContent, type FindMode } from "./content-find.ts";
 import {
 	assertSearchProviderSelectionAllowed,
+	getConfiguredSearchRouting,
 	normalizeSearchProviderSelection,
 	search,
 	type SearchProvider,
 	type SearchProviderSelection,
 } from "./gemini-search.ts";
+import { isOpenAISearchAvailable } from "./openai-search.ts";
 import type { SearchResult } from "./perplexity.ts";
 import { getWebSearchConfigPath, runWithProxy } from "./utils.ts";
-import { generateId, getResult, storeResult, type QueryResultData, type StoredSearchData } from "./storage.ts";
+import { deleteResult, generateId, getResult, storeResult, type QueryResultData, type StoredSearchData } from "./storage.ts";
 import {
 	buildResearchArtifact,
 	getResearchArtifact,
@@ -1333,5 +1335,131 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 		getSearchContent: (params) => getSearchContent(params),
 		sourceCheck,
 		buildSearchReturn,
+	};
+}
+
+const DEFAULT_MAX_STORED_RESULTS = 50;
+const STANDALONE_DIRECT_IMAGE_ERROR = "Direct image fetch is not supported over MCP; fetch_content returns text there. Fetch images from the Pi extension instead.";
+const PI_ONLY_FETCH_FIELDS = ["prompt", "timestamp", "frames", "model", "answerModel"] as const;
+
+export interface StandaloneWebToolCoreOptions {
+	/** Stored responseIds kept in memory before the oldest is evicted (default 50). */
+	maxStoredResults?: number;
+}
+
+function standaloneError(error: string): WebToolResult {
+	return { content: [{ type: "text", text: `Error: ${error}` }], details: { error }, isError: true };
+}
+
+function markStandaloneError(result: WebToolResult): WebToolResult {
+	return result.details.error !== undefined ? { ...result, isError: true } : result;
+}
+
+// Requests that need Pi's model registry or login state fail here instead of
+// silently falling back to another provider.
+async function standaloneProviderRejection(requested: unknown): Promise<string | undefined> {
+	let selection: SearchProviderSelection;
+	try {
+		selection = resolveRequestedProvider(requested);
+	} catch {
+		return undefined; // The core reports the same validation error.
+	}
+	const explicit = Array.isArray(selection) ? selection : selection === "auto" || selection === "all" ? [] : [selection];
+	if (explicit.includes("kimi")) {
+		return "Kimi search is not supported over MCP: it authenticates only through Pi's /login kimi-coding. Choose another provider, or search from Pi.";
+	}
+	if (selection === "auto") {
+		let routing: ReturnType<typeof getConfiguredSearchRouting>;
+		try {
+			routing = getConfiguredSearchRouting();
+		} catch {
+			return undefined;
+		}
+		if (routing?.useCurrentModel === true && routing.providers.includes("openai")) {
+			return `searchRouting.useCurrentModel in ${WEB_SEARCH_CONFIG_PATH} routes OpenAI search through the current Pi model, which is not available over MCP. Remove useCurrentModel or pass an explicit provider.`;
+		}
+	}
+	if (explicit.includes("openai")) {
+		let available: boolean;
+		try {
+			available = await isOpenAISearchAvailable();
+		} catch {
+			return undefined;
+		}
+		if (!available) {
+			return `OpenAI search over MCP needs an API key: set openaiApiKey in ${WEB_SEARCH_CONFIG_PATH} or OPENAI_API_KEY. ChatGPT/Codex sign-in, openaiUseProviderBaseUrl, and Pi model credentials work only inside Pi.`;
+		}
+	}
+	return undefined;
+}
+
+function standaloneFetchRejection(params: FetchContentCallParams, fetchModes: FetchModeConfig): string | undefined {
+	const raw = params as Record<string, unknown>;
+	for (const field of PI_ONLY_FETCH_FIELDS) {
+		if (raw[field] !== undefined) {
+			return `fetch_content ${field} is not supported over MCP: page answers and video frame/model analysis run only inside Pi. Omit ${field}.`;
+		}
+	}
+	if (params.mode === "answer") {
+		return "fetch_content mode \"answer\" is not supported over MCP: page answers use Pi's models. Use mode \"readable\" or \"raw\".";
+	}
+	if (params.mode === undefined && fetchModes.defaultMode === "answer") {
+		return `fetch.defaultMode in ${WEB_SEARCH_CONFIG_PATH} is "answer", which is not supported over MCP. Pass mode "readable" or "raw".`;
+	}
+	return undefined;
+}
+
+/** Core for hosts without Pi: no extension context, curator, or summaries; results
+ * live in a bounded in-memory store; includeContent waits for the page fetch. */
+export function createStandaloneWebToolCore(options: StandaloneWebToolCoreOptions = {}): WebToolCore {
+	const maxStoredResults = options.maxStoredResults ?? DEFAULT_MAX_STORED_RESULTS;
+	if (!Number.isInteger(maxStoredResults) || maxStoredResults < 1) {
+		throw new Error("maxStoredResults must be a positive integer");
+	}
+	const config = loadConfig();
+	const settings: WebToolCoreSettings = {
+		toolNames: { ...DEFAULT_TOOL_NAMES },
+		enabledTools: {
+			webSearch: isToolEnabled(config, "webSearch"),
+			sourceCheck: isToolEnabled(config, "sourceCheck"),
+			fetchContent: isToolEnabled(config, "fetchContent"),
+			getSearchContent: isToolEnabled(config, "getSearchContent"),
+		},
+		maxInlineContentChars: getMaxInlineContentChars(config),
+		fetchModes: resolveFetchModeConfig(config),
+	};
+	const storedIds: string[] = [];
+	const remember = (id: string) => {
+		storedIds.push(id);
+		while (storedIds.length > maxStoredResults) deleteResult(storedIds.shift()!);
+	};
+	const core = createWebToolCore({
+		settings,
+		storeFetchedContent(id, data) {
+			storeResult(id, data);
+			remember(id);
+		},
+		publishResult(data) {
+			remember(data.id);
+		},
+		extractOptions: { rejectDirectImages: STANDALONE_DIRECT_IMAGE_ERROR },
+	});
+
+	return {
+		async webSearch(params, signal) {
+			const rejection = await standaloneProviderRejection(params.provider);
+			return rejection ? standaloneError(rejection) : markStandaloneError(await core.webSearch(params, signal));
+		},
+		async fetchContent(params, signal) {
+			const rejection = standaloneFetchRejection(params, settings.fetchModes);
+			return rejection ? standaloneError(rejection) : markStandaloneError(await core.fetchContent(params, signal));
+		},
+		async getSearchContent(params, signal) {
+			return markStandaloneError(await core.getSearchContent(params, signal));
+		},
+		async sourceCheck(params, signal) {
+			const rejection = await standaloneProviderRejection(params.provider);
+			return rejection ? standaloneError(rejection) : markStandaloneError(await core.sourceCheck(params, signal));
+		},
 	};
 }
