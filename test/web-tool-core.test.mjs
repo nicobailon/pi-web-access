@@ -35,6 +35,7 @@ const requests = [];
 globalThis.fetch = async (input) => {
 	const url = String(input instanceof Request ? input.url : input);
 	requests.push(url);
+	if (url.startsWith("https://api.search.brave.com/") && url.includes("brave-fails")) return new Response("provider failed", { status: 401 });
 	if (url.startsWith("https://api.search.brave.com/")) {
 		return Response.json({ web: { results: [{ title: "Standalone Article", url: ${JSON.stringify(ARTICLE_URL)}, description: "Brave snippet" }] } });
 	}
@@ -85,8 +86,11 @@ test("standalone web_search returns provider results retrievable by responseId",
 		const result = await core.webSearch({ query: "standalone core", provider: "brave" });
 		const searchId = result.content[0].text.match(/stored as responseId "([^"]+)"/)[1];
 		const retrieved = await core.getSearchContent({ responseId: searchId, queryIndex: 0 });
-		return { text: result.content[0].text, isError: result.isError ?? false, searchId, details: result.details, retrieved };
-	`);
+		const auto = await core.webSearch({ query: "standalone core" });
+		const failed = await core.webSearch({ query: "brave-fails", provider: "brave" });
+		const mixed = await core.webSearch({ queries: ["standalone core", "brave-fails"], provider: "brave" });
+		return { text: result.content[0].text, isError: result.isError ?? false, searchId, details: result.details, retrieved, auto, failed, mixed };
+	`, { config: { searchRouting: { providers: ["openai", "brave"], useCurrentModel: true, fallbackOn: ["transient"] } } });
 	assert.deepEqual(blocked, []);
 	assert.equal(out.isError, false);
 	assert.match(out.text, /\*\*Provider:\*\* brave/);
@@ -95,6 +99,12 @@ test("standalone web_search returns provider results retrievable by responseId",
 	assert.equal(out.details.searchId, out.searchId);
 	assert.equal(out.retrieved.isError, undefined);
 	assert.match(out.retrieved.content[0].text, /### Standalone Article\nhttp:\/\/93\.184\.216\.34\/article\n\nBrave snippet/);
+	// auto skips the current-model OpenAI route, which needs Pi, and uses Brave.
+	assert.equal(out.auto.isError, undefined);
+	assert.deepEqual(out.auto.details.queryProviders, [{ query: "standalone core", providers: ["brave"] }]);
+	assert.equal(out.failed.isError, true);
+	assert.match(out.failed.content[0].text, /Brave Search API error 401/);
+	assert.equal(out.mixed.isError, undefined);
 });
 
 test("standalone includeContent waits for page content before returning", () => {
@@ -158,15 +168,15 @@ test("standalone direct image fetch fails clearly without loading Pi or Pi-only 
 
 test("standalone store evicts the oldest stored result past its bound", () => {
 	const { out } = runStandalone(`
-		const core = createStandaloneWebToolCore({ maxStoredResults: 2 });
+		const core = createStandaloneWebToolCore();
 		const ids = [];
-		for (let i = 0; i < 3; i++) ids.push((await core.fetchContent({ url: ${JSON.stringify(ARTICLE_URL)} })).details.responseId);
+		for (let i = 0; i < 51; i++) ids.push((await core.fetchContent({ url: ${JSON.stringify(ARTICLE_URL)} })).details.responseId);
 		const oldest = await core.getSearchContent({ responseId: ids[0] });
-		const newest = await core.getSearchContent({ responseId: ids[2] });
-		return { oldest, newest };
+		const kept = await core.getSearchContent({ responseId: ids[1] });
+		return { oldest, kept };
 	`);
 	assert.equal(out.oldest.isError, true);
 	assert.match(out.oldest.content[0].text, /No stored results for responseId/);
-	assert.equal(out.newest.isError, undefined);
-	assert.match(out.newest.content[0].text, /readable paragraph without the Pi runtime/);
+	assert.equal(out.kept.isError, undefined);
+	assert.match(out.kept.content[0].text, /readable paragraph without the Pi runtime/);
 });

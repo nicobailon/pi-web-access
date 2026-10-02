@@ -14,7 +14,6 @@ import { resolveAuthFetchProfile, type AuthFetchProfile } from "./auth-fetch.ts"
 import { findContent, type FindMode } from "./content-find.ts";
 import {
 	assertSearchProviderSelectionAllowed,
-	getConfiguredSearchRouting,
 	normalizeSearchProviderSelection,
 	search,
 	type SearchProvider,
@@ -306,17 +305,7 @@ function normalizeFindQueries(value: string | string[]): string[] {
 	return queries;
 }
 
-interface GetSearchContentParams {
-	responseId: string;
-	query?: string;
-	queryIndex?: number;
-	url?: string;
-	urlIndex?: number;
-	offset?: number;
-	limit?: number;
-	findText?: string | string[];
-	findMode?: FindMode;
-}
+type GetSearchContentParams = GetSearchContentCallParams;
 
 export type RawGetSearchContentParams = Omit<GetSearchContentParams, "findMode"> & { findMode?: unknown };
 
@@ -1338,14 +1327,9 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 	};
 }
 
-const DEFAULT_MAX_STORED_RESULTS = 50;
+const MAX_STORED_RESULTS = 50;
 const STANDALONE_DIRECT_IMAGE_ERROR = "Direct image fetch is not supported over MCP; fetch_content returns text there. Fetch images from the Pi extension instead.";
 const PI_ONLY_FETCH_FIELDS = ["prompt", "timestamp", "frames", "model", "answerModel"] as const;
-
-export interface StandaloneWebToolCoreOptions {
-	/** Stored responseIds kept in memory before the oldest is evicted (default 50). */
-	maxStoredResults?: number;
-}
 
 export interface StandaloneWebToolCore extends WebToolCore {
 	/** Default names of the tools web-search.json enables; hosts list only these. */
@@ -1356,12 +1340,16 @@ function standaloneError(error: string): WebToolResult {
 	return { content: [{ type: "text", text: `Error: ${error}` }], details: { error }, isError: true };
 }
 
+// A web_search whose every query failed is an error too; zero matches is not.
 function markStandaloneError(result: WebToolResult): WebToolResult {
-	return result.details.error !== undefined ? { ...result, isError: true } : result;
+	const { error, queryCount, successfulQueries } = result.details;
+	const allQueriesFailed = typeof queryCount === "number" && queryCount > 0 && successfulQueries === 0;
+	return error !== undefined || allQueriesFailed ? { ...result, isError: true } : result;
 }
 
-// Requests that need Pi's model registry or login state fail here instead of
-// silently falling back to another provider.
+// Explicit requests for providers that need Pi's model registry or login state
+// fail here instead of silently falling back. Automatic selection already skips
+// them without a Pi context and picks among the providers usable here.
 async function standaloneProviderRejection(requested: unknown): Promise<string | undefined> {
 	let selection: SearchProviderSelection;
 	try {
@@ -1372,17 +1360,6 @@ async function standaloneProviderRejection(requested: unknown): Promise<string |
 	const explicit = Array.isArray(selection) ? selection : selection === "auto" || selection === "all" ? [] : [selection];
 	if (explicit.includes("kimi")) {
 		return "Kimi search is not supported over MCP: it authenticates only through Pi's /login kimi-coding. Choose another provider, or search from Pi.";
-	}
-	if (selection === "auto") {
-		let routing: ReturnType<typeof getConfiguredSearchRouting>;
-		try {
-			routing = getConfiguredSearchRouting();
-		} catch {
-			return undefined;
-		}
-		if (routing?.useCurrentModel === true && routing.providers.includes("openai")) {
-			return `searchRouting.useCurrentModel in ${WEB_SEARCH_CONFIG_PATH} routes OpenAI search through the current Pi model, which is not available over MCP. Remove useCurrentModel or pass an explicit provider.`;
-		}
 	}
 	if (explicit.includes("openai")) {
 		let available: boolean;
@@ -1416,11 +1393,7 @@ function standaloneFetchRejection(params: FetchContentCallParams, fetchModes: Fe
 
 /** Core for hosts without Pi: no extension context, curator, or summaries; results
  * live in a bounded in-memory store; includeContent waits for the page fetch. */
-export function createStandaloneWebToolCore(options: StandaloneWebToolCoreOptions = {}): StandaloneWebToolCore {
-	const maxStoredResults = options.maxStoredResults ?? DEFAULT_MAX_STORED_RESULTS;
-	if (!Number.isInteger(maxStoredResults) || maxStoredResults < 1) {
-		throw new Error("maxStoredResults must be a positive integer");
-	}
+export function createStandaloneWebToolCore(): StandaloneWebToolCore {
 	const config = loadConfig();
 	const settings: WebToolCoreSettings = {
 		toolNames: { ...DEFAULT_TOOL_NAMES },
@@ -1436,7 +1409,7 @@ export function createStandaloneWebToolCore(options: StandaloneWebToolCoreOption
 	const storedIds: string[] = [];
 	const remember = (id: string) => {
 		storedIds.push(id);
-		while (storedIds.length > maxStoredResults) deleteResult(storedIds.shift()!);
+		while (storedIds.length > MAX_STORED_RESULTS) deleteResult(storedIds.shift()!);
 	};
 	const core = createWebToolCore({
 		settings,
