@@ -26,6 +26,7 @@ export async function resolve(specifier, context, nextResolve) {
 
 const ARTICLE_URL = "http://93.184.216.34/article";
 const IMAGE_URL = "http://93.184.216.34/pixel.png";
+const PROVIDED_URL = "https://example.com/provided";
 const fetchMock = `
 const articleHtml = "<html><head><title>Standalone Article</title></head><body><article><h1>Standalone Article</h1>"
 	+ "<p>" + "The standalone web tool core fetched this readable paragraph without the Pi runtime. ".repeat(12) + "</p>"
@@ -35,6 +36,12 @@ const requests = [];
 globalThis.fetch = async (input) => {
 	const url = String(input instanceof Request ? input.url : input);
 	requests.push(url);
+	if (url === "https://api.anysearch.com/v1/search") {
+		return Response.json({ code: 0, data: { results: [
+			{ title: "Standalone Article", url: ${JSON.stringify(ARTICLE_URL)}, snippet: "no body" },
+			{ title: "Provided", url: ${JSON.stringify(PROVIDED_URL)}, snippet: "has body", content: "provider page body" },
+		], metadata: {} } });
+	}
 	if (url.startsWith("https://api.search.brave.com/") && url.includes("brave-fails")) return new Response("provider failed", { status: 401 });
 	if (url.startsWith("https://api.search.brave.com/") && url.includes("brave-empty")) return Response.json({ web: { results: [] } });
 	if (url.startsWith("https://api.search.brave.com/")) {
@@ -120,6 +127,20 @@ test("standalone includeContent waits for page content before returning", () => 
 	assert.doesNotMatch(out.text, /in background|Will notify/);
 	assert.equal(out.details.fetchUrls, undefined);
 	assert.match(out.page, /readable paragraph without the Pi runtime/);
+});
+
+test("standalone includeContent keeps provider page content and fetches only uncovered URLs", () => {
+	const { out, requests } = runStandalone(`
+		const core = createStandaloneWebToolCore();
+		const result = await core.webSearch({ query: "partial content", provider: "anysearch", includeContent: true });
+		const pages = [];
+		for (const urlIndex of [0, 1]) pages.push((await core.getSearchContent({ responseId: result.details.fetchId, urlIndex })).content[0].text);
+		return { text: result.content[0].text, details: result.details, pages };
+	`);
+	assert.deepEqual(requests, ["https://api.anysearch.com/v1/search", ARTICLE_URL]);
+	assert.match(out.text, new RegExp(`Full content for 2 sources is ready as responseId "${out.details.fetchId}"`));
+	assert.match(out.pages[0], /readable paragraph without the Pi runtime/);
+	assert.match(out.pages[1], /^# Provided\n\nprovider page body/);
 });
 
 test("standalone rejects Pi-only providers and fetch modes before any network call", () => {

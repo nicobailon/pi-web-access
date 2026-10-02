@@ -198,3 +198,56 @@ test("truncated background-fetch search retains state, fetchId, and search retri
 	assert.match(out.text, new RegExp(`Full search results are stored as responseId "${out.details.searchId}"`));
 	assert.match(out.text, new RegExp(`get_search_content\\(\\{ responseId: "${out.details.searchId}", queryIndex: 0, offset: 0, limit: 1000 \\}\\)`));
 });
+
+test("background includeContent keeps provider page content and fetches only uncovered URLs", () => {
+	const dir = mkdtempSync(join(tmpdir(), "pi-web-access-partial-inline-"));
+	try {
+		writeFileSync(join(dir, "web-search.json"), JSON.stringify({ provider: "anysearch" }));
+		const child = spawnSync(process.execPath, ["--input-type=module"], {
+			input: `
+			const requests = [];
+			globalThis.fetch = async (input) => {
+				const url = String(input instanceof Request ? input.url : input);
+				requests.push(url);
+				if (url === "https://api.anysearch.com/v1/search") {
+					return Response.json({ code: 0, data: { results: [
+						{ title: "Uncovered", url: "http://93.184.216.34/uncovered", snippet: "no body" },
+						{ title: "Provided", url: "https://example.com/provided", snippet: "has body", content: "provider page body" },
+					], metadata: {} } });
+				}
+				if (url === "http://93.184.216.34/uncovered") return new Response("unavailable", { status: 503 });
+				throw new Error("Unexpected fetch: " + url);
+			};
+			const tools = [];
+			const handlers = new Map();
+			let notify;
+			const notified = new Promise(resolve => { notify = resolve; });
+			const pi = {
+				registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {},
+				on(event, handler) { handlers.set(event, handler); }, appendEntry() {},
+				sendMessage(message) { if (message.customType === "web-search-content-ready") notify(message.content); },
+			};
+			const initializeExtension = (await import(${JSON.stringify(indexUrl)})).default;
+			initializeExtension(pi);
+			await handlers.get("session_start")({}, { sessionManager: { getBranch: () => [] } });
+			const result = await tools.find(tool => tool.name === "web_search").execute("call", { query: "partial content", includeContent: true });
+			const message = await notified;
+			const retrieve = tools.find(tool => tool.name === "get_search_content");
+			const pages = [];
+			for (const urlIndex of [0, 1]) pages.push((await retrieve.execute("page", { responseId: result.details.fetchId, urlIndex })).content[0].text);
+			console.log(JSON.stringify({ fetchId: result.details.fetchId, message, pages, requests }));
+			`,
+			encoding: "utf8",
+			timeout: 30_000,
+			env: { ...process.env, PI_CODING_AGENT_DIR: dir },
+		});
+		assert.equal(child.status, 0, child.stderr);
+		const out = JSON.parse(child.stdout.trim().split("\n").at(-1));
+		assert.equal(out.message, `Content fetched for 1/2 URLs [${out.fetchId}]. Partial page content now available.`);
+		assert.deepEqual(out.requests.filter(url => url !== "https://api.anysearch.com/v1/search"), ["http://93.184.216.34/uncovered"]);
+		assert.match(out.pages[0], /^Error retrieving URL "http:\/\/93\.184\.216\.34\/uncovered"/);
+		assert.match(out.pages[1], /^# Provided\n\nprovider page body/);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

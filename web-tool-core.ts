@@ -243,6 +243,23 @@ export async function fetchAllContent(
 	return extractModule.fetchAllContent(urls, signal, options);
 }
 
+/** Returns content for every URL in order: the provider's content where it supplied some,
+ * and a page fetch only for the URLs it did not cover. */
+export async function fetchUncoveredContent(
+	urls: string[],
+	provided: ExtractedContent[] | undefined,
+	fetchPages: (urls: string[]) => Promise<ExtractedContent[]>,
+): Promise<ExtractedContent[]> {
+	const providedByUrl = new Map<string, ExtractedContent>();
+	for (const content of provided ?? []) {
+		if (!providedByUrl.has(content.url)) providedByUrl.set(content.url, content);
+	}
+	const missing = urls.filter(url => !providedByUrl.has(url));
+	const fetched = missing.length > 0 ? await fetchPages(missing) : [];
+	let next = 0;
+	return urls.map(url => providedByUrl.get(url) ?? fetched[next++]);
+}
+
 export function withRegisteredFetchOptions(
 	options: ExtractOptions | undefined,
 	toolNames: ExtractOptions["toolNames"],
@@ -471,9 +488,9 @@ export interface WebToolCoreHost {
 	storeFetchedContent(id: string, data: FetchedContentData): void;
 	/** Called after search or research results are stored in memory. */
 	publishResult?(data: StoredSearchData): void;
-	/** Fetch includeContent pages in the background and return their responseId. When
-	 * omitted, web_search awaits the same fetch before returning. */
-	startBackgroundFetch?(urls: string[], proxy?: string): string | null;
+	/** Fetch includeContent pages the provider did not cover in the background and return
+	 * their responseId. When omitted, web_search awaits the same fetch before returning. */
+	startBackgroundFetch?(urls: string[], proxy?: string, provided?: ExtractedContent[]): string | null;
 	/** Answers fetch_content mode "answer"; requires the host's model access. */
 	answerFromPage?(request: PageAnswerRequest, extensionContext: ExtensionContext | undefined, signal?: AbortSignal): Promise<{ text: string }>;
 	/** Extraction options every fetch in this host adds (for example direct-image policy). */
@@ -596,7 +613,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			} satisfies FetchedContentData;
 			host.storeFetchedContent(fetchId, data);
 		} else if (opts.includeContent) {
-			fetchId = host.startBackgroundFetch?.(opts.urls, opts.proxy) ?? null;
+			fetchId = host.startBackgroundFetch?.(opts.urls, opts.proxy, opts.inlineContent) ?? null;
 		}
 
 		const searchId = storeAndPublishSearch(opts.results);
@@ -753,7 +770,8 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			let inlineContent = allInlineContent.length > 0 ? allInlineContent : undefined;
 			if (params.includeContent && !host.startBackgroundFetch && allUrls.length > 0 && !hasFullInlineCoverage(allUrls, inlineContent)) {
 				// Hosts without background notifications wait for the same page fetch instead.
-				const fetched = await fetchAllContent(allUrls, signal, fetchOptions(undefined, typeof params.proxy === "string" ? params.proxy : undefined));
+				const proxy = typeof params.proxy === "string" ? params.proxy : undefined;
+				const fetched = await fetchUncoveredContent(allUrls, inlineContent, urls => fetchAllContent(urls, signal, fetchOptions(undefined, proxy)));
 				signal?.throwIfAborted();
 				inlineContent = stripThumbnails(fetched);
 			}

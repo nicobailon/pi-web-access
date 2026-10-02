@@ -79,6 +79,7 @@ import {
 	DEFAULT_TOOL_NAMES,
 	expandQueryString,
 	fetchAllContent,
+	fetchUncoveredContent,
 	getMaxInlineContentChars,
 	isToolEnabled,
 	loadConfig,
@@ -736,13 +737,13 @@ export default function (pi: ExtensionAPI) {
 	const curateKey = initConfig.shortcuts?.curate || DEFAULT_SHORTCUTS.curate;
 	const activityKey = initConfig.shortcuts?.activity || DEFAULT_SHORTCUTS.activity;
 
-	function startBackgroundFetch(urls: string[], proxy?: string): string | null {
+	function startBackgroundFetch(urls: string[], proxy?: string, provided?: ExtractedContent[]): string | null {
 		if (urls.length === 0) return null;
 		const fetchId = generateId();
 		const controller = new AbortController();
 		pendingFetches.set(fetchId, controller);
 		Promise.resolve()
-			.then(() => runWithProxy(proxy, () => fetchAllContent(urls, controller.signal, withRegisteredFetchOptions(undefined, registeredToolNames, proxy))))
+			.then(() => fetchUncoveredContent(urls, provided, missing => runWithProxy(proxy, () => fetchAllContent(missing, controller.signal, withRegisteredFetchOptions(undefined, registeredToolNames, proxy)))))
 			.then((fetched) => {
 				if (!sessionActive || !pendingFetches.has(fetchId)) return;
 				const data = {
