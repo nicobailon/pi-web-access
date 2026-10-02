@@ -149,6 +149,12 @@ function isRedirectPolicyError(message: string): boolean {
 		message.startsWith("Failed to resolve ");
 }
 
+// Errors that end routing: no other provider may be tried after them.
+function isNonRecoverableHttpError(error: string | null): boolean {
+	return !!error && (NON_RECOVERABLE_ERRORS.some(prefix => error.startsWith(prefix)) ||
+		isRedirectPolicyError(error) || isConfigParseError(error));
+}
+
 function imageGateError(): string | null {
 	try {
 		return isImageEnabled() ? null : "Image fetching is disabled by image.enabled";
@@ -811,7 +817,7 @@ export async function extractContent(
 		declaredLinks = discoveredLinks;
 		if (signal?.aborted) return abortedResult(url);
 		if (!httpResult.error) return httpResult;
-		if (NON_RECOVERABLE_ERRORS.some(prefix => httpResult!.error!.startsWith(prefix)) || isRedirectPolicyError(httpResult.error) || isConfigParseError(httpResult.error)) {
+		if (isNonRecoverableHttpError(httpResult.error)) {
 			return httpResult;
 		}
 		return null;
@@ -1357,21 +1363,24 @@ async function extractViaHttp(
 
 		if (!isHTML) {
 			activityMonitor.logComplete(activityId, response.status);
-			if (preferMarkdown && (mimeType === "text/markdown" || mimeType === "text/x-markdown")) {
-				const declaredLinks = discoverDeclaredWebLinks(null, response.headers.get("link"), response.url || url);
-				const negotiated = { url, title: extractTextTitle(text, url), content: appendDeclaredWebLinks(text, declaredLinks), error: null, declaredLinks };
-				if (text.trim().length >= MIN_USEFUL_CONTENT) return negotiated;
-				// Negotiated markdown must never end worse than the old browser request.
-				// A near-empty version (e.g. converted from a JS shell) is re-requested as
-				// the normal representation so the HTML checks apply; markdown-only
-				// servers return the same body. If that yields no content, keep this one
-				// but mark it incomplete so configured fallbacks still run.
-				const normal = await extractViaHttp(url, Math.max(1, timeoutMs - (Date.now() - startedAt)), signal, options, false);
-				if (signal?.aborted || normal.content.trim()) return normal;
-				return { ...negotiated, error: "Extracted content appears incomplete" };
-			}
 			const title = extractTextTitle(text, url);
-			return { url, title, content: text, error: null };
+			if (mimeType !== "text/markdown" && mimeType !== "text/x-markdown") return { url, title, content: text, error: null };
+			const declaredLinks = discoverDeclaredWebLinks(null, response.headers.get("link"), response.url || url);
+			const markdown = { url, title, content: appendDeclaredWebLinks(text, declaredLinks), error: null, declaredLinks };
+			if (!preferMarkdown || text.trim().length >= MIN_USEFUL_CONTENT) return markdown;
+			// Short negotiated markdown is re-requested with the browser Accept header.
+			// That response stays authoritative for policy/config rejection, not-found
+			// status, cancellation, and any content it has. This markdown only fills a
+			// recoverable empty response, marked incomplete with its status and error.
+			const normal = await extractViaHttp(url, Math.max(1, timeoutMs - (Date.now() - startedAt)), signal, options, false);
+			if (signal?.aborted || isNonRecoverableHttpError(normal.error) ||
+				normal.status === 404 || normal.status === 410 || isAbortError(normal.error)) return normal;
+			if (normal.content.trim() || !markdown.content.trim()) return normal;
+			return {
+				...normal,
+				...markdown,
+				error: "Extracted content appears incomplete" + (normal.error ? `\nBrowser retry failed: ${normal.error}` : ""),
+			};
 		}
 
 		const { parseHTML } = await import("linkedom");

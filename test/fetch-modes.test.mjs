@@ -54,19 +54,72 @@ test("a near-empty negotiated markdown reply falls back to the page's HTML", asy
 	assert.match(result.content, /explains every configuration option/);
 });
 
-test("short negotiated markdown survives a normal request without content", async () => {
-	for (const normal of [
-		() => new Response("unavailable", { status: 503, statusText: "Service Unavailable" }),
-		() => new Response("", { headers: { "content-type": "text/plain" } }),
-	]) {
-		globalThis.fetch = async (_url, init) => new Headers(init.headers).get("accept").startsWith("text/markdown")
-			? new Response("# Changelog\n\n- 1.0 released", { headers: { "content-type": "text/markdown" } })
-			: normal();
+const shortMarkdown = "# Changelog\n\n- 1.0 released";
+const text = (body, type = "text/plain") => () => new Response(body, { headers: { "content-type": type } });
 
-		const result = await extractContent("https://docs.example.com/changelog", undefined, { lookup });
+async function negotiate(normal, markdown = text(shortMarkdown, "text/markdown"), options = {}) {
+	const calls = [];
+	globalThis.fetch = async (url, init) => {
+		calls.push(String(url));
+		return new Headers(init.headers).get("accept").startsWith("text/markdown") ? markdown() : normal();
+	};
+	const result = await extractContent("https://docs.example.com/changelog", undefined, { lookup, ...options });
+	return { result, calls };
+}
+
+test("short negotiated markdown is kept only when the browser retry has no content", async () => {
+	const { result: plain } = await negotiate(text("Plain changelog text"));
+	assert.equal(plain.error, null);
+	assert.equal(plain.content, "Plain changelog text");
+
+	for (const [normal, status, retryError] of [
+		[text(""), undefined, null],
+		[() => new Response("unavailable", { status: 503, statusText: "Service Unavailable" }), 503, "HTTP 503: Service Unavailable"],
+	]) {
+		const { result } = await negotiate(normal);
 		assert.match(result.content, /1\.0 released/);
-		assert.ok(result.error);
+		assert.ok(result.error.startsWith("Extracted content appears incomplete" + (retryError ? `\nBrowser retry failed: ${retryError}` : "")));
+		assert.equal(result.status, status);
 	}
+
+	const { result: empty } = await negotiate(text(""), text("", "text/markdown"));
+	assert.equal(empty.error, null);
+	assert.equal(empty.content, "");
+});
+
+test("authoritative browser retry failures replace short negotiated markdown", async () => {
+	for (const [normal, error, expectedCalls] of [
+		[() => new Response(new Uint8Array([80, 75, 3, 4]), { headers: { "content-type": "application/zip" } }), /^Unsupported content type: application\/zip$/, 2],
+		[() => new Response(null, { status: 302, headers: { location: "http://127.0.0.1/admin" } }), /^Blocked internal/, 2],
+		[() => new Response("gone", { status: 404, statusText: "Not Found" }), /HTTP 404/],
+	]) {
+		const { result, calls } = await negotiate(normal);
+		assert.match(result.error, error);
+		assert.doesNotMatch(result.content, /1\.0 released/);
+		if (expectedCalls) assert.equal(calls.length, expectedCalls);
+		else assert.equal(result.status, 404);
+	}
+});
+
+test("short markdown served for every Accept header keeps its declared links", async () => {
+	const withLink = () => new Response(shortMarkdown, { headers: { "content-type": "text/markdown", link: '</openapi.json>; rel="service-desc"' } });
+	const { result, calls } = await negotiate(withLink, withLink);
+	assert.equal(result.error, null);
+	assert.match(result.content, /1\.0 released/);
+	assert.match(result.content, /https:\/\/docs\.example\.com\/openapi\.json/);
+	assert.equal(calls.length, 2);
+});
+
+test("caller abort during the browser retry returns an aborted result", async () => {
+	const controller = new AbortController();
+	globalThis.fetch = async (_url, init) => {
+		if (new Headers(init.headers).get("accept").startsWith("text/markdown")) return text(shortMarkdown, "text/markdown")();
+		controller.abort();
+		throw new DOMException("This operation was aborted", "AbortError");
+	};
+	const result = await extractContent("https://docs.example.com/changelog", controller.signal, { lookup });
+	assert.equal(result.error, "Aborted");
+	assert.equal(result.content, "");
 });
 
 test("raw mode returns textual non-2xx bodies but rejects images", async () => {
