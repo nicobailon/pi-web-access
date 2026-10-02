@@ -54,6 +54,16 @@ test("a near-empty negotiated markdown reply falls back to the page's HTML", asy
 	assert.match(result.content, /explains every configuration option/);
 });
 
+test("short negotiated markdown survives a failed normal request", async () => {
+	globalThis.fetch = async (_url, init) => new Headers(init.headers).get("accept").startsWith("text/markdown")
+		? new Response("# Changelog\n\n- 1.0 released", { headers: { "content-type": "text/markdown" } })
+		: new Response("unavailable", { status: 503, statusText: "Service Unavailable" });
+
+	const result = await extractContent("https://docs.example.com/changelog", undefined, { lookup });
+	assert.match(result.content, /1\.0 released/);
+	assert.ok(result.error);
+});
+
 test("raw mode returns textual non-2xx bodies but rejects images", async () => {
 	globalThis.fetch = async (url) => String(url).endsWith(".png")
 		? new Response(png, { status: 200, headers: { "content-type": "image/png" } })

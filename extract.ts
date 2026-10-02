@@ -1358,14 +1358,17 @@ async function extractViaHttp(
 		if (!isHTML) {
 			activityMonitor.logComplete(activityId, response.status);
 			if (preferMarkdown && (mimeType === "text/markdown" || mimeType === "text/x-markdown")) {
-				// A near-empty negotiated version (e.g. converted from a JS shell) must not
-				// end extraction: ask again for the normal representation so the HTML
-				// checks and fallbacks apply. Markdown-only servers return the same body.
-				if (text.trim().length < MIN_USEFUL_CONTENT) {
-					return await extractViaHttp(url, Math.max(1, timeoutMs - (Date.now() - startedAt)), signal, options, false);
-				}
 				const declaredLinks = discoverDeclaredWebLinks(null, response.headers.get("link"), response.url || url);
-				return { url, title: extractTextTitle(text, url), content: appendDeclaredWebLinks(text, declaredLinks), error: null, declaredLinks };
+				const negotiated = { url, title: extractTextTitle(text, url), content: appendDeclaredWebLinks(text, declaredLinks), error: null, declaredLinks };
+				if (text.trim().length >= MIN_USEFUL_CONTENT) return negotiated;
+				// Negotiated markdown must never end worse than the old browser request.
+				// A near-empty version (e.g. converted from a JS shell) is re-requested as
+				// the normal representation so the HTML checks apply; markdown-only
+				// servers return the same body. If that yields no content, keep this one
+				// but mark it incomplete so configured fallbacks still run.
+				const normal = await extractViaHttp(url, Math.max(1, timeoutMs - (Date.now() - startedAt)), signal, options, false);
+				if (!normal.error || signal?.aborted || normal.content.trim()) return normal;
+				return { ...negotiated, error: "Extracted content appears incomplete" };
 			}
 			const title = extractTextTitle(text, url);
 			return { url, title, content: text, error: null };
