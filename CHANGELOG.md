@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - `web_search` with `includeContent` keeps page content the search provider already returned and only fetches the pages it didn't cover. Before, it refetched every page and a failed fetch replaced usable content.
 - Brave search with a prepaid (pay-as-you-go) key no longer fails every call after the first with "quota exhausted; estimated reset in ~702h". Prepaid plans report a monthly rate-limit bucket with a limit of 0, which was read as an exhausted quota. Thanks to [@kk-code-lab](https://github.com/kk-code-lab) for [issue #501](https://github.com/nicobailon/pi-web-access/issues/501).
 - `fetch_content` in Pi reports a failed fetch as a tool error when its only URL failed or every URL in a batch failed. Before, Pi recorded these as successful tool calls even though the text said `Error: ...`. Batches where some URLs succeed are unchanged. Thanks to [@MDGChamomile](https://github.com/MDGChamomile) for [PR #504](https://github.com/nicobailon/pi-web-access/pull/504).
+- OpenAI web search shows the server's real error when a streamed response fails, such as a ChatGPT subscription usage limit, instead of "no parseable response output", and provider fallback still applies. Thanks to [@ShinoharaHaruna](https://github.com/ShinoharaHaruna) for [PR #505](https://github.com/nicobailon/pi-web-access/pull/505).
 
 ## [0.35.0] - 2026-09-30
 

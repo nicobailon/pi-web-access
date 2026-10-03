@@ -572,6 +572,75 @@ test("a Hosted response without web_search_call is invalid and can fall back", a
 	});
 });
 
+test("a billed Bright Data 200 quoting a rate_limit code fails as invalid-response, not quota", async () => {
+	const home = await createConfig({
+		searchRouting: { providers: ["brightdata", "tavily"], fallbackOn: ["quota"] },
+	});
+	const child = runChild(`
+		const calls = [];
+		globalThis.fetch = async (url) => {
+			calls.push(String(url));
+			if (String(url) === "https://api.brightdata.com/request") return new Response(JSON.stringify({ error: "rate_limit_exceeded" }), { status: 200 });
+			if (String(url) === "https://api.tavily.com/search") throw new Error("Tavily must not run");
+			throw new Error("Unexpected fetch " + url);
+		};
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		try {
+			await search("billed route", { provider: "auto" });
+			console.log(JSON.stringify({ ok: true, calls }));
+		} catch (error) {
+			console.log(JSON.stringify({ ok: false, error: String(error), calls }));
+		}
+	`, {
+		PI_CODING_AGENT_DIR: home,
+		BRIGHTDATA_API_KEY: "bd-test-key",
+		BRIGHTDATA_SERP_ZONE: "pi_serp",
+		TAVILY_API_KEY: "tavily-test-key",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.ok, false);
+	assert.match(output.error, /brightdata search failed \(invalid-response\)/);
+	assert.deepEqual(output.calls, ["https://api.brightdata.com/request"]);
+});
+
+for (const scenario of [
+	{ name: "server_error", fallbackOn: ["transient"], error: { type: "server_error", code: "internal_error", message: "backend exploded" } },
+	{ name: "rate_limit_exceeded", fallbackOn: ["quota"], error: { type: "requests", code: "rate_limit_exceeded", message: "slow down" } },
+	{ name: "unrecognised", fallbackOn: ["invalid-response"], error: { type: "mystery", code: "odd_failure", message: "something broke" } },
+]) {
+	test(`an OpenAI ${scenario.name} stream error can fall back with fallbackOn ${scenario.fallbackOn}`, async () => {
+		const home = await createConfig({
+			searchRouting: { providers: ["openai", "tavily"], fallbackOn: scenario.fallbackOn },
+		});
+		const child = runChild(`
+			const calls = [];
+			const events = [{ type: "response.created", response: { status: "in_progress" } }, { type: "error", error: ${JSON.stringify(scenario.error)} }];
+			globalThis.fetch = async (url) => {
+				const target = String(url);
+				calls.push(target);
+				if (target === "https://api.openai.com/v1/responses") return new Response(events.map((e) => "data: " + JSON.stringify(e) + "\\n").join("\\n"), { status: 200, headers: { "content-type": "text/event-stream" } });
+				if (target === "https://api.tavily.com/search") return new Response(JSON.stringify({ answer: "Tavily fallback answer", results: [] }), { status: 200 });
+				throw new Error("Unexpected fetch: " + target);
+			};
+			const { search } = await import(${JSON.stringify(searchModuleUrl)});
+			const result = await search("stream error route", { provider: "auto" });
+			console.log(JSON.stringify({ provider: result.provider, calls }));
+		`, {
+			PI_CODING_AGENT_DIR: home,
+			OPENAI_API_KEY: "openai-test-key",
+			TAVILY_API_KEY: "tavily-test-key",
+		});
+
+		assert.equal(child.status, 0, child.stderr);
+		assert.deepEqual(JSON.parse(child.stdout.trim()), {
+			provider: "tavily",
+			calls: ["https://api.openai.com/v1/responses", "https://api.tavily.com/search"],
+		});
+	});
+}
+
 test("useCurrentModel is strictly validated", async () => {
 	const home = await createConfig({ searchRouting: { providers: ["openai", "tavily"], useCurrentModel: "yes", fallbackOn: ["network"] } });
 	const child = runChild(`

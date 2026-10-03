@@ -36,6 +36,7 @@ import { isAnySearchAvailable, searchWithAnySearch } from "./anysearch.ts";
 import { isXcrawlAvailable, searchWithXCrawl } from "./xcrawl.ts";
 import { isXaiSearchAvailable, searchWithXai } from "./xai-search.ts";
 import { isBrightDataAvailable, searchWithBrightData } from "./brightdata.ts";
+import { QUOTA_ERROR_PATTERN } from "./quota-error-pattern.ts";
 import { isSerpBaseAvailable, searchWithSerpBase } from "./serpbase.ts";
 import { isSerpApiAvailable, searchWithSerpApi } from "./serpapi.ts";
 import { isSerperAvailable, searchWithSerper } from "./serper.ts";
@@ -352,24 +353,24 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 		kind = "quota";
 	} else if (status !== undefined && (status === 408 || status === 425 || status >= 500)) {
 		kind = "transient";
-		// API error codes use underscores (rate_limit_exceeded, usage_limit_exceeded,
-		// insufficient_quota); prose uses spaces. Match both, but not hyphens:
-		// Bright Data's deliberate "upstream rate-limit notice" rewrite must not
-		// classify as quota (billed failures shouldn't trigger quota fallback).
-	} else if (/rate_limits?|usage_limit|quota|rate limits?|too many requests/.test(lower)) {
+	} else if (QUOTA_ERROR_PATTERN.test(lower)) {
 		kind = "quota";
 	} else if (/unauthorized|forbidden|permission denied/.test(lower)) {
 		kind = "auth";
-	} else if (/bad request|invalid request/.test(lower)) {
+	} else if (/bad request|invalid[ _]request/.test(lower)) {
 		kind = "invalid-request";
 	} else if (/invalid json|no parseable response|no parseable results|invalid response|returned empty response|no web_search_call/.test(lower)) {
 		kind = "invalid-response";
-	} else if (/temporar|service unavailable|server error/.test(lower)) {
+	} else if (/temporar|service unavailable|server[ _]error/.test(lower)) {
 		kind = "transient";
 	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(lower)) {
 		kind = "network";
 	} else if (/invalid or missing|invalid config|failed to parse|must be an? |configuration/.test(lower)) {
 		kind = "config";
+	} else if (provider === "openai" && lower.includes("openai api stream error")) {
+		// An HTTP 200 stream that failed with no recognisable error stays
+		// invalid-response, as it was before stream errors were surfaced.
+		kind = "invalid-response";
 	}
 	return new SearchProviderError(provider, kind, message, status, err);
 }
