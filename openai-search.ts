@@ -500,7 +500,9 @@ async function parseOpenAIResponse(response: Response): Promise<ParsedOpenAIResp
 				// A failed response can carry `error: null`; never let its partial
 				// output pass for a successful search.
 				if (parsed.type === "response.failed") {
-					streamError ??= { message: "response status: failed (no error payload)" };
+					// Wording keeps "invalid response" so provider routing classifies
+					// this the same as the old "no web_search_call" outcome.
+					streamError ??= { message: "response stream failed with no error payload (invalid response)" };
 				}
 			}
 		} catch {

@@ -353,8 +353,10 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 	} else if (status !== undefined && (status === 408 || status === 425 || status >= 500)) {
 		kind = "transient";
 		// API error codes use underscores (rate_limit_exceeded, usage_limit_exceeded,
-		// insufficient_quota); prose uses spaces. Match both so quota errors classify.
-	} else if (/rate[-_ ]limits?|quota|usage[-_ ]limit|too many requests/.test(lower)) {
+		// insufficient_quota); prose uses spaces. Match both, but not hyphens:
+		// Bright Data's deliberate "upstream rate-limit notice" rewrite must not
+		// classify as quota (billed failures shouldn't trigger quota fallback).
+	} else if (/rate_limits?|usage_limit|quota|rate limits?|too many requests/.test(lower)) {
 		kind = "quota";
 	} else if (/unauthorized|forbidden|permission denied/.test(lower)) {
 		kind = "auth";
