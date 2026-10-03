@@ -468,22 +468,53 @@ async function parseOpenAIResponse(response: Response): Promise<ParsedOpenAIResp
 	const outputItems: unknown[] = [];
 	let completedResponse: Record<string, unknown> | null = null;
 	let webSearchCallSeen = false;
+	let streamError: { code?: unknown; type?: unknown; message?: unknown } | null = null;
 	for (const line of text.split("\n")) {
 		if (!line.startsWith("data: ")) continue;
 		const data = line.slice(6).trim();
 		if (!data || data === "[DONE]") continue;
 		try {
 			const parsed = JSON.parse(data) as Record<string, unknown>;
+			// The API can fail mid-stream with HTTP 200: a terminal `error` event and
+			// `response.failed` carry the real error (e.g. quota exhaustion), while no
+			// output items or completed response ever arrive. Surface it faithfully.
+			// `error` events are terminal in the Responses API, so a captured stream
+			// error deliberately takes precedence over any output parsed afterwards.
+			if (parsed.type === "error") {
+				const err = parsed.error;
+				streamError ??= err && typeof err === "object"
+					? err as { code?: unknown; type?: unknown; message?: unknown }
+					: { code: parsed.code, message: typeof err === "string" ? err : (typeof parsed.message === "string" ? parsed.message : undefined) };
+			}
 			if (typeof parsed.type === "string" && parsed.type.startsWith("response.web_search_call")) webSearchCallSeen = true;
 			if (parsed.type === "response.output_item.done" && parsed.item) {
 				outputItems.push(parsed.item);
 				webSearchCallSeen ||= isWebSearchCall(parsed.item);
 			}
-			if ((parsed.type === "response.done" || parsed.type === "response.completed") && parsed.response && typeof parsed.response === "object") {
+			if ((parsed.type === "response.failed" || parsed.type === "response.incomplete" || parsed.type === "response.done" || parsed.type === "response.completed") && parsed.response && typeof parsed.response === "object") {
 				completedResponse = parsed.response as Record<string, unknown>;
+				const responseError = (completedResponse as { error?: unknown }).error;
+				if (responseError && typeof responseError === "object") {
+					streamError ??= responseError as { code?: unknown; type?: unknown; message?: unknown };
+				}
+				// A failed response can carry `error: null`; never let its partial
+				// output pass for a successful search.
+				if (parsed.type === "response.failed") {
+					streamError ??= { message: "response status: failed (no error payload)" };
+				}
 			}
 		} catch {
 		}
+	}
+
+	if (streamError) {
+		const code = typeof streamError.code === "string" ? streamError.code : undefined;
+		const type = typeof streamError.type === "string" ? streamError.type : undefined;
+		const message = typeof streamError.message === "string" && streamError.message.trim().length > 0
+			? streamError.message
+			: "OpenAI API stream failed";
+		const detail = [type, code].filter(Boolean).join("/");
+		throw new Error(`OpenAI API stream error${detail ? ` (${detail})` : ""}: ${message}`);
 	}
 
 	if (completedResponse) {
