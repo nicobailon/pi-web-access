@@ -614,8 +614,10 @@ for (const scenario of [
 	{ name: "server_error", fallbackOn: ["transient"], error: { type: "server_error", code: "internal_error", message: "backend exploded" } },
 	{ name: "rate_limit_exceeded", fallbackOn: ["quota"], error: { type: "requests", code: "rate_limit_exceeded", message: "slow down" } },
 	{ name: "unrecognised", fallbackOn: ["invalid-response"], error: { type: "mystery", code: "odd_failure", message: "something broke" } },
+	{ name: "subscription usage limit", fallbackOn: ["quota"], error: { type: "invalid_request_error", code: "subscription_sharing_usage_limit_exceeded", message: "The ChatGPT user has reached their Subscription Sharing usage limit." } },
+	{ name: "permission", fallbackOn: ["invalid-response", "transient", "quota"], error: { type: "permission_error", code: "forbidden", message: "Project does not have access to web search" }, failsAs: "auth" },
 ]) {
-	test(`an OpenAI ${scenario.name} stream error can fall back with fallbackOn ${scenario.fallbackOn}`, async () => {
+	test(`an OpenAI ${scenario.name} stream error ${scenario.failsAs ? `fails as ${scenario.failsAs}` : "can fall back"} with fallbackOn ${scenario.fallbackOn}`, async () => {
 		const home = await createConfig({
 			searchRouting: { providers: ["openai", "tavily"], fallbackOn: scenario.fallbackOn },
 		});
@@ -630,8 +632,12 @@ for (const scenario of [
 				throw new Error("Unexpected fetch: " + target);
 			};
 			const { search } = await import(${JSON.stringify(searchModuleUrl)});
-			const result = await search("stream error route", { provider: "auto" });
-			console.log(JSON.stringify({ provider: result.provider, calls }));
+			try {
+				const result = await search("stream error route", { provider: "auto" });
+				console.log(JSON.stringify({ provider: result.provider, calls }));
+			} catch (err) {
+				console.log(JSON.stringify({ error: err.message.split(":")[0], calls }));
+			}
 		`, {
 			PI_CODING_AGENT_DIR: home,
 			OPENAI_API_KEY: "openai-test-key",
@@ -639,10 +645,9 @@ for (const scenario of [
 		});
 
 		assert.equal(child.status, 0, child.stderr);
-		assert.deepEqual(JSON.parse(child.stdout.trim()), {
-			provider: "tavily",
-			calls: ["https://api.openai.com/v1/responses", "https://api.tavily.com/search"],
-		});
+		assert.deepEqual(JSON.parse(child.stdout.trim()), scenario.failsAs
+			? { error: `openai search failed (${scenario.failsAs})`, calls: ["https://api.openai.com/v1/responses"] }
+			: { provider: "tavily", calls: ["https://api.openai.com/v1/responses", "https://api.tavily.com/search"] });
 	});
 }
 

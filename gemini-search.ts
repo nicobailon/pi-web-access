@@ -332,6 +332,13 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 	const message = errorMessage(err);
 	const lower = message.toLowerCase();
 	const status = providerErrorStatus(message);
+	// An HTTP 200 OpenAI stream reports its failure as an error type/code such as
+	// rate_limit_exceeded or server_error. Reading only that message with spaces
+	// lets the shared keywords below classify it like prose, without widening them
+	// for other providers, which echo foreign text (Bright Data zone names,
+	// envelope codes) that must keep classifying as before.
+	const openAIStreamError = provider === "openai" && lower.includes("openai api stream error");
+	const text = openAIStreamError ? lower.replace(/_/g, " ") : lower;
 	let kind: SearchProviderErrorKind = "unknown";
 	const mentionsUnsupportedWebSearch = /(?:web[_ -]?search|web[_ -]?search_preview|(?:the )?tool)\b.*\b(?:unsupported|not supported|does not support|doesn't support|unknown|unrecognized|unavailable|not found)|\b(?:unsupported|not supported|does not support|doesn't support|unknown|unrecognized|unavailable|not found)\b.*\b(?:web[_ -]?search|web[_ -]?search_preview|(?:the )?tool)/i.test(lower);
 	if (err instanceof CredentialResolutionError || /(?:api )?key (?:not found|missing)|credential resolution/.test(lower)) {
@@ -352,30 +359,23 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 		kind = "quota";
 	} else if (status !== undefined && (status === 408 || status === 425 || status >= 500)) {
 		kind = "transient";
-	} else if (provider === "openai" && lower.includes("openai api stream error")) {
-		// An HTTP 200 stream reports its failure as an OpenAI error type/code, which
-		// is mapped here rather than by widening the shared keywords below: other
-		// providers echo foreign text (Bright Data zone names, envelope codes) that
-		// must keep classifying as before. Unrecognised stream failures stay
-		// invalid-response, as they were before the error was surfaced.
-		kind = /rate[ _]limit|usage[ _]limit|quota|too many requests/.test(lower) ? "quota"
-			: /server[ _]error|internal_error/.test(lower) ? "transient"
-			: /invalid[ _]request/.test(lower) ? "invalid-request"
-			: "invalid-response";
-	} else if (/rate limit|quota|too many requests/.test(lower)) {
+	} else if (/rate limit|quota|too many requests/.test(text) || (openAIStreamError && /usage limit/.test(text))) {
 		kind = "quota";
-	} else if (/unauthorized|forbidden|permission denied/.test(lower)) {
+	} else if (/unauthorized|forbidden|permission denied/.test(text)) {
 		kind = "auth";
-	} else if (/bad request|invalid request/.test(lower)) {
+	} else if (/bad request|invalid request/.test(text)) {
 		kind = "invalid-request";
-	} else if (/invalid json|no parseable response|no parseable results|invalid response|returned empty response|no web_search_call/.test(lower)) {
+	} else if (/invalid json|no parseable response|no parseable results|invalid response|returned empty response|no web_search_call/.test(text)) {
 		kind = "invalid-response";
-	} else if (/temporar|service unavailable|server error/.test(lower)) {
+	} else if (/temporar|service unavailable|server error/.test(text)) {
 		kind = "transient";
-	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(lower)) {
+	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(text)) {
 		kind = "network";
-	} else if (/invalid or missing|invalid config|failed to parse|must be an? |configuration/.test(lower)) {
+	} else if (/invalid or missing|invalid config|failed to parse|must be an? |configuration/.test(text)) {
 		kind = "config";
+	} else if (openAIStreamError) {
+		// The same stream threw "no parseable response output" before its error was surfaced.
+		kind = "invalid-response";
 	}
 	return new SearchProviderError(provider, kind, message, status, err);
 }
