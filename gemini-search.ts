@@ -36,7 +36,6 @@ import { isAnySearchAvailable, searchWithAnySearch } from "./anysearch.ts";
 import { isXcrawlAvailable, searchWithXCrawl } from "./xcrawl.ts";
 import { isXaiSearchAvailable, searchWithXai } from "./xai-search.ts";
 import { isBrightDataAvailable, searchWithBrightData } from "./brightdata.ts";
-import { QUOTA_ERROR_PATTERN } from "./quota-error-pattern.ts";
 import { isSerpBaseAvailable, searchWithSerpBase } from "./serpbase.ts";
 import { isSerpApiAvailable, searchWithSerpApi } from "./serpapi.ts";
 import { isSerperAvailable, searchWithSerper } from "./serper.ts";
@@ -353,24 +352,30 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 		kind = "quota";
 	} else if (status !== undefined && (status === 408 || status === 425 || status >= 500)) {
 		kind = "transient";
-	} else if (QUOTA_ERROR_PATTERN.test(lower)) {
+	} else if (provider === "openai" && lower.includes("openai api stream error")) {
+		// An HTTP 200 stream reports its failure as an OpenAI error type/code, which
+		// is mapped here rather than by widening the shared keywords below: other
+		// providers echo foreign text (Bright Data zone names, envelope codes) that
+		// must keep classifying as before. Unrecognised stream failures stay
+		// invalid-response, as they were before the error was surfaced.
+		kind = /rate[ _]limit|usage[ _]limit|quota|too many requests/.test(lower) ? "quota"
+			: /server[ _]error|internal_error/.test(lower) ? "transient"
+			: /invalid[ _]request/.test(lower) ? "invalid-request"
+			: "invalid-response";
+	} else if (/rate limit|quota|too many requests/.test(lower)) {
 		kind = "quota";
 	} else if (/unauthorized|forbidden|permission denied/.test(lower)) {
 		kind = "auth";
-	} else if (/bad request|invalid[ _]request/.test(lower)) {
+	} else if (/bad request|invalid request/.test(lower)) {
 		kind = "invalid-request";
 	} else if (/invalid json|no parseable response|no parseable results|invalid response|returned empty response|no web_search_call/.test(lower)) {
 		kind = "invalid-response";
-	} else if (/temporar|service unavailable|server[ _]error/.test(lower)) {
+	} else if (/temporar|service unavailable|server error/.test(lower)) {
 		kind = "transient";
 	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(lower)) {
 		kind = "network";
 	} else if (/invalid or missing|invalid config|failed to parse|must be an? |configuration/.test(lower)) {
 		kind = "config";
-	} else if (provider === "openai" && lower.includes("openai api stream error")) {
-		// An HTTP 200 stream that failed with no recognisable error stays
-		// invalid-response, as it was before stream errors were surfaced.
-		kind = "invalid-response";
 	}
 	return new SearchProviderError(provider, kind, message, status, err);
 }

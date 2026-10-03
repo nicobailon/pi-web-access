@@ -5,7 +5,6 @@ import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { QUOTA_ERROR_PATTERN } from "./quota-error-pattern.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const BRIGHTDATA_API_URL = "https://api.brightdata.com/request";
@@ -277,7 +276,7 @@ const STATUS_SHAPED_PATTERN = /\b(?:error|status|http)[\s:=-]{1,4}(\d{3})\b/gi;
 // `classifyProviderError` also matches bare keyword phrases, and its branch order
 // decides which ones can reach us: `searchRouting.fallbackOn` accepts only
 // `transient`, `quota` and `network`, and of those three only the `quota` branch
-// (`QUOTA_ERROR_PATTERN`) runs BEFORE the `invalid-response` branch
+// (/rate limit|quota|too many requests/) runs BEFORE the `invalid-response` branch
 // that this module's own wording always triggers. So a billed 200 whose body reads
 // "You have exceeded your rate limit" would classify as `quota`, and with
 // `fallbackOn: ["quota"]` the user is charged, silently served the next provider's
@@ -287,9 +286,8 @@ const STATUS_SHAPED_PATTERN = /\b(?:error|status|http)[\s:=-]{1,4}(\d{3})\b/gi;
 //
 // The phrase is replaced rather than removed: the reader still learns the upstream
 // page mentioned a rate limit, but no substring of the replacement matches any
-// classifier branch ("rate-limit" is hyphenated, so /rate[ _]limit/ cannot match).
-// The pattern is the classifier's own, so the two cannot drift apart.
-const QUOTA_SHAPED_PATTERN = new RegExp(QUOTA_ERROR_PATTERN.source, "gi");
+// classifier branch ("rate-limit" is hyphenated, so /rate limit/ cannot match).
+const QUOTA_SHAPED_PATTERN = /rate limit|quota|too many requests/gi;
 
 // The complete inventory of places foreign text is quoted into a message or a log
 // line, and what each one is required to apply. Adding a fifth means adding it here:

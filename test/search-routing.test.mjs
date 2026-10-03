@@ -572,38 +572,43 @@ test("a Hosted response without web_search_call is invalid and can fall back", a
 	});
 });
 
-test("a billed Bright Data 200 quoting a rate_limit code fails as invalid-response, not quota", async () => {
-	const home = await createConfig({
-		searchRouting: { providers: ["brightdata", "tavily"], fallbackOn: ["quota"] },
-	});
-	const child = runChild(`
-		const calls = [];
-		globalThis.fetch = async (url) => {
-			calls.push(String(url));
-			if (String(url) === "https://api.brightdata.com/request") return new Response(JSON.stringify({ error: "rate_limit_exceeded" }), { status: 200 });
-			if (String(url) === "https://api.tavily.com/search") throw new Error("Tavily must not run");
-			throw new Error("Unexpected fetch " + url);
-		};
-		const { search } = await import(${JSON.stringify(searchModuleUrl)});
-		try {
-			await search("billed route", { provider: "auto" });
-			console.log(JSON.stringify({ ok: true, calls }));
-		} catch (error) {
-			console.log(JSON.stringify({ ok: false, error: String(error), calls }));
-		}
-	`, {
-		PI_CODING_AGENT_DIR: home,
-		BRIGHTDATA_API_KEY: "bd-test-key",
-		BRIGHTDATA_SERP_ZONE: "pi_serp",
-		TAVILY_API_KEY: "tavily-test-key",
-	});
+for (const scenario of [
+	{ name: "quoting a rate_limit code", zone: "pi_serp", body: JSON.stringify({ error: "rate_limit_exceeded" }) },
+	{ name: "for a zone named rate_limit_exceeded", zone: "rate_limit_exceeded", body: "<html>oops</html>" },
+]) {
+	test(`a billed Bright Data 200 ${scenario.name} fails as invalid-response, not quota`, async () => {
+		const home = await createConfig({
+			searchRouting: { providers: ["brightdata", "tavily"], fallbackOn: ["quota"] },
+		});
+		const child = runChild(`
+			const calls = [];
+			globalThis.fetch = async (url) => {
+				calls.push(String(url));
+				if (String(url) === "https://api.brightdata.com/request") return new Response(${JSON.stringify(scenario.body)}, { status: 200 });
+				if (String(url) === "https://api.tavily.com/search") throw new Error("Tavily must not run");
+				throw new Error("Unexpected fetch " + url);
+			};
+			const { search } = await import(${JSON.stringify(searchModuleUrl)});
+			try {
+				await search("billed route", { provider: "auto" });
+				console.log(JSON.stringify({ ok: true, calls }));
+			} catch (error) {
+				console.log(JSON.stringify({ ok: false, error: String(error), calls }));
+			}
+		`, {
+			PI_CODING_AGENT_DIR: home,
+			BRIGHTDATA_API_KEY: "bd-test-key",
+			BRIGHTDATA_SERP_ZONE: scenario.zone,
+			TAVILY_API_KEY: "tavily-test-key",
+		});
 
-	assert.equal(child.status, 0, child.stderr);
-	const output = JSON.parse(child.stdout.trim());
-	assert.equal(output.ok, false);
-	assert.match(output.error, /brightdata search failed \(invalid-response\)/);
-	assert.deepEqual(output.calls, ["https://api.brightdata.com/request"]);
-});
+		assert.equal(child.status, 0, child.stderr);
+		const output = JSON.parse(child.stdout.trim());
+		assert.equal(output.ok, false);
+		assert.match(output.error, /brightdata search failed \(invalid-response\)/);
+		assert.deepEqual(output.calls, ["https://api.brightdata.com/request"]);
+	});
+}
 
 for (const scenario of [
 	{ name: "server_error", fallbackOn: ["transient"], error: { type: "server_error", code: "internal_error", message: "backend exploded" } },
