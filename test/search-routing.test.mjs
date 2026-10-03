@@ -616,6 +616,8 @@ for (const scenario of [
 	{ name: "unrecognised", fallbackOn: ["invalid-response"], error: { type: "mystery", code: "odd_failure", message: "something broke" } },
 	{ name: "subscription usage limit", fallbackOn: ["quota"], error: { type: "invalid_request_error", code: "subscription_sharing_usage_limit_exceeded", message: "The ChatGPT user has reached their Subscription Sharing usage limit." } },
 	{ name: "permission", fallbackOn: ["invalid-response", "transient", "quota"], error: { type: "permission_error", code: "forbidden", message: "Project does not have access to web search" }, failsAs: "auth" },
+	{ name: "authentication_error", fallbackOn: ["invalid-response", "transient", "quota"], error: { type: "authentication_error", code: "invalid_api_key", message: "Incorrect API key provided" }, failsAs: "auth" },
+	{ name: "internal_error", fallbackOn: ["transient"], error: { code: "internal_error", message: "The server had an error while processing your request" } },
 ]) {
 	test(`an OpenAI ${scenario.name} stream error ${scenario.failsAs ? `fails as ${scenario.failsAs}` : "can fall back"} with fallbackOn ${scenario.fallbackOn}`, async () => {
 		const home = await createConfig({

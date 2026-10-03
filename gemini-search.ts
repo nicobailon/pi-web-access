@@ -336,7 +336,10 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 	// rate_limit_exceeded or server_error. Reading only that message with spaces
 	// lets the shared keywords below classify it like prose, without widening them
 	// for other providers, which echo foreign text (Bright Data zone names,
-	// envelope codes) that must keep classifying as before.
+	// envelope codes) that must keep classifying as before. OpenAI error types
+	// the shared keywords don't name (usage limit, authentication_error,
+	// permission_error, invalid_api_key, api_error, internal_error, overloaded)
+	// are added per branch for these messages only.
 	const openAIStreamError = provider === "openai" && lower.includes("openai api stream error");
 	const text = openAIStreamError ? lower.replace(/_/g, " ") : lower;
 	let kind: SearchProviderErrorKind = "unknown";
@@ -361,13 +364,13 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 		kind = "transient";
 	} else if (/rate limit|quota|too many requests/.test(text) || (openAIStreamError && /usage limit/.test(text))) {
 		kind = "quota";
-	} else if (/unauthorized|forbidden|permission denied/.test(text)) {
+	} else if (/unauthorized|forbidden|permission denied/.test(text) || (openAIStreamError && /authentication error|permission error|invalid api key/.test(text))) {
 		kind = "auth";
 	} else if (/bad request|invalid request/.test(text)) {
 		kind = "invalid-request";
 	} else if (/invalid json|no parseable response|no parseable results|invalid response|returned empty response|no web_search_call/.test(text)) {
 		kind = "invalid-response";
-	} else if (/temporar|service unavailable|server error/.test(text)) {
+	} else if (/temporar|service unavailable|server error/.test(text) || (openAIStreamError && /internal error|\bapi error|overloaded/.test(text))) {
 		kind = "transient";
 	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(text)) {
 		kind = "network";
