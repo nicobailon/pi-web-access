@@ -99,7 +99,7 @@ export interface GeminiWebOptions {
 
 export interface GeminiWebFile {
 	path: string;
-	mimeType?: string;
+	mimeType: string;
 }
 
 export async function isGeminiWebAvailable(chromeProfile?: string): Promise<CookieMap | null> {
@@ -368,9 +368,8 @@ async function uploadFile(
 ): Promise<{ id: string; name: string }> {
 	const data = readFileSync(file.path);
 	const fileName = basename(file.path);
-	const mimeType = file.mimeType || "application/octet-stream";
 	const boundary = "----FormBoundary" + Math.random().toString(36).slice(2);
-	const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
+	const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: ${file.mimeType}\r\n\r\n`;
 	const footer = `\r\n--${boundary}--\r\n`;
 
 	const body = Buffer.concat([

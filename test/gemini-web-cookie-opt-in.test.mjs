@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -102,18 +102,19 @@ test("Gemini Web file uploads read the file and reject automatic redirects", asy
 		}
 		if (String(url) === "https://content-push.googleapis.com/upload") {
 			assert.equal(init.redirect, "error");
-			assert.match(Buffer.from(init.body).toString("utf8"), /filename="sample\.txt"\r\nContent-Type: application\/octet-stream\r\n/);
+			assert.match(Buffer.from(init.body).toString("utf8"), /filename="sample\.txt"\r\nContent-Type: text\/plain\r\n/);
 			throw new Error("upload transport reached");
 		}
 		throw new Error(`Unexpected request: ${url}`);
 	});
 	try {
 		await assert.rejects(
-			queryWithCookies("inspect file", { "__Secure-1PSID": "cookie" }, { files: [{ path: filePath }], model: "gemini-3.1-pro" }),
+			queryWithCookies("inspect file", { "__Secure-1PSID": "cookie" }, { files: [{ path: filePath, mimeType: "text/plain" }], model: "gemini-3.1-pro" }),
 			/upload transport reached/,
 		);
 	} finally {
 		setGeminiFetchOverrideForTests(null);
+		await rm(dir, { recursive: true, force: true });
 	}
 });
 
@@ -148,6 +149,7 @@ test("Gemini Web file uploads send the file type and reference the file by name"
 		);
 	} finally {
 		setGeminiFetchOverrideForTests(null);
+		await rm(dir, { recursive: true, force: true });
 	}
 	assert.match(uploadBody, /filename="recording\.mp4"\r\nContent-Type: video\/mp4\r\n/);
 	const promptPayload = JSON.parse(JSON.parse(fReq)[1])[0];
