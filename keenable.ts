@@ -90,6 +90,15 @@ function passesDomainFilters(url: URL, filters: DomainFilters): boolean {
 	return filters.include.length === 0 || filters.include.some(matches);
 }
 
+// One domain uses the API's `site` field; the query syntax covers the rest, so no ranked
+// window has to be filtered down locally to find in-domain pages.
+function buildQuery(query: string, filters: DomainFilters, site: string | undefined): string {
+	const parts = [query];
+	if (!site && filters.include.length > 1) parts.push(`(${filters.include.map(domain => `site:${domain}`).join(" OR ")})`);
+	for (const domain of filters.exclude) parts.push(`-site:${domain}`);
+	return parts.join(" ");
+}
+
 function publishedAfter(recency: NonNullable<SearchOptions["recencyFilter"]>): string {
 	return new Date(Date.now() - RECENCY_DAYS[recency] * 86_400_000).toISOString().slice(0, 10);
 }
@@ -122,12 +131,12 @@ export async function searchWithKeenable(query: string, options: SearchOptions =
 	const apiKey = await getApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
-	// The API narrows to one domain natively; anything else is filtered locally, so ask for headroom.
 	const site = filters.include.length === 1 ? filters.include[0] : undefined;
-	const filtersLocally = filters.include.length > 1 || filters.exclude.length > 0;
+	// Results are reapplied to the domain filters locally, so leave a little headroom.
+	const hasDomainClauses = filters.include.length > 1 || filters.exclude.length > 0;
 	const body = {
-		query,
-		max_results: filtersLocally ? Math.min(MAX_REQUEST_RESULTS, numResults + 10) : numResults,
+		query: buildQuery(query, filters, site),
+		max_results: hasDomainClauses ? Math.min(MAX_REQUEST_RESULTS, numResults + 5) : numResults,
 		snippet_max_length: MAX_SNIPPET_CHARS,
 		...(site ? { site } : {}),
 		...(options.recencyFilter ? { published_after: publishedAfter(options.recencyFilter) } : {}),

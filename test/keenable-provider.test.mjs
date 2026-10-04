@@ -96,7 +96,7 @@ test("Keenable sends a configured or environment key to the authenticated endpoi
 	}
 });
 
-test("Keenable maps one domain to site, recency to published_after, and filters the rest locally", async () => {
+test("Keenable maps one domain to site, others to query clauses, and recency to published_after", async () => {
 	const home = await createHome();
 	try {
 		const child = runChild(`
@@ -126,8 +126,10 @@ test("Keenable maps one domain to site, recency to published_after, and filters 
 		assert.match(singleBody.published_after, /^\d{4}-\d{2}-\d{2}$/);
 		const ageDays = (Date.now() - Date.parse(singleBody.published_after)) / 86_400_000;
 		assert.ok(ageDays >= 7 && ageDays < 8, `published_after should be a week back, got ${singleBody.published_after}`);
+		assert.equal(singleBody.query, "single");
 		assert.equal(severalBody.site, undefined);
-		assert.equal(severalBody.max_results, 13);
+		assert.equal(severalBody.query, "several (site:example.com OR site:example.org) -site:private.docs.example.com");
+		assert.equal(severalBody.max_results, 8);
 		assert.equal(severalBody.published_after, undefined);
 		assert.deepEqual(output.single, ["https://docs.example.com/a", "https://private.docs.example.com/b"]);
 		assert.deepEqual(output.several, ["https://docs.example.com/a", "https://example.org/d"]);
