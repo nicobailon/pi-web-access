@@ -180,7 +180,7 @@ function withPdfTruncationNotice(content: string, metadata: FirecrawlPageMetadat
 	const parsed = metadata?.numPages;
 	const total = metadata?.totalPages;
 	if (typeof parsed !== "number" || typeof total !== "number" || parsed >= total) return content;
-	return `${content}\n\n---\n\n*[Truncated: Only first ${parsed} of ${total} PDF pages parsed by Firecrawl (firecrawlPdfMaxPages)]*`;
+	return `${content}\n\n---\n\n*[Truncated: Only first ${parsed} of ${total} PDF pages parsed by Firecrawl]*`;
 }
 
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {

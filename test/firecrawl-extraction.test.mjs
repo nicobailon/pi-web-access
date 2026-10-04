@@ -196,7 +196,7 @@ test("Firecrawl PDF page cap is sent on scrape and reports truncation", async ()
 		lockdown: true,
 		parsers: [{ type: "pdf", maxPages: 3 }],
 	});
-	assert.equal(output.result.content, "# Report\n\n---\n\n*[Truncated: Only first 3 of 15 PDF pages parsed by Firecrawl (firecrawlPdfMaxPages)]*");
+	assert.equal(output.result.content, "# Report\n\n---\n\n*[Truncated: Only first 3 of 15 PDF pages parsed by Firecrawl]*");
 });
 
 test("Firecrawl PDF page cap is sent in search scrape options", async () => {
