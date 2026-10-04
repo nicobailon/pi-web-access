@@ -60,6 +60,7 @@ export interface WebSearchConfig {
 	zaiApiKey?: unknown;
 	tinyfishApiKey?: unknown;
 	valyuApiKey?: unknown;
+	keenableApiKey?: unknown;
 	xaiApiKey?: unknown;
 	provider?: unknown;
 	searchProvider?: unknown;

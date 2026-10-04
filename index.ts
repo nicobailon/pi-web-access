@@ -66,6 +66,7 @@ import { isSerpBaseAvailable } from "./serpbase.ts";
 import { isSerpApiAvailable } from "./serpapi.ts";
 import { isSerperAvailable } from "./serper.ts";
 import { isSerplyAvailable } from "./serply.ts";
+import { isKeenableAvailable } from "./keenable.ts";
 import { isBaizhiAvailable } from "./baizhi.ts";
 import { isZaiAvailable } from "./zai.ts";
 import { isValyuAvailable } from "./valyu.ts";
@@ -308,6 +309,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		baizhi: allowedProviders.has("baizhi") && isBaizhiAvailable(),
 		zai: allowedProviders.has("zai") && isZaiAvailable(),
 		valyu: allowedProviders.has("valyu") && isValyuAvailable(),
+		keenable: allowedProviders.has("keenable") && isKeenableAvailable(),
 	};
 	return {
 		all: ALL_SEARCH_PROVIDERS.some(provider => provider === "gemini" ? geminiApiAvail : providers[provider]),

@@ -309,6 +309,7 @@ export function startCuratorServer(
 		if (provider === "baizhi") return availableProviders.baizhi;
 		if (provider === "zai") return availableProviders.zai;
 		if (provider === "valyu") return availableProviders.valyu;
+		if (provider === "keenable") return availableProviders.keenable;
 		return false;
 	}
 
