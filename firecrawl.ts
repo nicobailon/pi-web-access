@@ -37,12 +37,18 @@ interface FirecrawlConfig {
 	firecrawlApiKey?: unknown;
 	firecrawlApiVersion?: unknown;
 	firecrawlFreshScrape?: unknown;
+	firecrawlPdfMaxPages?: unknown;
+}
+
+interface FirecrawlPageMetadata {
+	numPages?: unknown;
+	totalPages?: unknown;
 }
 
 interface FirecrawlScrapeData {
 	title?: unknown;
 	markdown?: unknown;
-	metadata?: { title?: unknown };
+	metadata?: { title?: unknown } & FirecrawlPageMetadata;
 }
 
 interface FirecrawlSearchItem {
@@ -51,7 +57,7 @@ interface FirecrawlSearchItem {
 	snippet?: unknown;
 	url?: unknown;
 	markdown?: unknown;
-	metadata?: {
+	metadata?: FirecrawlPageMetadata & {
 		title?: unknown;
 		description?: unknown;
 		sourceURL?: unknown;
@@ -155,6 +161,28 @@ function allowFreshScrape(): boolean {
 	return configured;
 }
 
+function pdfParserOptions(): { parsers?: Array<{ type: "pdf"; maxPages: number }> } {
+	const configured = loadConfig().firecrawlPdfMaxPages;
+	if (configured === undefined || configured === null) return {};
+	if (typeof configured !== "number" || !Number.isInteger(configured) || configured < 1) {
+		throw new Error(`firecrawlPdfMaxPages in ${CONFIG_PATH} must be a positive integer`);
+	}
+	if (getApiVersion() === "v1") {
+		throw new Error(
+			`firecrawlPdfMaxPages in ${CONFIG_PATH} requires Firecrawl API v2; v1 has no PDF page cap. ` +
+			"Use firecrawlApiVersion \"v2\" or remove firecrawlPdfMaxPages",
+		);
+	}
+	return { parsers: [{ type: "pdf", maxPages: configured }] };
+}
+
+function withPdfTruncationNotice(content: string, metadata: FirecrawlPageMetadata | undefined): string {
+	const parsed = metadata?.numPages;
+	const total = metadata?.totalPages;
+	if (typeof parsed !== "number" || typeof total !== "number" || parsed >= total) return content;
+	return `${content}\n\n---\n\n*[Truncated: Only first ${parsed} of ${total} PDF pages parsed by Firecrawl (firecrawlPdfMaxPages)]*`;
+}
+
 async function getApiKey(signal?: AbortSignal): Promise<string | null> {
 	const configKey = loadConfig().firecrawlApiKey;
 	return resolveCredential({
@@ -234,6 +262,7 @@ function scrapeBody(url: string): Record<string, unknown> {
 		formats: ["markdown"],
 		onlyMainContent: true,
 		...(allowFreshScrape() ? {} : { lockdown: true }),
+		...pdfParserOptions(),
 	};
 }
 
@@ -272,6 +301,7 @@ function mapRecencyFilter(value: SearchOptions["recencyFilter"]): string | undef
 }
 
 function searchBody(query: string, options: FirecrawlSearchOptions, numResults: number, filters: DomainFilters): Record<string, unknown> {
+	const parserOptions = pdfParserOptions();
 	return {
 		query,
 		limit: numResults,
@@ -284,6 +314,7 @@ function searchBody(query: string, options: FirecrawlSearchOptions, numResults: 
 				formats: ["markdown"],
 				onlyMainContent: true,
 				...(allowFreshScrape() ? {} : { lockdown: true }),
+				...parserOptions,
 			},
 		} : {}),
 	};
@@ -317,7 +348,7 @@ function mapSearchResults(data: unknown, numResults: number, filters: DomainFilt
 		const snippet = firstString(item.description, item.snippet, item.metadata?.description) ?? "";
 		results.push({ title, url, snippet });
 		const markdown = firstString(item.markdown);
-		if (markdown) inlineContent.push({ url, title, content: markdown, error: null });
+		if (markdown) inlineContent.push({ url, title, content: withPdfTruncationNotice(markdown, item.metadata), error: null });
 		if (results.length >= numResults) break;
 	}
 	return { results, inlineContent };
@@ -419,5 +450,5 @@ export async function extractWithFirecrawl(
 	const title = typeof metadataTitle === "string" && metadataTitle.trim()
 		? metadataTitle.trim()
 		: typeof scrape.title === "string" ? scrape.title.trim() : "";
-	return { url, title, content, error: null };
+	return { url, title, content: withPdfTruncationNotice(content, scrape.metadata), error: null };
 }

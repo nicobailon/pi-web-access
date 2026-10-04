@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - `fetch_content` asks servers for markdown first, so sites that publish markdown versions of pages (Cloudflare, Mintlify, and other docs hosts) return clean markdown directly. `mode: "raw"` still asks for the server's normal representation. Thanks to [@erwinkramer](https://github.com/erwinkramer) for [issue #495](https://github.com/nicobailon/pi-web-access/issues/495).
 - pi-web-access's search and fetch tools can run as an MCP server for other agents (`pi-web-access-mcp`). Thanks to [@Avg8888](https://github.com/Avg8888) for [issue #496](https://github.com/nicobailon/pi-web-access/issues/496).
 - Added an explicit-only Keenable search provider. It needs no API key: without one it uses Keenable's public endpoint, and `keenableApiKey` / `KEENABLE_API_KEY` switches to the authenticated endpoint with higher limits. Supports domain and recency filters, routing, and the Curator. Thanks to [@ilya-bogin-keenable](https://github.com/ilya-bogin-keenable) for [PR #506](https://github.com/nicobailon/pi-web-access/pull/506).
+- Firecrawl can be limited to the first N pages of each PDF with the new `firecrawlPdfMaxPages` setting, which caps per-page PDF billing on fetches and `includeContent` searches. Cut-off PDFs end with a notice giving both page counts. Unset keeps the current behavior. Thanks to [@Dangooy](https://github.com/Dangooy) for [#507](https://github.com/nicobailon/pi-web-access/issues/507).
 
 ### Fixed
 

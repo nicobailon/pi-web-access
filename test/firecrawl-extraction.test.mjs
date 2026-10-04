@@ -175,6 +175,75 @@ test("Firecrawl fresh scraping is explicit opt-in", async () => {
 	}
 });
 
+test("Firecrawl PDF page cap is sent on scrape and reports truncation", async () => {
+	const home = await configHome({ firecrawlBaseUrl: "https://crawl.example.com", firecrawlPdfMaxPages: 3 });
+	const child = runChild(`
+		let body = null;
+		globalThis.fetch = async (_url, init) => {
+			body = JSON.parse(init.body);
+			return new Response(JSON.stringify({ success: true, data: { markdown: "# Report", metadata: { title: "Report", numPages: 3, totalPages: 15 } } }), { status: 200 });
+		};
+		const { extractWithFirecrawl } = await import(${JSON.stringify(firecrawlModuleUrl)});
+		const result = await extractWithFirecrawl("https://example.com/report.pdf", undefined, { lookup: ${PUBLIC_LOOKUP} });
+		console.log(JSON.stringify({ body, result }));
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.body, {
+		url: "https://example.com/report.pdf",
+		formats: ["markdown"],
+		onlyMainContent: true,
+		lockdown: true,
+		parsers: [{ type: "pdf", maxPages: 3 }],
+	});
+	assert.equal(output.result.content, "# Report\n\n---\n\n*[Truncated: Only first 3 of 15 PDF pages parsed by Firecrawl (firecrawlPdfMaxPages)]*");
+});
+
+test("Firecrawl PDF page cap is sent in search scrape options", async () => {
+	const home = await configHome({ firecrawlBaseUrl: "https://crawl.example.com", firecrawlPdfMaxPages: 50 });
+	const child = runChild(`
+		let body = null;
+		globalThis.fetch = async (_url, init) => {
+			body = JSON.parse(init.body);
+			return new Response(JSON.stringify({ success: true, data: { web: [{ title: "Doc", url: "https://example.com/doc.pdf", markdown: "# Doc" }] } }), { status: 200 });
+		};
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		await search("pdf", { provider: "firecrawl", includeContent: true, lookup: ${PUBLIC_LOOKUP} });
+		console.log(JSON.stringify({ body }));
+	`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	assert.deepEqual(JSON.parse(child.stdout.trim()).body.scrapeOptions, {
+		formats: ["markdown"],
+		onlyMainContent: true,
+		lockdown: true,
+		parsers: [{ type: "pdf", maxPages: 50 }],
+	});
+});
+
+test("Firecrawl rejects invalid PDF page caps and v1 caps before calling the API", async () => {
+	for (const config of [
+		{ firecrawlPdfMaxPages: 0 },
+		{ firecrawlPdfMaxPages: 2.5 },
+		{ firecrawlPdfMaxPages: "50" },
+		{ firecrawlPdfMaxPages: 50, firecrawlApiVersion: "v1" },
+	]) {
+		const home = await configHome({ firecrawlBaseUrl: "https://crawl.example.com", ...config });
+		const child = runChild(`
+			let fetchCalls = 0;
+			globalThis.fetch = async () => { fetchCalls++; return new Response("{}", { status: 200 }); };
+			const { extractWithFirecrawl } = await import(${JSON.stringify(firecrawlModuleUrl)});
+			let error = null;
+			try { await extractWithFirecrawl("https://example.com/report.pdf", undefined, { lookup: ${PUBLIC_LOOKUP} }); }
+			catch (err) { error = err.message; }
+			console.log(JSON.stringify({ error, fetchCalls }));
+		`, { HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home });
+		assert.equal(child.status, 0, child.stderr);
+		const output = JSON.parse(child.stdout.trim());
+		assert.equal(output.fetchCalls, 0);
+		assert.match(output.error, config.firecrawlApiVersion === "v1" ? /firecrawlPdfMaxPages .*requires Firecrawl API v2/ : /firecrawlPdfMaxPages .*must be a positive integer/);
+	}
+});
+
 test("private Firecrawl base URLs require an explicit narrow SSRF range", async () => {
 	const home = await configHome({
 		firecrawlBaseUrl: "http://127.0.0.1:3002",
