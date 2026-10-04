@@ -249,7 +249,7 @@ async function tryVideoGeminiWeb(
 		if (signal?.aborted) return null;
 
 		const text = await queryWithCookies(prompt, cookies, {
-			files: [info.absolutePath],
+			files: [{ path: info.absolutePath, mimeType: info.mimeType }],
 			...(model !== "gemini-3.6-flash" ? { model } : {}),
 			signal,
 			timeoutMs: 180000,

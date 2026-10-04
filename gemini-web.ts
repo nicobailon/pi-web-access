@@ -92,9 +92,14 @@ export async function resolveGeminiFetch(): Promise<typeof fetch> {
 export interface GeminiWebOptions {
 	youtubeUrl?: string;
 	model?: string;
-	files?: string[];
+	files?: GeminiWebFile[];
 	signal?: AbortSignal;
 	timeoutMs?: number;
+}
+
+export interface GeminiWebFile {
+	path: string;
+	mimeType?: string;
 }
 
 export async function isGeminiWebAvailable(chromeProfile?: string): Promise<CookieMap | null> {
@@ -180,7 +185,7 @@ async function runGeminiWebOnce(
 	prompt: string,
 	cookieMap: CookieMap,
 	model: string,
-	files: string[] | undefined,
+	files: GeminiWebFile[] | undefined,
 	timeoutMs: number,
 	signal?: AbortSignal,
 ): Promise<GeminiWebResult> {
@@ -190,8 +195,8 @@ async function runGeminiWebOnce(
 
 	const uploaded: Array<{ id: string; name: string }> = [];
 	if (files) {
-		for (const filePath of files) {
-			uploaded.push(await uploadFile(filePath, cookieHeader, effectiveSignal));
+		for (const file of files) {
+			uploaded.push(await uploadFile(file, cookieHeader, effectiveSignal));
 		}
 	}
 
@@ -357,14 +362,15 @@ function decodeEmailEscapes(value: string): string {
 }
 
 async function uploadFile(
-	filePath: string,
+	file: GeminiWebFile,
 	cookieHeader: string,
 	signal: AbortSignal,
 ): Promise<{ id: string; name: string }> {
-	const data = readFileSync(filePath);
-	const fileName = basename(filePath);
+	const data = readFileSync(file.path);
+	const fileName = basename(file.path);
+	const mimeType = file.mimeType || "application/octet-stream";
 	const boundary = "----FormBoundary" + Math.random().toString(36).slice(2);
-	const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: application/octet-stream\r\n\r\n`;
+	const header = `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${fileName}"\r\nContent-Type: ${mimeType}\r\n\r\n`;
 	const footer = `\r\n--${boundary}--\r\n`;
 
 	const body = Buffer.concat([
@@ -400,7 +406,7 @@ function buildFReqPayload(
 ): string {
 	const promptPayload =
 		uploaded.length > 0
-			? [prompt, 0, null, uploaded.map((file) => [[file.id, 1]])]
+			? [prompt, 0, null, uploaded.map((file) => [[file.id, 1], file.name])]
 			: [prompt];
 	const innerList = [promptPayload, null, null];
 	return JSON.stringify([null, JSON.stringify(innerList)]);

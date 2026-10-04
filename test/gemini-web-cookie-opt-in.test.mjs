@@ -102,18 +102,56 @@ test("Gemini Web file uploads read the file and reject automatic redirects", asy
 		}
 		if (String(url) === "https://content-push.googleapis.com/upload") {
 			assert.equal(init.redirect, "error");
+			assert.match(Buffer.from(init.body).toString("utf8"), /filename="sample\.txt"\r\nContent-Type: application\/octet-stream\r\n/);
 			throw new Error("upload transport reached");
 		}
 		throw new Error(`Unexpected request: ${url}`);
 	});
 	try {
 		await assert.rejects(
-			queryWithCookies("inspect file", { "__Secure-1PSID": "cookie" }, { files: [filePath], model: "gemini-3.1-pro" }),
+			queryWithCookies("inspect file", { "__Secure-1PSID": "cookie" }, { files: [{ path: filePath }], model: "gemini-3.1-pro" }),
 			/upload transport reached/,
 		);
 	} finally {
 		setGeminiFetchOverrideForTests(null);
 	}
+});
+
+test("Gemini Web file uploads send the file type and reference the file by name", async () => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-web-access-gemini-upload-"));
+	const filePath = join(dir, "recording.mp4");
+	await writeFile(filePath, "fake-mp4-bytes", "utf8");
+	const { queryWithCookies, setGeminiFetchOverrideForTests } = await import(geminiWebUrl);
+	let uploadBody = "";
+	let fReq = "";
+	setGeminiFetchOverrideForTests(async (url, init = {}) => {
+		if (String(url) === "https://gemini.google.com/app") {
+			return new Response('"SNlM0e":"test-token"', { status: 200 });
+		}
+		if (String(url) === "https://content-push.googleapis.com/upload") {
+			uploadBody = Buffer.from(init.body).toString("utf8");
+			return new Response("/contrib_service/upload-id", { status: 200 });
+		}
+		if (String(url).includes("BardFrontendService/StreamGenerate")) {
+			fReq = new URLSearchParams(init.body).get("f.req");
+			throw new Error("generation transport reached");
+		}
+		throw new Error(`Unexpected request: ${url}`);
+	});
+	try {
+		await assert.rejects(
+			queryWithCookies("describe", { "__Secure-1PSID": "cookie" }, {
+				files: [{ path: filePath, mimeType: "video/mp4" }],
+				model: "gemini-3.1-pro",
+			}),
+			/generation transport reached/,
+		);
+	} finally {
+		setGeminiFetchOverrideForTests(null);
+	}
+	assert.match(uploadBody, /filename="recording\.mp4"\r\nContent-Type: video\/mp4\r\n/);
+	const promptPayload = JSON.parse(JSON.parse(fReq)[1])[0];
+	assert.deepEqual(promptPayload, ["describe", 0, null, [[["/contrib_service/upload-id", 1], "recording.mp4"]]]);
 });
 
 test("browser cookie access is disabled unless explicitly allowed", async () => {
