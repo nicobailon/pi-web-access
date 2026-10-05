@@ -6,7 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- New explicit-only degoog search provider for a self-hosted or public [degoog](https://degoog.org) metasearch instance. It is keyless by default and uses `https://degoog.org`; set `degoogBaseUrl` or `DEGOOG_URL` for your own instance, `degoogApiKey` or `DEGOOG_API_KEY` when the instance protects its search routes, and `degoogEngines` to restrict the request to specific engine ids. It supports domain and recency filters, routing, and the curator, and it is never chosen by `auto` or `provider: "all"`.
+- New explicit-only degoog search provider for a self-hosted or public [degoog](https://degoog.org) metasearch instance. It is keyless by default and uses `https://degoog.org`; set `degoogBaseUrl` or `DEGOOG_URL` for your own instance, `degoogApiKey` or `DEGOOG_API_KEY` when the instance protects its search routes, and `degoogEngines` to restrict the request to specific engine ids. It supports domain and recency filters, routing, and the curator, and it is never chosen by `auto` or `provider: "all"`. Thanks to [@zhouzhuojie](https://github.com/zhouzhuojie) for [PR #515](https://github.com/nicobailon/pi-web-access/pull/515).
+
+### Changed
+
+- Perplexity `web_search` results now come from Perplexity's Search API, so each result carries a real page snippet instead of an empty one, and searches cost less ($1 per 1K fast searches, no token billing). Results no longer include a Sonar-written answer; YouTube summaries still use Sonar. Thanks to [@DWalland](https://github.com/DWalland) for [issue #512](https://github.com/nicobailon/pi-web-access/issues/512).
 
 ## [0.36.0] - 2026-10-04
 

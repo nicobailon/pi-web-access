@@ -39,8 +39,8 @@ function runTool(agentDir, provider) {
 					{ type: "message", content: [{ type: "output_text", text: "openai answer" }] },
 				] }), { status: 200 });
 			}
-			if (urlText === "https://api.perplexity.ai/chat/completions") {
-				return new Response(JSON.stringify({ choices: [{ message: { content: "perplexity answer" } }], citations: ["https://perplexity.example/source"] }), { status: 200 });
+			if (urlText === "https://api.perplexity.ai/search") {
+				return new Response(JSON.stringify({ id: "search-id", results: [{ title: "Perplexity source", url: "https://perplexity.example/source", snippet: "perplexity result" }] }), { status: 200 });
 			}
 			if (urlText === "https://api.tavily.com/search") {
 				return new Response(JSON.stringify({ answer: "tavily answer", results: [{ title: "Tavily source", url: "https://tavily.example/source", content: "tavily result" }] }), { status: 200 });
@@ -74,7 +74,7 @@ function runTool(agentDir, provider) {
 
 test("configured provider is used when tool omits provider", async () => {
 	const calls = runTool(await createConfig());
-	assert.deepEqual(calls, ["https://api.perplexity.ai/chat/completions"]);
+	assert.deepEqual(calls, ["https://api.perplexity.ai/search"]);
 });
 
 test("configured provider array is used when the tool omits provider", async () => {
@@ -84,7 +84,7 @@ test("configured provider array is used when the tool omits provider", async () 
 		tavilyApiKey: "tavily-test-key",
 	}));
 	assert.deepEqual(calls.sort(), [
-		"https://api.perplexity.ai/chat/completions",
+		"https://api.perplexity.ai/search",
 		"https://api.tavily.com/search",
 	]);
 });
@@ -97,14 +97,14 @@ test("explicit named provider overrides configured provider", async () => {
 test("explicit provider array overrides configured provider and runs only the selected providers", async () => {
 	const calls = runTool(await createConfig(), ["tavily", "perplexity"]);
 	assert.deepEqual(calls.sort(), [
-		"https://api.perplexity.ai/chat/completions",
+		"https://api.perplexity.ai/search",
 		"https://api.tavily.com/search",
 	]);
 });
 
 test("explicit auto uses configured provider", async () => {
 	const calls = runTool(await createConfig(), "auto");
-	assert.deepEqual(calls, ["https://api.perplexity.ai/chat/completions"]);
+	assert.deepEqual(calls, ["https://api.perplexity.ai/search"]);
 });
 
 test("auto still uses provider fallback when no provider is configured", async () => {
