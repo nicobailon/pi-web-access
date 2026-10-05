@@ -7,8 +7,6 @@ import { getWebSearchConfigPath } from "./utils.ts";
 
 const PERPLEXITY_SEARCH_URL = "https://api.perplexity.ai/search";
 const PERPLEXITY_CHAT_URL = "https://api.perplexity.ai/chat/completions";
-/** The Search API accepts at most 20 domains in `search_domain_filter`. */
-const MAX_DOMAIN_FILTERS = 20;
 const CONFIG_PATH = getWebSearchConfigPath();
 
 const RATE_LIMIT = {
@@ -189,7 +187,7 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 	}
 
 	if (options.domainFilter && options.domainFilter.length > 0) {
-		const validated = validateDomainFilter(options.domainFilter).slice(0, MAX_DOMAIN_FILTERS);
+		const validated = validateDomainFilter(options.domainFilter);
 		if (validated.length > 0) {
 			requestBody.search_domain_filter = validated;
 		}
