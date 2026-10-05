@@ -31,6 +31,7 @@ import { isKagiAvailable, searchWithKagi } from "./kagi.ts";
 import { isBochaAvailable, searchWithBocha } from "./bocha.ts";
 import { isOllamaAvailable, searchWithOllama } from "./ollama.ts";
 import { isSearXNGAvailable, searchWithSearXNG } from "./searxng.ts";
+import { isDegoogAvailable, searchWithDegoog } from "./degoog.ts";
 import { isDuckDuckGoAvailable, searchWithDuckDuckGo } from "./duckduckgo.ts";
 import { isAnySearchAvailable, searchWithAnySearch } from "./anysearch.ts";
 import { isXcrawlAvailable, searchWithXCrawl } from "./xcrawl.ts";
@@ -48,7 +49,7 @@ import { isKimiSearchAvailable, searchWithKimi } from "./kimi-search.ts";
 import { isMistralAvailable, searchWithMistral } from "./mistral-search.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
-export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "you", "firecrawl", "jina", "searxng", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "bocha", "xcrawl", "baizhi", "zai", "keenable"] as const;
+export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "you", "firecrawl", "jina", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "bocha", "xcrawl", "baizhi", "zai", "keenable"] as const;
 export const SEARCH_PROVIDERS = ["auto", "all", ...RESOLVED_SEARCH_PROVIDERS] as const;
 
 export type ResolvedSearchProvider = typeof RESOLVED_SEARCH_PROVIDERS[number];
@@ -113,7 +114,7 @@ export interface AttributedSearchResponse extends SearchResponse {
 
 const CONFIG_PATH = getWebSearchConfigPath();
 const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
-// Explicit-only providers (Parallel MCP, DuckDuckGo, Kimi, AnySearch, XCrawl, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, Keenable) are deliberately absent:
+// Explicit-only providers (Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, Keenable) are deliberately absent:
 // `all` must never fan out to an opt-in or paid provider without the user asking for it.
 export const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "ollama", "perplexity", "gemini", "bocha"];
 const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported"] as const;
@@ -426,6 +427,7 @@ async function searchWithResolvedProvider(
 	if (provider === "xcrawl") return { ...(await searchWithXCrawl(query, options)), provider };
 	if (provider === "perplexity") return { ...(await searchWithPerplexity(query, options)), provider };
 	if (provider === "searxng") return { ...(await searchWithSearXNG(query, options)), provider };
+	if (provider === "degoog") return { ...(await searchWithDegoog(query, options)), provider };
 	if (provider === "duckduckgo") return { ...(await searchWithDuckDuckGo(query, options)), provider };
 	if (provider === "kimi") return { ...(await searchWithKimi(query, options, options.extensionContext)), provider };
 	if (provider === "gemini") {
@@ -480,6 +482,7 @@ async function isResolvedProviderAvailable(provider: ResolvedSearchProvider, opt
 	if (provider === "xcrawl") return isXcrawlAvailable();
 	if (provider === "perplexity") return isPerplexityAvailable();
 	if (provider === "searxng") return isSearXNGAvailable();
+	if (provider === "degoog") return isDegoogAvailable();
 	if (provider === "duckduckgo") return isDuckDuckGoAvailable();
 	if (provider === "gemini") return isGeminiApiAvailable() || await isGeminiWebOptionallyAvailable();
 	if (provider === "kimi") return isKimiSearchAvailable(options.extensionContext);
@@ -504,6 +507,7 @@ export function providerLabel(provider: ResolvedSearchProvider): string {
 	if (provider === "firecrawl") return "Firecrawl";
 	if (provider === "serpdive") return "SERPdive";
 	if (provider === "searxng") return "SearXNG";
+	if (provider === "degoog") return "degoog";
 	if (provider === "duckduckgo") return "DuckDuckGo";
 	if (provider === "kagi") return "Kagi";
 	if (provider === "bocha") return "Bocha";
@@ -549,7 +553,7 @@ async function searchWithProviders(
 			: await isResolvedProviderAvailable(provider, options),
 	})))).filter((entry) => entry.available).map((entry) => entry.provider);
 	if (providers.length === 0) {
-		throw new Error("No configured search provider available for provider \"all\". Parallel MCP, DuckDuckGo, Kimi, AnySearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, XCrawl, and Keenable are excluded.");
+		throw new Error("No configured search provider available for provider \"all\". Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, XCrawl, and Keenable are excluded.");
 	}
 
 	const settled = await Promise.allSettled(

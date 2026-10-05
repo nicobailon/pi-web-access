@@ -1,7 +1,7 @@
 {
   "name": "pi-web-access",
   "version": "0.36.0",
-  "description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent. Supports OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Crawl4AI, Jina, SERPdive, Kagi, Ollama, AnySearch, Bright Data SERP, SerpBase, SerpApi, Serply, You.com, SearXNG, Exa, Perplexity, Gemini, Kimi, and Mistral.",
+  "description": "Web search, URL fetching, GitHub repo cloning, PDF extraction, YouTube video understanding, and local video analysis for Pi coding agent. Supports OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Crawl4AI, Jina, SERPdive, Kagi, Ollama, AnySearch, Bright Data SERP, SerpBase, SerpApi, Serply, You.com, SearXNG, degoog, Exa, Perplexity, Gemini, Kimi, and Mistral.",
   "type": "module",
   "bin": {
     "pi-web-access-mcp": "dist/mcp-cli.js"
@@ -28,6 +28,7 @@
     "search1api",
     "searchinfinity",
     "querit",
+    "degoog",
     "perplexity",
     "fetch",
     "scraping"

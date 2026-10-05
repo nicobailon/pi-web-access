@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- New explicit-only degoog search provider for a self-hosted or public [degoog](https://degoog.org) metasearch instance. It is keyless by default and uses `https://degoog.org`; set `degoogBaseUrl` or `DEGOOG_URL` for your own instance, `degoogApiKey` or `DEGOOG_API_KEY` when the instance protects its search routes, and `degoogEngines` to restrict the request to specific engine ids. It supports domain and recency filters, routing, and the curator, and it is never chosen by `auto` or `provider: "all"`.
+
 ## [0.36.0] - 2026-10-04
 
 ### Highlights

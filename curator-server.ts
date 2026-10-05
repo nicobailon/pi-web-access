@@ -292,6 +292,7 @@ export function startCuratorServer(
 		if (provider === "bocha") return availableProviders.bocha;
 		if (provider === "ollama") return availableProviders.ollama;
 		if (provider === "searxng") return availableProviders.searxng;
+		if (provider === "degoog") return availableProviders.degoog;
 		if (provider === "duckduckgo") return availableProviders.duckduckgo;
 		if (provider === "perplexity") return availableProviders.perplexity;
 		if (provider === "exa") return availableProviders.exa;

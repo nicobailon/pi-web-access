@@ -56,6 +56,7 @@ import { isKagiAvailable } from "./kagi.ts";
 import { isBochaAvailable } from "./bocha.ts";
 import { isOllamaAvailable } from "./ollama.ts";
 import { isSearXNGAvailable } from "./searxng.ts";
+import { isDegoogAvailable } from "./degoog.ts";
 import { isDuckDuckGoAvailable } from "./duckduckgo.ts";
 import { isAnySearchAvailable } from "./anysearch.ts";
 import { isXaiSearchAvailable } from "./xai-search.ts";
@@ -292,6 +293,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		bocha: allowedProviders.has("bocha") && isBochaAvailable(),
 		ollama: allowedProviders.has("ollama") && isOllamaAvailable(),
 		searxng: allowedProviders.has("searxng") && isSearXNGAvailable(),
+		degoog: allowedProviders.has("degoog") && isDegoogAvailable(),
 		duckduckgo: allowedProviders.has("duckduckgo") && isDuckDuckGoAvailable(),
 		perplexity: allowedProviders.has("perplexity") && isPerplexityAvailable(),
 		exa: allowedProviders.has("exa") && isExaAvailable(),

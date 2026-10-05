@@ -90,7 +90,7 @@ test("native Pi sends configured web schemas on the request immediately after ac
 	assert.deepEqual(requests[0].tools.map(tool => tool.name), ["web_enable"]);
 	assert.deepEqual(requests[1].tools.map(tool => tool.name), ["web_enable", "web_search", "source_check", "fetch_content", "get_search_content"]);
 	assert.ok(requests[0].tools.reduce((sum, tool) => sum + JSON.stringify(tool).length, 0) <= 700);
-	assert.ok(requests[1].tools.reduce((sum, tool) => sum + JSON.stringify(tool).length, 0) <= 11_975);
+	assert.ok(requests[1].tools.reduce((sum, tool) => sum + JSON.stringify(tool).length, 0) <= 12_043);
 
 	const renamed = await runNative({ toolNames: { webSearch: "research_web", sourceCheck: "verify_sources", fetchContent: "grab_content", getSearchContent: "open_content" } });
 	assert.deepEqual(renamed[1].tools.map(tool => tool.name), ["web_enable", "research_web", "verify_sources", "grab_content", "open_content"]);
