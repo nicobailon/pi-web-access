@@ -59,11 +59,12 @@ test("tools/list exposes the four MCP tools with standalone-only input schemas",
 	assert.deepEqual(byName.get_search_content.required, ["responseId"]);
 	assert.deepEqual(byName.source_check.required, ["claim"]);
 	const annotations = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
+	const fetching = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
 	assert.deepEqual(annotations, {
-		web_search: { readOnlyHint: true, openWorldHint: true },
-		fetch_content: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+		web_search: fetching,
+		fetch_content: fetching,
 		get_search_content: { readOnlyHint: true, openWorldHint: false },
-		source_check: { readOnlyHint: true, openWorldHint: true },
+		source_check: fetching,
 	});
 });
 

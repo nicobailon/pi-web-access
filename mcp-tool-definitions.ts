@@ -24,6 +24,9 @@ const recencySchema = stringEnum(["day", "week", "month", "year"], "Filter resul
 const domainFilterSchema = Type.Array(Type.String(), { description: "Limit to domains; prefix with - to exclude." });
 const numResultsSchema = Type.Integer({ minimum: 1, maximum: 20, description: "Results per query (default: 5, max: 20)." });
 const proxySchema = Type.String({ description: "http(s) or socks proxy URL for this call's outbound requests; empty string forces direct access." });
+// Page fetches write a page cache and clone GitHub URLs into a temp directory,
+// including the fetches behind includeContent and fetchContent.
+const fetchingAnnotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
 
 export interface McpToolDefinition {
 	name: string;
@@ -47,7 +50,7 @@ export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 			provider: Type.Optional(providerSchema),
 			proxy: Type.Optional(proxySchema),
 		}, { additionalProperties: false }),
-		annotations: { readOnlyHint: true, openWorldHint: true },
+		annotations: fetchingAnnotations,
 	},
 	{
 		name: "fetch_content",
@@ -59,8 +62,7 @@ export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 			forceClone: Type.Optional(Type.Boolean({ description: "Force cloning GitHub repositories that exceed the size threshold." })),
 			proxy: Type.Optional(proxySchema),
 		}, { additionalProperties: false }),
-		// GitHub URLs clone into a temp directory and fetches write a page cache.
-		annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+		annotations: fetchingAnnotations,
 	},
 	{
 		name: "get_search_content",
@@ -94,7 +96,7 @@ export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 			provider: Type.Optional(providerSchema),
 			proxy: Type.Optional(proxySchema),
 		}, { additionalProperties: false }),
-		annotations: { readOnlyHint: true, openWorldHint: true },
+		annotations: fetchingAnnotations,
 	},
 ];
 

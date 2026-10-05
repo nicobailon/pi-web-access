@@ -283,7 +283,7 @@ Add it to an `mcpServers` config (Claude Code, Cursor, and similar clients; Code
 - The server reads the same `web-search.json` and provider environment variables as the extension. It lists only the tools enabled there, under their default names; `toolNames` renames do not apply.
 - Pi-only features are not available: the curator and summaries (a configured `workflow` is ignored), Kimi search, OpenAI search through ChatGPT sign-in or the current Pi model, `fetch_content` answer mode and video prompts or frames, and direct image fetches. Explicit requests for them return a tool error rather than a fallback, and automatic provider selection only uses providers that work outside Pi.
 - `includeContent` waits for the page fetch before `web_search` returns.
-- The server keeps the 50 most recent results in memory for `get_search_content`; they are gone when it exits. Most config changes apply on the next call; restart the server after changing which tools are enabled, `maxInlineContentChars`, `fetch.defaultMode`, or `fetch.allowedModes`.
+- The server keeps the 50 most recent results in memory for `get_search_content`; they are gone when it exits. Restart the server to pick up config changes.
 - Install with npm's default settings or `--legacy-peer-deps`. `--omit=peer` leaves out `zod`, which the MCP SDK needs.
 
 ## Capabilities
