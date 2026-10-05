@@ -93,45 +93,40 @@ test("Brave search applies domain filters in the query and returned results", as
 	assert.deepEqual(output.results.map((result) => result.url), ["https://github.com/nicobailon/pi-web-access"]);
 });
 
-test("Perplexity normalizes invalid result counts", async () => {
-	const home = await mkdtemp(join(tmpdir(), "pi-web-access-perplexity-count-"));
+test("Perplexity searches through the Search API and maps result snippets", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-perplexity-search-"));
 	const child = runChild(`
-		globalThis.fetch = async () => new Response(JSON.stringify({
-			choices: [{ message: { content: "answer" } }],
-			citations: ["https://example.com/a", "https://example.com/b", "https://example.com/c", "https://example.com/d", "https://example.com/e"],
-		}), { status: 200, headers: { "content-type": "application/json" } });
-
-		const { searchWithPerplexity } = await import(${JSON.stringify(perplexityModuleUrl)});
-		const negative = await searchWithPerplexity("negative", { numResults: -1 });
-		const nan = await searchWithPerplexity("nan", { numResults: Number.NaN });
-		const decimal = await searchWithPerplexity("decimal", { numResults: 3.8 });
-		console.log(JSON.stringify({ counts: [negative.results.length, nan.results.length, decimal.results.length] }));
-	`, {
-		HOME: home,
-		USERPROFILE: home,
-		PERPLEXITY_API_KEY: "pplx-test-key",
-	});
-
-	assert.equal(child.status, 0, child.stderr);
-	assert.deepEqual(JSON.parse(child.stdout.trim()).counts, [1, 5, 3]);
-});
-
-test("Perplexity retains cited sources beyond numResults", async () => {
-	const home = await mkdtemp(join(tmpdir(), "pi-web-access-perplexity-citations-"));
-	const child = runChild(`
-		globalThis.fetch = async (_url, init) => {
-			const query = JSON.parse(init.body).messages[0].content;
-			const answer = query === "cited" ? "The answer cites [13]." : "The answer has no citations.";
+		const requests = [];
+		globalThis.fetch = async (url, init) => {
+			requests.push({ url: String(url), authorization: init.headers.Authorization, body: JSON.parse(init.body) });
 			return new Response(JSON.stringify({
-				choices: [{ message: { content: answer } }],
-				citations: Array.from({ length: 13 }, (_, index) => "https://example.com/source-" + (index + 1)),
+				id: "search-id",
+				results: [
+					{ title: " First page ", url: "https://example.com/a", snippet: "Page text A", date: "2026-01-01" },
+					{ title: "", url: "https://example.com/b", snippet: "" },
+					{ title: "No URL", snippet: "skipped" },
+					{ title: "C", url: "https://example.com/c", snippet: "Page text C" },
+					{ title: "D", url: "https://example.com/d", snippet: "Page text D" },
+					{ title: "E", url: "https://example.com/e", snippet: "Page text E" },
+					{ title: "F", url: "https://example.com/f", snippet: "Page text F" },
+				],
 			}), { status: 200, headers: { "content-type": "application/json" } });
 		};
 
 		const { searchWithPerplexity } = await import(${JSON.stringify(perplexityModuleUrl)});
-		const cited = await searchWithPerplexity("cited", { numResults: 8 });
-		const uncited = await searchWithPerplexity("uncited", { numResults: 8 });
-		console.log(JSON.stringify({ cited: cited.results, uncitedCount: uncited.results.length }));
+		const filtered = await searchWithPerplexity("filtered", {
+			numResults: 2,
+			recencyFilter: "week",
+			domainFilter: ["example.com", "-reddit.com", "not a domain"],
+		});
+		const negative = await searchWithPerplexity("negative", { numResults: -1 });
+		const nan = await searchWithPerplexity("nan", { numResults: Number.NaN });
+		const decimal = await searchWithPerplexity("decimal", { numResults: 3.8 });
+		console.log(JSON.stringify({
+			requests,
+			filtered,
+			counts: [negative.results.length, nan.results.length, decimal.results.length],
+		}));
 	`, {
 		HOME: home,
 		USERPROFILE: home,
@@ -140,13 +135,54 @@ test("Perplexity retains cited sources beyond numResults", async () => {
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.equal(output.cited.length, 13);
-	assert.deepEqual(output.cited[12], {
-		title: "Source 13",
-		url: "https://example.com/source-13",
-		snippet: "",
+	assert.deepEqual(output.requests[0], {
+		url: "https://api.perplexity.ai/search",
+		authorization: "Bearer pplx-test-key",
+		body: {
+			query: "filtered",
+			max_results: 2,
+			search_type: "fast",
+			search_context_size: "medium",
+			search_recency_filter: "week",
+			search_domain_filter: ["example.com", "-reddit.com"],
+		},
 	});
-	assert.equal(output.uncitedCount, 8);
+	assert.deepEqual(output.requests.slice(1).map((request) => request.body.max_results), [1, 5, 3]);
+	assert.deepEqual(output.filtered.results, [
+		{ title: "First page", url: "https://example.com/a", snippet: "Page text A" },
+		{ title: "Source 2", url: "https://example.com/b", snippet: "" },
+	]);
+	assert.match(output.filtered.answer, /Page text A\nSource: First page \(https:\/\/example\.com\/a\)/);
+	assert.deepEqual(output.counts, [1, 5, 3]);
+});
+
+test("Perplexity prose answers use Sonar chat completions", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-perplexity-answer-"));
+	const child = runChild(`
+		let request = null;
+		globalThis.fetch = async (url, init) => {
+			request = { url: String(url), body: JSON.parse(init.body) };
+			return new Response(JSON.stringify({
+				choices: [{ message: { content: "Video summary" } }],
+				citations: ["https://example.com/source"],
+			}), { status: 200, headers: { "content-type": "application/json" } });
+		};
+
+		const { askPerplexity } = await import(${JSON.stringify(perplexityModuleUrl)});
+		const answer = await askPerplexity("Summarize this video");
+		console.log(JSON.stringify({ request, answer }));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		PERPLEXITY_API_KEY: "pplx-test-key",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.request.url, "https://api.perplexity.ai/chat/completions");
+	assert.equal(output.request.body.model, "sonar");
+	assert.deepEqual(output.request.body.messages, [{ role: "user", content: "Summarize this video" }]);
+	assert.equal(output.answer, "Video summary");
 });
 
 test("Tavily search uses bearer auth and maps filters/content", async () => {

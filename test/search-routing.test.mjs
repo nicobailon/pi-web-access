@@ -223,8 +223,8 @@ test("legacy single-provider config takes precedence over searchRouting", async 
 		const calls = [];
 		globalThis.fetch = async (url) => {
 			calls.push(String(url));
-			if (String(url) === "https://api.perplexity.ai/chat/completions") {
-				return new Response(JSON.stringify({ choices: [{ message: { content: "Perplexity answer" } }], citations: [] }), { status: 200 });
+			if (String(url) === "https://api.perplexity.ai/search") {
+				return new Response(JSON.stringify({ id: "search-id", results: [] }), { status: 200 });
 			}
 			throw new Error("Routing provider must not run");
 		};
@@ -241,7 +241,7 @@ test("legacy single-provider config takes precedence over searchRouting", async 
 	assert.equal(child.status, 0, child.stderr);
 	assert.deepEqual(JSON.parse(child.stdout.trim()), {
 		provider: "perplexity",
-		calls: ["https://api.perplexity.ai/chat/completions"],
+		calls: ["https://api.perplexity.ai/search"],
 	});
 });
 

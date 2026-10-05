@@ -1129,7 +1129,7 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Jina Sear
 | `github-extract.ts` | GitHub URL parsing, clone cache, content generation |
 | `github-api.ts` | GitHub API fallback for large repos and commit SHAs |
 | `github-issue-pr.ts` | GitHub PR and issue URL parsing, gh/REST fetch, markdown rendering |
-| `perplexity.ts` | Perplexity API client with rate limiting |
+| `perplexity.ts` | Perplexity Search API client (and Sonar for YouTube summaries) with rate limiting |
 | `datalab-pdf-extract.ts` | Datalab hosted PDF-to-Markdown conversion client (upload → convert → poll) |
 | `pdf-extract.ts` | PDF text extraction, saves to markdown |
 | `rsc-extract.ts` | RSC flight data parser for Next.js pages |

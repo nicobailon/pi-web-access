@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Perplexity `web_search` results now come from Perplexity's Search API, so each result carries a real page snippet instead of an empty one, and searches cost less ($1 per 1K fast searches, no token billing). Results no longer include a Sonar-written answer; YouTube summaries still use Sonar. Thanks to [@DWalland](https://github.com/DWalland) for [issue #512](https://github.com/nicobailon/pi-web-access/issues/512).
+
 ## [0.36.0] - 2026-10-04
 
 ### Highlights
