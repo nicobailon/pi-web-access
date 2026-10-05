@@ -156,6 +156,12 @@ test("get_search_content rejects unsafe fetched content ranges", async () => {
 	assert.match(researchPage.content[0].text, /responseId: "stored-research", offset: 10, limit: 10 \}\) for the next slice/);
 	const researchLastPage = await tool.execute("call", { responseId: "stored-research", offset: researchPage.details.contentLength - 5 });
 	assert.doesNotMatch(researchLastPage.content[0].text, /next slice/);
+	const largeArtifact = buildResearchArtifact({ query: "large claim", results: [], summary: "S".repeat(40_000) });
+	largeArtifact.id = "large-research";
+	storeResearchArtifact(largeArtifact);
+	const fullPage = await tool.execute("call", { responseId: "large-research", limit: 30_000 });
+	assert.ok(fullPage.content[0].text.length <= 30_000);
+	assert.match(fullPage.content[0].text, new RegExp(`offset: ${fullPage.details.nextOffset}, limit: 30000 \\}\\) for the next slice`));
 
 	const researchFind = await tool.execute("call", {
 		responseId: "stored-research",

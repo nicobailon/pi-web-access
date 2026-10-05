@@ -541,6 +541,20 @@ export function storedContentSourceNames(settings: WebToolCoreSettings): string 
 	]);
 }
 
+/** Slices content from offset and appends the next-slice instructions, shrinking
+ * the slice so the whole page, instructions included, stays within maxChars. */
+function sliceWithContinuation(content: string, offset: number, limit: number, maxChars: number, continuationAt: (endOffset: number) => string): { endOffset: number; text: string } {
+	let endOffset = offset + Math.min(limit, content.length - offset);
+	let continuation = "";
+	while (endOffset < content.length) {
+		continuation = continuationAt(endOffset);
+		const overflow = endOffset - offset + continuation.length - maxChars;
+		if (overflow <= 0) break;
+		endOffset -= overflow;
+	}
+	return { endOffset, text: content.slice(offset, endOffset) + (endOffset < content.length ? continuation : "") };
+}
+
 export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 	const { settings } = host;
 	const toolNames = settings.toolNames;
@@ -1111,14 +1125,12 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					details: { error: "Offset out of range", offset, contentLength: serialized.length },
 				};
 			}
-			const endOffset = Math.min(offset + limit, serialized.length);
-			const artifactSlice = serialized.slice(offset, endOffset);
+			const { endOffset, text } = sliceWithContinuation(serialized, offset, limit, maxInlineContentChars, (end) =>
+				`\n\n---\nShowing chars ${offset}-${end} of ${serialized.length}. Use ${toolNames.getSearchContent}({ responseId: "${artifact.id}", offset: ${end}, limit: ${limit} }) for the next slice.`);
 			const hasMore = endOffset < serialized.length;
 			return {
-				content: [{ type: "text", text: hasMore
-					? `${artifactSlice}\n\n---\nShowing chars ${offset}-${endOffset} of ${serialized.length}. Use ${toolNames.getSearchContent}({ responseId: "${artifact.id}", offset: ${endOffset}, limit: ${limit} }) for the next slice.`
-					: artifactSlice }],
-				details: { responseId: artifact.id, type: "research", contentLength: serialized.length, offset, limit, returnedChars: artifactSlice.length, nextOffset: hasMore ? endOffset : null, truncated: hasMore },
+				content: [{ type: "text", text }],
+				details: { responseId: artifact.id, type: "research", contentLength: serialized.length, offset, limit, returnedChars: endOffset - offset, nextOffset: hasMore ? endOffset : null, truncated: hasMore },
 			};
 		}
 
@@ -1197,19 +1209,10 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				};
 			}
 			const queryIndex = data.queries.indexOf(queryData);
-			let returnedChars = Math.min(limit, fullResults.length - offset);
-			let endOffset = offset + returnedChars;
-			let continuation = "";
-			while (endOffset < fullResults.length) {
-				continuation = `\n\n---\nShowing chars ${offset}-${endOffset} of ${fullResults.length}. Use ${toolNames.getSearchContent}({ responseId: "${params.responseId}", queryIndex: ${queryIndex}, offset: ${endOffset}, limit: ${limit} }) for the next slice.`;
-				const overflow = returnedChars + continuation.length - maxInlineContentChars;
-				if (overflow <= 0) break;
-				returnedChars -= overflow;
-				endOffset = offset + returnedChars;
-			}
-			const resultSlice = fullResults.slice(offset, endOffset);
+			const { endOffset, text } = sliceWithContinuation(fullResults, offset, limit, maxInlineContentChars, (end) =>
+				`\n\n---\nShowing chars ${offset}-${end} of ${fullResults.length}. Use ${toolNames.getSearchContent}({ responseId: "${params.responseId}", queryIndex: ${queryIndex}, offset: ${end}, limit: ${limit} }) for the next slice.`);
+			const returnedChars = endOffset - offset;
 			const hasMore = endOffset < fullResults.length;
-			const text = `${resultSlice}${hasMore ? continuation : ""}`;
 			return {
 				content: [{ type: "text", text }],
 				details: {
