@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - `fetch_content` in Pi reports a failed fetch as a tool error when its only URL failed or every URL in a batch failed. Before, Pi recorded these as successful tool calls even though the text said `Error: ...`. Batches where some URLs succeed are unchanged. Thanks to [@MDGChamomile](https://github.com/MDGChamomile) for [PR #504](https://github.com/nicobailon/pi-web-access/pull/504).
 - OpenAI web search shows the server's real error when a streamed response fails, such as a ChatGPT subscription usage limit, instead of "no parseable response output", and provider fallback still applies. Thanks to [@ShinoharaHaruna](https://github.com/ShinoharaHaruna) for [PR #505](https://github.com/nicobailon/pi-web-access/pull/505).
 - Local video analysis through the Gemini Web cookie fallback no longer comes back as "garbled characters", because uploads now send the file's type and name. Thanks to [@leonzyb](https://github.com/leonzyb) for [#508](https://github.com/nicobailon/pi-web-access/issues/508).
+- `get_search_content` pages of a `source_check` artifact end with the call for the next slice, like search and fetch pages do. Before, the next offset was only in the result metadata, which the model does not see.
 
 ## [0.35.0] - 2026-09-30
 

@@ -40,8 +40,10 @@ function errorResult(text: string): CallToolResult {
 	return { content: [{ type: "text", text }], isError: true };
 }
 
+// details stays off the wire: clients such as Codex show the model structuredContent
+// instead of content, and details holds host metadata rather than the results.
 function toCallToolResult(result: WebToolResult): CallToolResult {
-	return { content: result.content, structuredContent: result.details, ...(result.isError && { isError: true }) };
+	return { content: result.content, ...(result.isError && { isError: true }) };
 }
 
 /** Serves the tools named in enabledTools (default: all four MCP tools). */
@@ -54,6 +56,7 @@ export function createMcpServer(core: WebToolCore, info: McpServerInfo, enabledT
 			name: tool.name,
 			description: tool.description,
 			inputSchema: tool.inputSchema as ToolInputSchema,
+			annotations: tool.annotations,
 		})),
 	}));
 

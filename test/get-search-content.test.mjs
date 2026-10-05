@@ -152,6 +152,10 @@ test("get_search_content rejects unsafe fetched content ranges", async () => {
 	assert.equal(researchOutOfRange.details.error, "Offset out of range");
 	assert.match(researchOutOfRange.content[0].text, /responseId "stored-research"/);
 	assert.match(researchOutOfRange.content[0].text, /valid range is 0-/);
+	const researchPage = await tool.execute("call", { responseId: "stored-research", limit: 10 });
+	assert.match(researchPage.content[0].text, /responseId: "stored-research", offset: 10, limit: 10 \}\) for the next slice/);
+	const researchLastPage = await tool.execute("call", { responseId: "stored-research", offset: researchPage.details.contentLength - 5 });
+	assert.doesNotMatch(researchLastPage.content[0].text, /next slice/);
 
 	const researchFind = await tool.execute("call", {
 		responseId: "stored-research",

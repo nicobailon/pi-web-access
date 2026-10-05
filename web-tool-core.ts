@@ -1115,7 +1115,9 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			const artifactSlice = serialized.slice(offset, endOffset);
 			const hasMore = endOffset < serialized.length;
 			return {
-				content: [{ type: "text", text: artifactSlice }],
+				content: [{ type: "text", text: hasMore
+					? `${artifactSlice}\n\n---\nShowing chars ${offset}-${endOffset} of ${serialized.length}. Use ${toolNames.getSearchContent}({ responseId: "${artifact.id}", offset: ${endOffset}, limit: ${limit} }) for the next slice.`
+					: artifactSlice }],
 				details: { responseId: artifact.id, type: "research", contentLength: serialized.length, offset, limit, returnedChars: artifactSlice.length, nextOffset: hasMore ? endOffset : null, truncated: hasMore },
 			};
 		}

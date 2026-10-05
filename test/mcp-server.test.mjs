@@ -58,6 +58,13 @@ test("tools/list exposes the four MCP tools with standalone-only input schemas",
 	assert.equal(byName.web_search.properties.workflow, undefined);
 	assert.deepEqual(byName.get_search_content.required, ["responseId"]);
 	assert.deepEqual(byName.source_check.required, ["claim"]);
+	const annotations = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
+	assert.deepEqual(annotations, {
+		web_search: { readOnlyHint: true, openWorldHint: true },
+		fetch_content: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+		get_search_content: { readOnlyHint: true, openWorldHint: false },
+		source_check: { readOnlyHint: true, openWorldHint: true },
+	});
 });
 
 test("a valid call reaches the core with its arguments and returns the core's content", async (t) => {
@@ -75,7 +82,8 @@ test("a valid call reaches the core with its arguments and returns the core's co
 	assert.equal(calls[0].method, "webSearch");
 	assert.deepEqual(calls[0].params, args);
 	assert.deepEqual(result.content, [{ type: "text", text: "results for a, b" }, image]);
-	assert.deepEqual(result.structuredContent, { responseId: "search-1", queryCount: 2 });
+	// Codex shows the model structuredContent instead of content, so it must stay unset.
+	assert.equal(result.structuredContent, undefined);
 	assert.notEqual(result.isError, true);
 
 	await client.callTool({ name: "get_search_content", arguments: { responseId: "search-1", findText: ["x"] } });
@@ -89,6 +97,9 @@ test("invalid arguments return a tool error naming the problem without calling t
 	const cases = [
 		["web_search", { query: "q", numResults: 0 }, "/numResults"],
 		["web_search", { query: "q", workflow: "summary-review" }, "workflow"],
+		["web_search", { query: "q", provider: "bogus" }, "/provider"],
+		["web_search", { query: "q", provider: "kimi" }, "/provider"],
+		["web_search", { query: "q", provider: ["brave", "auto"] }, "/provider"],
 		["fetch_content", { url: "https://example.com", mode: "answer" }, "/mode"],
 		["fetch_content", { url: "https://example.com", prompt: "summarize" }, "prompt"],
 		["get_search_content", { offset: 1 }, "responseId"],
@@ -231,7 +242,7 @@ test("built pi-web-access-mcp bin runs the real tools over stdio without Pi pack
 	const search = await client.callTool({ name: "web_search", arguments: { query: "mcp e2e", provider: "brave" } });
 	assert.notEqual(search.isError, true, text(search));
 	assert.match(text(search), /MCP Article\n {3}http:\/\/93\.184\.216\.34\/article/);
-	const responseId = search.structuredContent.searchId;
+	const responseId = text(search).match(/stored as responseId "([^"]+)"/)[1];
 	const stored = await client.callTool({ name: "get_search_content", arguments: { responseId, queryIndex: 0 } });
 	assert.notEqual(stored.isError, true, text(stored));
 	assert.match(text(stored), /### MCP Article\nhttp:\/\/93\.184\.216\.34\/article\n\nBrave snippet/);
@@ -250,15 +261,9 @@ test("built pi-web-access-mcp bin runs the real tools over stdio without Pi pack
 	assert.equal(exaBody.category, "research paper");
 
 	const requestsBefore = (await bin.requests()).length;
-	const kimi = await client.callTool({ name: "web_search", arguments: { query: "q", provider: "kimi" } });
-	assert.equal(kimi.isError, true);
-	assert.match(text(kimi), /Kimi search is not supported over MCP.*Choose another provider/);
 	const image = await client.callTool({ name: "fetch_content", arguments: { url: IMAGE_URL } });
 	assert.equal(image.isError, true);
 	assert.match(text(image), /Direct image fetch is not supported over MCP/);
-	const thrown = await client.callTool({ name: "web_search", arguments: { query: "q", provider: ["not-a-provider"] } });
-	assert.equal(thrown.isError, true);
-	assert.match(text(thrown), /invalid provider: not-a-provider/);
 	assert.deepEqual((await bin.requests()).slice(requestsBefore).map((request) => request.url), [IMAGE_URL]);
 
 	const closeStarted = Date.now();
