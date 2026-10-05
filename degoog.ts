@@ -14,10 +14,6 @@ const CONFIG_PATH = getWebSearchConfigPath();
 // a private deployment, which is what SSRF-guarded internal hosts require.
 const DEFAULT_BASE_URL = "https://degoog.org";
 const SEARCH_TIMEOUT_MS = 30_000;
-// Reverse-proxy header values can be credentials. Shorter values are not treated as
-// secrets: they are almost always non-secret routing hints (a region, a flag), and
-// redacting them would corrupt unrelated substrings of an upstream error body.
-const MIN_REDACTABLE_SECRET_LENGTH = 4;
 
 interface WebSearchConfig {
 	degoogBaseUrl?: unknown;
@@ -116,7 +112,9 @@ function normalizeHeaders(value: unknown): Record<string, string> {
 		// RFC 7230 token chars only — reject empty or malformed header names.
 		if (!name || !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(name)) continue;
 		if (!isValidHeaderValue(headerValue)) continue;
-		headers[name] = headerValue;
+		// Fetch strips surrounding whitespace before sending; store the sent form so
+		// redaction matches what an upstream error body can echo back.
+		headers[name] = headerValue.trim();
 	}
 	return headers;
 }
@@ -230,7 +228,7 @@ export async function searchWithDegoog(query: string, options: SearchOptions = {
 	if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
 	// Reverse-proxy header values can be credentials, so redact them alongside the API
 	// key before an upstream error body can echo them back.
-	const secrets = [apiKey, ...Object.values(customHeaders).filter(value => value.length >= MIN_REDACTABLE_SECRET_LENGTH)];
+	const secrets = [apiKey, ...Object.values(customHeaders)];
 
 	const body: Record<string, unknown> = { query: searchQuery, type: "web", page: 1 };
 	if (options.recencyFilter) body.time = options.recencyFilter;

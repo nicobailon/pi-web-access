@@ -377,7 +377,7 @@ test("degoog redacts configured header secrets from upstream errors", async () =
 	const home = await createHome({
 		degoogBaseUrl: "http://127.0.0.1:8443/",
 		degoogApiKey: "degoog-secret-key",
-		degoogHeaders: { "CF-Access-Client-Secret": "header-secret-value" },
+		degoogHeaders: { "CF-Access-Client-Secret": "header-secret-value", "X-Api-Key": "xyz", "X-Proxy-Secret": "  padded-secret  " },
 		ssrf: { allowRanges: ["127.0.0.1"] },
 	});
 	try {
@@ -385,21 +385,23 @@ test("degoog redacts configured header secrets from upstream errors", async () =
 			let sentHeaders = null;
 			globalThis.fetch = async (_url, init) => {
 				sentHeaders = init.headers;
-				return new Response("rejected header-secret-value and degoog-secret-key", { status: 403 });
+				return new Response("rejected header-secret-value, xyz, padded-secret! and degoog-secret-key", { status: 403 });
 			};
 			const { searchWithDegoog } = await import(${JSON.stringify(degoogModuleUrl)});
+			const { activityMonitor } = await import(${JSON.stringify(activityModuleUrl)});
 			let error = "";
 			try { await searchWithDegoog("denied"); } catch (caught) { error = String(caught); }
-			console.log(JSON.stringify({ sentHeaders, error }));
+			console.log(JSON.stringify({ sentHeaders, error, activityError: activityMonitor.getEntries().at(-1).error }));
 		`, { PI_CODING_AGENT_DIR: home });
 
 		assert.equal(child.status, 0, child.stderr);
 		const output = JSON.parse(child.stdout.trim());
 		assert.equal(output.sentHeaders["CF-Access-Client-Secret"], "header-secret-value");
+		assert.equal(output.sentHeaders["X-Proxy-Secret"], "padded-secret");
 		assert.match(output.error, /degoog search error 403/);
-		assert.match(output.error, /\[redacted\]/);
-		assert.doesNotMatch(output.error, /header-secret-value/);
-		assert.doesNotMatch(output.error, /degoog-secret-key/);
+		for (const text of [output.error, output.activityError]) {
+			assert.match(text, /rejected \[redacted\], \[redacted\], \[redacted\]! and \[redacted\]/);
+		}
 	} finally {
 		await rm(home, { recursive: true, force: true });
 	}
