@@ -8,6 +8,7 @@ import { test } from "node:test";
 const degoogModuleUrl = new URL("../degoog.ts", import.meta.url).href;
 const searchModuleUrl = new URL("../gemini-search.ts", import.meta.url).href;
 const curatorPageModuleUrl = new URL("../curator-page.ts", import.meta.url).href;
+const activityModuleUrl = new URL("../activity.ts", import.meta.url).href;
 
 async function createHome(config = {}) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-degoog-"));
@@ -288,6 +289,157 @@ test("degoog is env-overridable and appears in the Curator", async () => {
 	assert.match(page, /data-provider="degoog"/);
 	assert.match(page, />degoog<\/button>/);
 	assert.match(page, /provider === "degoog"\) return "degoog"/);
+});
+
+test("degoog groups multi-domain clauses, drops unusable links, and deduplicates", async () => {
+	const home = await createHome({
+		degoogBaseUrl: "http://127.0.0.1:8443/",
+		ssrf: { allowRanges: ["127.0.0.1"] },
+	});
+	try {
+		const child = runChild(`
+			const bodies = [];
+			globalThis.fetch = async (_url, init) => {
+				bodies.push(JSON.parse(init.body));
+				return new Response(JSON.stringify({ results: [
+					{ title: "Allowed", url: "https://docs.example.com/a", snippet: "a" },
+					{ title: "Duplicate", url: "https://docs.example.com/a", snippet: "again" },
+					{ title: "Other allowed", url: "https://example.org/b", snippet: "b" },
+					{ title: "Relative", url: "/relative", snippet: "r" },
+					{ title: "Script", url: "javascript:alert(1)", snippet: "j" },
+					{ title: "Ftp", url: "ftp://example.net/f", snippet: "f" },
+					{ title: "Outside", url: "https://example.net/out", snippet: "o" },
+					{ title: "Blocked", url: "https://private.example.com/p", snippet: "p" }
+				] }), { status: 200, headers: { "content-type": "application/json" } });
+			};
+			const { searchWithDegoog } = await import(${JSON.stringify(degoogModuleUrl)});
+			const filtered = await searchWithDegoog("several", { domainFilter: ["example.com", "example.org", "-private.example.com"], numResults: 5 });
+			const unfiltered = await searchWithDegoog("no filter", { numResults: 5 });
+			console.log(JSON.stringify({ bodies, filtered: filtered.results.map(r => r.url), unfiltered: unfiltered.results.map(r => r.url) }));
+		`, { PI_CODING_AGENT_DIR: home });
+
+		assert.equal(child.status, 0, child.stderr);
+		const output = JSON.parse(child.stdout.trim());
+		assert.equal(output.bodies[0].query, "several (site:example.com OR site:example.org) -site:private.example.com");
+		assert.equal(output.bodies[1].query, "no filter");
+		assert.deepEqual(output.filtered, ["https://docs.example.com/a", "https://example.org/b"]);
+		assert.deepEqual(output.unfiltered, [
+			"https://docs.example.com/a",
+			"https://example.org/b",
+			"https://example.net/out",
+			"https://private.example.com/p",
+		]);
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
+});
+
+test("a malformed degoog envelope reports invalid-response so routing can fall back", async () => {
+	const home = await createHome({
+		degoogBaseUrl: "http://127.0.0.1:8443/",
+		ssrf: { allowRanges: ["127.0.0.1"] },
+		tavilyApiKey: "tavily-test-key",
+		searchRouting: { providers: ["degoog", "tavily"], fallbackOn: ["invalid-response"] },
+	});
+	try {
+		const child = runChild(`
+			const calls = [];
+			globalThis.fetch = async (url) => {
+				const target = String(url);
+				calls.push(target);
+				if (target === "http://127.0.0.1:8443/api/search") return new Response(JSON.stringify({ foo: "bar" }), { status: 200, headers: { "content-type": "application/json" } });
+				if (target === "https://api.tavily.com/search") return new Response(JSON.stringify({ answer: "fallback", results: [] }), { status: 200 });
+				throw new Error("Unexpected fetch " + target);
+			};
+			const { searchWithDegoog } = await import(${JSON.stringify(degoogModuleUrl)});
+			let directError = "";
+			try { await searchWithDegoog("malformed"); } catch (error) { directError = String(error); }
+			const { search } = await import(${JSON.stringify(searchModuleUrl)});
+			const routed = await search("malformed", { provider: "auto" });
+			console.log(JSON.stringify({ directError, provider: routed.provider, calls }));
+		`, { PI_CODING_AGENT_DIR: home });
+
+		assert.equal(child.status, 0, child.stderr);
+		const output = JSON.parse(child.stdout.trim());
+		assert.match(output.directError, /degoog returned invalid response: expected a results array/);
+		assert.equal(output.provider, "tavily");
+		assert.deepEqual(output.calls, [
+			"http://127.0.0.1:8443/api/search",
+			"http://127.0.0.1:8443/api/search",
+			"https://api.tavily.com/search",
+		]);
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
+});
+
+test("degoog redacts configured header secrets from upstream errors", async () => {
+	const home = await createHome({
+		degoogBaseUrl: "http://127.0.0.1:8443/",
+		degoogApiKey: "degoog-secret-key",
+		degoogHeaders: { "CF-Access-Client-Secret": "header-secret-value" },
+		ssrf: { allowRanges: ["127.0.0.1"] },
+	});
+	try {
+		const child = runChild(`
+			let sentHeaders = null;
+			globalThis.fetch = async (_url, init) => {
+				sentHeaders = init.headers;
+				return new Response("rejected header-secret-value and degoog-secret-key", { status: 403 });
+			};
+			const { searchWithDegoog } = await import(${JSON.stringify(degoogModuleUrl)});
+			let error = "";
+			try { await searchWithDegoog("denied"); } catch (caught) { error = String(caught); }
+			console.log(JSON.stringify({ sentHeaders, error }));
+		`, { PI_CODING_AGENT_DIR: home });
+
+		assert.equal(child.status, 0, child.stderr);
+		const output = JSON.parse(child.stdout.trim());
+		assert.equal(output.sentHeaders["CF-Access-Client-Secret"], "header-secret-value");
+		assert.match(output.error, /degoog search error 403/);
+		assert.match(output.error, /\[redacted\]/);
+		assert.doesNotMatch(output.error, /header-secret-value/);
+		assert.doesNotMatch(output.error, /degoog-secret-key/);
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
+});
+
+test("degoog records a request timeout as a failure but caller cancellation as completed", async () => {
+	const home = await createHome({
+		degoogBaseUrl: "http://127.0.0.1:8443/",
+		ssrf: { allowRanges: ["127.0.0.1"] },
+	});
+	try {
+		const child = runChild(`
+			globalThis.fetch = async () => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); };
+			const { searchWithDegoog } = await import(${JSON.stringify(degoogModuleUrl)});
+			const { activityMonitor } = await import(${JSON.stringify(activityModuleUrl)});
+			let timeoutError = "";
+			try { await searchWithDegoog("timeout"); } catch (error) { timeoutError = String(error); }
+			const timeoutEntry = activityMonitor.getEntries().at(-1);
+			let abortError = "";
+			try { await searchWithDegoog("cancelled", { signal: AbortSignal.abort() }); } catch (error) { abortError = String(error); }
+			const abortEntry = activityMonitor.getEntries().at(-1);
+			console.log(JSON.stringify({
+				timeoutError,
+				abortError,
+				timeoutEntry: { status: timeoutEntry.status, error: timeoutEntry.error },
+				abortEntry: { status: abortEntry.status, error: abortEntry.error ?? null },
+			}));
+		`, { PI_CODING_AGENT_DIR: home });
+
+		assert.equal(child.status, 0, child.stderr);
+		const output = JSON.parse(child.stdout.trim());
+		assert.match(output.timeoutError, /degoog request timed out after 30s/);
+		assert.equal(output.timeoutEntry.status, null);
+		assert.match(output.timeoutEntry.error, /timed out/);
+		assert.equal(output.abortError, "Error: Aborted");
+		assert.equal(output.abortEntry.status, 0);
+		assert.equal(output.abortEntry.error, null);
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
 });
 
 test("an explicitly selected degoog provider searches the configured instance", async () => {

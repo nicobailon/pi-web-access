@@ -14,6 +14,10 @@ const CONFIG_PATH = getWebSearchConfigPath();
 // a private deployment, which is what SSRF-guarded internal hosts require.
 const DEFAULT_BASE_URL = "https://degoog.org";
 const SEARCH_TIMEOUT_MS = 30_000;
+// Reverse-proxy header values can be credentials. Shorter values are not treated as
+// secrets: they are almost always non-secret routing hints (a region, a flag), and
+// redacting them would corrupt unrelated substrings of an upstream error body.
+const MIN_REDACTABLE_SECRET_LENGTH = 4;
 
 interface WebSearchConfig {
 	degoogBaseUrl?: unknown;
@@ -32,10 +36,6 @@ interface DegoogResult {
 	url?: unknown;
 	snippet?: unknown;
 	content?: unknown;
-}
-
-interface DegoogResponse {
-	results?: DegoogResult[];
 }
 
 let cachedConfig: WebSearchConfig | null = null;
@@ -161,7 +161,8 @@ function buildQuery(query: string, filters: NormalizedDomainFilters): string {
 	if (filters.allowed.length === 1) {
 		parts.push(`site:${filters.allowed[0]}`);
 	} else if (filters.allowed.length > 1) {
-		parts.push(filters.allowed.map(domain => `site:${domain}`).join(" OR "));
+		// Group the alternatives so the query terms apply to every site branch.
+		parts.push(`(${filters.allowed.map(domain => `site:${domain}`).join(" OR ")})`);
 	}
 	for (const domain of filters.blocked) parts.push(`-site:${domain}`);
 	return parts.join(" ");
@@ -187,6 +188,27 @@ function resultText(value: unknown): string {
 	return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
 }
 
+function errorMessage(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
+}
+
+function invalidResponse(message: string): Error {
+	return new Error(`degoog returned invalid response: ${message}`);
+}
+
+function parseResponse(value: unknown): DegoogResult[] {
+	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse("expected an object envelope");
+	const envelope = value as Record<string, unknown>;
+	if (!Array.isArray(envelope.results)) throw invalidResponse("expected a results array");
+	return envelope.results as DegoogResult[];
+}
+
+function redactSecrets(text: string, secrets: Array<string | null | undefined>): string {
+	let redacted = text;
+	for (const secret of secrets) redacted = redactCredential(redacted, secret);
+	return redacted;
+}
+
 export function isDegoogAvailable(): boolean {
 	return getBaseUrl() !== null;
 }
@@ -203,8 +225,12 @@ export async function searchWithDegoog(query: string, options: SearchOptions = {
 		environmentValue: process.env.DEGOOG_API_KEY,
 		signal: options.signal,
 	});
-	const headers = mergeHeaders(normalizeHeaders(loadConfig().degoogHeaders));
+	const customHeaders = normalizeHeaders(loadConfig().degoogHeaders);
+	const headers = mergeHeaders(customHeaders);
 	if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+	// Reverse-proxy header values can be credentials, so redact them alongside the API
+	// key before an upstream error body can echo them back.
+	const secrets = [apiKey, ...Object.values(customHeaders).filter(value => value.length >= MIN_REDACTABLE_SECRET_LENGTH)];
 
 	const body: Record<string, unknown> = { query: searchQuery, type: "web", page: 1 };
 	if (options.recencyFilter) body.time = options.recencyFilter;
@@ -212,15 +238,15 @@ export async function searchWithDegoog(query: string, options: SearchOptions = {
 
 	const url = new URL(`${baseUrl}/api/search`);
 	const activityId = activityMonitor.logStart({ type: "api", query: searchQuery });
-
+	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
+	let response: Response;
+	let entries: DegoogResult[];
 	try {
-		const response = await fetchRemoteUrl(url, {
+		response = await fetchRemoteUrl(url, {
 			method: "POST",
 			headers,
 			body: JSON.stringify(body),
-			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
 		}, {
 			...loadSsrfConfig(),
 			// Credentials and reverse-proxy headers must not follow a cross-origin redirect.
@@ -230,42 +256,70 @@ export async function searchWithDegoog(query: string, options: SearchOptions = {
 		});
 
 		if (!response.ok) {
-			activityMonitor.logError(activityId, `HTTP ${response.status}`);
-			const errorText = redactCredential(await response.text(), apiKey);
+			const errorText = redactSecrets(await response.text(), secrets).slice(0, 300);
 			if (response.status === 401) {
 				throw new Error(
 					`degoog search error 401: this instance protects search routes. Set degoogApiKey in ${CONFIG_PATH} or DEGOOG_API_KEY. ${errorText.slice(0, 200)}`,
 				);
 			}
-			throw new Error(`degoog search error ${response.status}: ${errorText.slice(0, 300)}`);
+			throw new Error(`degoog search error ${response.status}: ${errorText}`);
 		}
 
-		let data: DegoogResponse;
+		let rawData: unknown;
 		try {
-			data = await response.json() as DegoogResponse;
+			rawData = await response.json();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : String(err);
-			throw new Error(`degoog returned invalid JSON: ${message}`);
+			if (err instanceof Error && err.name === "TimeoutError") throw err;
+			throw new Error(`degoog returned invalid JSON: ${errorMessage(err)}`);
 		}
-
-		activityMonitor.logComplete(activityId, response.status);
-		const results: SearchResult[] = [];
-		for (const item of Array.isArray(data.results) ? data.results : []) {
-			const resultUrl = resultText(item?.url);
-			if (!resultUrl || !matchesDomainFilters(resultUrl, filters)) continue;
-			results.push({
-				title: resultText(item?.title) || resultUrl,
-				url: resultUrl,
-				snippet: resultText(item?.snippet) || resultText(item?.content),
-			});
-			if (results.length >= numResults) break;
-		}
-
-		return { answer: formatSearchResultsAsAnswer(results), results };
+		entries = parseResponse(rawData);
 	} catch (err) {
-		const message = err instanceof Error ? err.message : String(err);
-		if (message.toLowerCase().includes("abort")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, message);
-		throw err;
+		if (options.signal?.aborted) {
+			activityMonitor.logComplete(activityId, 0);
+			throw new Error("Aborted");
+		}
+		const message = errorMessage(err);
+		// A caller cancellation is not a failure, but our own deadline is: distinguish
+		// them so a timeout is not recorded as a completed request with status 0.
+		const providerTimeout = timeoutSignal.aborted || (err instanceof Error && err.name === "TimeoutError");
+		const outgoing = providerTimeout
+			? new Error(`degoog request timed out after ${Math.round(SEARCH_TIMEOUT_MS / 1000)}s`)
+			: (() => {
+				const redactedMessage = redactSecrets(message, secrets);
+				if (redactedMessage === message && err instanceof Error) return err;
+				const redactedError = new Error(redactedMessage);
+				if (err instanceof Error) redactedError.name = err.name;
+				return redactedError;
+			})();
+		activityMonitor.logError(activityId, redactSecrets(errorMessage(outgoing), secrets));
+		throw outgoing;
 	}
+
+	activityMonitor.logComplete(activityId, response.status);
+	const results: SearchResult[] = [];
+	const seen = new Set<string>();
+	for (const item of entries) {
+		if (!item || typeof item !== "object") continue;
+		const rawUrl = resultText(item.url);
+		if (!rawUrl) continue;
+		let resultUrl: URL;
+		try {
+			resultUrl = new URL(rawUrl);
+		} catch {
+			continue;
+		}
+		// Only absolute HTTP(S) links are usable as citations or fetch targets.
+		if (resultUrl.protocol !== "http:" && resultUrl.protocol !== "https:") continue;
+		if (!matchesDomainFilters(resultUrl.href, filters)) continue;
+		if (seen.has(resultUrl.href)) continue;
+		seen.add(resultUrl.href);
+		results.push({
+			title: resultText(item.title) || resultUrl.href,
+			url: resultUrl.href,
+			snippet: resultText(item.snippet) || resultText(item.content),
+		});
+		if (results.length >= numResults) break;
+	}
+
+	return { answer: formatSearchResultsAsAnswer(results), results };
 }
