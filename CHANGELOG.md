@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - New explicit-only degoog search provider for a self-hosted or public [degoog](https://degoog.org) metasearch instance. It is keyless by default and uses `https://degoog.org`; set `degoogBaseUrl` or `DEGOOG_URL` for your own instance, `degoogApiKey` or `DEGOOG_API_KEY` when the instance protects its search routes, and `degoogEngines` to restrict the request to specific engine ids. It supports domain and recency filters, routing, and the curator, and it is never chosen by `auto` or `provider: "all"`. Thanks to [@zhouzhuojie](https://github.com/zhouzhuojie) for [PR #515](https://github.com/nicobailon/pi-web-access/pull/515).
+- Pi `codemode` scripts get data from `web_search` and `fetch_content` instead of the text the model sees: each query's answer, error, and results (title, URL, snippet), and each URL's full content and error, even past `maxInlineContentChars`. Failed searches and fetches still return this data, with the reason in `error`. What the model sees, `details`, and the MCP server output are unchanged, and Pi versions before 1.0 ignore the new data. See "In codemode scripts" in the README. [Issue #516](https://github.com/nicobailon/pi-web-access/issues/516).
 
 ### Changed
 

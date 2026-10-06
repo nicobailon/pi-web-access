@@ -34,9 +34,11 @@ import {
 import type { SummaryMeta } from "./summary-review.ts";
 import type {
 	FetchContentCallParams,
+	FetchContentStructuredContent,
 	GetSearchContentCallParams,
 	SourceCheckCallParams,
 	WebSearchCallParams,
+	WebSearchStructuredContent,
 	WebToolContent,
 	WebToolCore,
 	WebToolResult,
@@ -295,6 +297,25 @@ export function getMaxInlineContentChars(config = loadConfig()): number {
 
 export function stripThumbnails(results: ExtractedContent[]): ExtractedContent[] {
 	return results.map(({ thumbnail, frames, ...rest }) => rest);
+}
+
+function searchStructuredContent(responseId: string, fetchId: string | null, results: QueryResultData[]): WebSearchStructuredContent {
+	return {
+		responseId,
+		fetchId,
+		queries: results.map(({ query, answer, error, provider, providers, results }) => ({
+			query, answer, error, provider, providers,
+			results: results.map(({ title, url, snippet }) => ({ title, url, snippet })),
+		})),
+	};
+}
+
+// Full content per URL, without thumbnails or frames.
+function fetchStructuredContent(responseId: string | null, results: ExtractedContent[]): FetchContentStructuredContent {
+	return {
+		responseId,
+		urls: results.map(({ url, title, content, error, mimeType, status, duration }) => ({ url, title, content, error, mimeType, status, duration })),
+	};
 }
 
 function initialContentSlice(content: string, maxChars: number): {
@@ -662,6 +683,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 
 		return {
 			content: [{ type: "text", text: presentation.text }],
+			structuredContent: searchStructuredContent(searchId, fetchId, opts.results),
 			details: {
 				queries: opts.queryList,
 				queryCount: opts.queryList.length,
@@ -981,6 +1003,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				urls: stripThumbnails(fetchResults),
 			} satisfies FetchedContentData;
 			const storedContent = storeFetchResult(responseId, data, authFetchProfile);
+			const structuredContent = fetchStructuredContent(storedContent ? responseId : null, presentedResults);
 
 			if (urlList.length === 1) {
 				const result = presentedResults[0];
@@ -988,6 +1011,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					return {
 						isError: true,
 						content: [{ type: "text", text: `Error: ${result.error}` }],
+						structuredContent,
 						details: { urls: urlList, urlCount: 1, successful: 0, error: result.error, ...(storedContent ? { responseId } : {}), prompt: params.prompt, timestamp: params.timestamp, frames: params.frames },
 					};
 				}
@@ -1020,6 +1044,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				const imageCount = (result.frames?.length ?? 0) + (result.thumbnail ? 1 : 0);
 				return {
 					content,
+					structuredContent,
 					details: {
 						urls: urlList,
 						urlCount: 1,
@@ -1062,6 +1087,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			return {
 				...(successful === 0 ? { isError: true } : {}),
 				content: [{ type: "text", text: output }],
+				structuredContent,
 				details: { urls: urlList, urlCount: urlList.length, successful, totalChars, ...(storedContent ? { responseId } : {}) },
 			};
 		});
@@ -1373,7 +1399,7 @@ function standaloneError(error: string): WebToolResult {
 // where nothing requested succeeded: every web_search query, every fetch_content
 // URL, or every source_check search failed. A working search with zero matches
 // is not.
-export function markToolError<T extends WebToolResult>(result: T): T {
+export function markToolError<T extends Omit<WebToolResult, "structuredContent">>(result: T): T {
 	const { error, queryCount, successfulQueries, urlCount, successful, searchCount, artifact } = result.details;
 	const nothingSucceeded = (typeof queryCount === "number" && queryCount > 0 && successfulQueries === 0)
 		|| (typeof urlCount === "number" && urlCount > 0 && successful === 0)

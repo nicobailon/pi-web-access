@@ -258,6 +258,10 @@ source_check({
 
 The artifact preserves the `supported`, `contradicted`, `unclear`, or `missing-evidence` claim status schema, source quality hints, SHA-256 content hashes, and passage IDs with exact source offsets. It does not infer semantic support or contradiction automatically: retrieved passages produce `unclear` for manual review, while no passages produce `missing-evidence`. Search and fetch errors remain in the artifact instead of being silently discarded. Artifacts are stored with the session and retrieved through `get_search_content` using the returned `responseId`; paged artifact responses are JSON slices, so request the next `offset` when needed.
 
+### In codemode scripts
+
+Scripts run by Pi's `codemode` tool (Pi 1.0 or later) get data instead of the text the model sees. `await tools.web_search(...)` resolves to `{ responseId, fetchId, queries }`, where each query has its `answer`, `error`, provider, and `results` (`title`, `url`, `snippet`). `await tools.fetch_content(...)` resolves to `{ responseId, urls }`, where each URL has its full `content`, not limited by `maxInlineContentChars`, and its `error`. Failed searches and fetches still resolve to this data, with the reason in `error`; invalid arguments reject.
+
 ## Use from other agents (MCP)
 
 Other agents, such as Claude Code, Codex, Cursor, or Executor, can use `web_search`, `fetch_content`, `get_search_content`, and `source_check` through a local stdio MCP server. It needs Node.js 22.19 or later and no Pi install:

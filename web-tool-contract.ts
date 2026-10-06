@@ -13,7 +13,27 @@ export interface WebToolResult {
 	content: WebToolContent[];
 	details: Record<string, unknown>;
 	isError?: boolean;
+	/** Data for programmatic callers such as Pi codemode scripts; never sent to the model or over MCP. */
+	structuredContent?: WebSearchStructuredContent | FetchContentStructuredContent;
 }
+
+export type WebSearchStructuredContent = {
+	responseId: string;
+	fetchId: string | null;
+	queries: Array<{
+		query: string;
+		answer: string;
+		error: string | null;
+		provider?: string;
+		providers?: string[];
+		results: Array<{ title: string; url: string; snippet: string }>;
+	}>;
+};
+
+export type FetchContentStructuredContent = {
+	responseId: string | null;
+	urls: Array<{ url: string; title: string; content: string; error: string | null; mimeType?: string; status?: number; duration?: number }>;
+};
 
 export interface WebSearchCallParams {
 	query?: string;
