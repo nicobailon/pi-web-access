@@ -260,7 +260,7 @@ The artifact preserves the `supported`, `contradicted`, `unclear`, or `missing-e
 
 ### In codemode scripts
 
-Scripts run by Pi's `codemode` tool (Pi 1.0 or later) get data instead of the text the model sees. `await tools.web_search(...)` resolves to `{ responseId, fetchId, queries }`, where each query has its `answer`, `error`, provider, and `results` (`title`, `url`, `snippet`). `await tools.fetch_content(...)` resolves to `{ responseId, urls }`, where each URL has its full `content`, not limited by `maxInlineContentChars`, and its `error`. Failed searches and fetches still resolve to this data, with the reason in `error`; invalid arguments reject.
+Scripts run by Pi's `codemode` tool (Pi 1.0 or later) get data instead of the text the model sees. `await tools.web_search(...)` resolves to `{ responseId, fetchId, queries }`, where each query has its `answer`, `error`, provider, and `results` (`title`, `url`, `snippet`). `await tools.fetch_content(...)` resolves to `{ responseId, urls }`, where each URL has its full `content`, not limited by `maxInlineContentChars`, and its `error`. Failed searches and fetches still resolve to this data, with the reason in `error`; invalid arguments reject. A script's `web_search` uses `workflow: "none"` unless it passes a workflow, so a configured curator does not open, and with `includeContent` it waits for the pages, readable through `fetchId`, instead of fetching them in the background.
 
 ## Use from other agents (MCP)
 

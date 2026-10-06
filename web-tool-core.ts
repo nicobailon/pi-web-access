@@ -534,6 +534,8 @@ export interface WebToolCallOptions {
 export interface WebSearchCallOptions extends WebToolCallOptions {
 	/** Generates an auto-summary after searches complete; returning a tool result ends the call. */
 	summarize?(results: QueryResultData[]): Promise<WebToolResult | { approvedSummary: string; summaryMeta: SummaryMeta }>;
+	/** Wait for includeContent pages and store them with the result instead of fetching in the background. */
+	awaitContent?: boolean;
 }
 
 // Pi's TypeBox schemas type enums as plain strings; the core normalizes them.
@@ -809,8 +811,8 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			}
 
 			let inlineContent = allInlineContent.length > 0 ? allInlineContent : undefined;
-			if (params.includeContent && !host.startBackgroundFetch && allUrls.length > 0 && !hasFullInlineCoverage(allUrls, inlineContent)) {
-				// Hosts without background notifications wait for the same page fetch instead.
+			if (params.includeContent && (call.awaitContent || !host.startBackgroundFetch) && allUrls.length > 0 && !hasFullInlineCoverage(allUrls, inlineContent)) {
+				// Hosts without background notifications, and calls that ask to, wait for the same page fetch instead.
 				const proxy = typeof params.proxy === "string" ? params.proxy : undefined;
 				const fetched = await fetchUncoveredContent(allUrls, inlineContent, urls => fetchAllContent(urls, signal, fetchOptions(undefined, proxy)));
 				signal?.throwIfAborted();

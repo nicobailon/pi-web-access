@@ -1336,11 +1336,20 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => handleSessionChange(ctx));
-	pi.on("session_tree", async (_event, ctx) => handleSessionChange(ctx));
+	// web_search calls a tool made, such as a codemode script, reach the tool_call
+	// handlers before execute with parentToolCallId set; execute consumes the id.
+	// Ids of calls a later handler blocked are dropped when the session changes.
+	const nestedSearchCallIds = new Set<string>();
+	if (webSearchEnabled) pi.on("tool_call", (event) => {
+		if (event.parentToolCallId && event.toolName === toolNames.webSearch) nestedSearchCallIds.add(event.toolCallId);
+	});
+
+	pi.on("session_start", async (_event, ctx) => { nestedSearchCallIds.clear(); handleSessionChange(ctx); });
+	pi.on("session_tree", async (_event, ctx) => { nestedSearchCallIds.clear(); handleSessionChange(ctx); });
 
 	pi.on("session_shutdown", () => {
 		sessionActive = false;
+		nestedSearchCallIds.clear();
 		abortPendingFetches();
 		closeCurator();
 		clearCloneCache();
@@ -1383,13 +1392,17 @@ export default function (pi: ExtensionAPI) {
 		outputSchema: webSearchOutputSchema,
 
 		async execute(callId, params, signal, onUpdate, ctx) {
+			// Nested calls neither open the curator unless asked nor fetch content in the background.
+			const nested = nestedSearchCallIds.delete(callId);
 			return markToolError(await runWithProxy(typeof params.proxy === "string" ? params.proxy : undefined, async () => {
 				const rawQueryList: unknown[] = Array.isArray(params.queries)
 					? params.queries
 					: (params.query !== undefined ? expandQueryString(params.query) : []);
 				const queryList = normalizeQueryList(rawQueryList);
 				const configWorkflow = loadConfigForExtensionInit().workflow;
-				const workflow = curatorRunState.resolve(params.workflow, configWorkflow, ctx?.hasUI !== false);
+				const workflow = nested && params.workflow === undefined
+					? "none"
+					: curatorRunState.resolve(params.workflow, configWorkflow, ctx?.hasUI !== false);
 				const shouldCurate = workflow === "summary-review";
 				const recencyFilter = normalizeRecencyFilter(params.recencyFilter);
 
@@ -1635,7 +1648,7 @@ export default function (pi: ExtensionAPI) {
 					return { approvedSummary: generated.summary, summaryMeta: generated.meta };
 				};
 			}
-			return core.webSearch(params, signal, { extensionContext: ctx, onUpdate, summarize });
+			return core.webSearch(params, signal, { extensionContext: ctx, onUpdate, summarize, awaitContent: nested });
 			}));
 		},
 
