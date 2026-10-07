@@ -13,14 +13,14 @@ const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 60_000;
 
 // The selected model runs the server-side web_search call and writes the cited summary.
-// Prefer the newest mid-tier ("terra") model, then the newest bare mainline id, then any
+// Prefer the newest low-cost ("luna") model, then the newest bare mainline id, then any
 // other versioned GPT id (gateway providers such as opencode-go list only suffixed GPT
 // ids next to non-OpenAI models; unversioned ids such as gpt-oss-* are skipped); price
 // tiers ("pro"/"ultra" id segments) are excluded, and the numeric-aware sort keeps
 // e.g. gpt-5.10 ahead of gpt-5.9.
 const EXCLUDED_MODEL_SEGMENTS = new Set(["pro", "ultra"]);
 const MODEL_PREFERENCE = [
-	(id: string) => id.includes("terra"),
+	(id: string) => id.includes("luna"),
 	(id: string) => /^gpt-\d+(\.\d+)?$/.test(id),
 	(id: string) => /^gpt-\d/.test(id),
 ];
@@ -357,7 +357,7 @@ export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSi
 		signal,
 	});
 	return apiKey
-		? { provider: "openai", apiKey, model: modelOverride ?? "gpt-5.6-terra", headers: {}, responsesUrl }
+		? { provider: "openai", apiKey, model: modelOverride ?? "gpt-6-luna", headers: {}, responsesUrl }
 		: undefined;
 }
 

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- OpenAI `web_search` now runs on the newest Luna model by default, such as `gpt-6-luna` on a ChatGPT subscription, instead of `gpt-5.6-terra`. Terra costs about 20 times as much per token as `gpt-6-luna` and is a generation older, so searches were using a large share of subscription usage. With only an API key, the default is `gpt-6-luna`. Set `openaiSearchModel` to pick a different model. Thanks to [@sslotin](https://github.com/sslotin) for [issue #520](https://github.com/nicobailon/pi-web-access/issues/520).
+
 ### Fixed
 
 - `@modelcontextprotocol/sdk` is updated from 1.27.1 to 1.32.1, which fixes [GHSA-6qxp-vccf-f47h](https://github.com/advisories/GHSA-6qxp-vccf-f47h), so `npm audit` no longer reports it. That advisory covers the SDK's OAuth client, which pi-web-access doesn't use: its HTTP providers send API keys in headers and its MCP server runs over stdio. Thanks to [@M1racleShih](https://github.com/M1racleShih) for [PR #522](https://github.com/nicobailon/pi-web-access/pull/522) and [@SidShaytay](https://github.com/SidShaytay) for [issue #519](https://github.com/nicobailon/pi-web-access/issues/519).

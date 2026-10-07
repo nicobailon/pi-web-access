@@ -1359,7 +1359,7 @@ test("OpenAI search falls back to API key when model registry cannot enumerate",
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
 	assert.equal(output.answer, "fallback answer");
-	assert.equal(output.model, "gpt-5.6-terra");
+	assert.equal(output.model, "gpt-6-luna");
 });
 
 test("OpenAI search uses configured model with selected registry auth", async () => {
@@ -1409,6 +1409,43 @@ test("OpenAI search uses configured model with selected registry auth", async ()
 	assert.equal(output.answer, "registry answer");
 	assert.equal(output.requestModel, "gateway-search-model");
 	assert.equal(output.selectedModel, "gpt-5.10");
+});
+
+test("OpenAI search picks the newest Luna model from the registry", async () => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-openai-luna-"));
+	const child = runChild(`
+		let capturedBody = null;
+		globalThis.fetch = async (url, init) => {
+			capturedBody = JSON.parse(init.body);
+			return new Response(JSON.stringify({
+				output: [
+					{ type: "web_search_call", action: { sources: [] } },
+					{ type: "message", content: [{ type: "output_text", text: "luna answer" }] },
+				],
+			}), { status: 200, headers: { "content-type": "application/json" } });
+		};
+
+		// The ChatGPT subscription model list as Pi 1.0.4 registers it.
+		const models = ["gpt-5.5", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-6-astra", "gpt-6-luna", "gpt-6-sol", "gpt-6.1-sol"]
+			.map((id) => ({ provider: "openai-codex", id }));
+		const ctx = {
+			modelRegistry: {
+				getAll: () => models,
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "codex-key", headers: {} }),
+			},
+		};
+
+		const { searchWithOpenAI } = await import(${JSON.stringify(openaiModuleUrl)});
+		await searchWithOpenAI("luna docs", { numResults: 1 }, ctx);
+		console.log(JSON.stringify({ requestModel: capturedBody.model }));
+	`, {
+		HOME: home,
+		USERPROFILE: home,
+		PI_CODING_AGENT_DIR: home,
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	assert.equal(JSON.parse(child.stdout.trim()).requestModel, "gpt-6-luna");
 });
 
 test("OpenAI search honors configured provider priority", async () => {
