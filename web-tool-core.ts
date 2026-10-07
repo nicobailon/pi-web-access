@@ -63,6 +63,7 @@ export interface WebSearchConfig {
 	tinyfishApiKey?: unknown;
 	valyuApiKey?: unknown;
 	keenableApiKey?: unknown;
+	ceramicApiKey?: unknown;
 	degoogBaseUrl?: unknown;
 	degoogApiKey?: unknown;
 	degoogEngines?: unknown;

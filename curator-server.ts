@@ -311,6 +311,7 @@ export function startCuratorServer(
 		if (provider === "zai") return availableProviders.zai;
 		if (provider === "valyu") return availableProviders.valyu;
 		if (provider === "keenable") return availableProviders.keenable;
+		if (provider === "ceramic") return availableProviders.ceramic;
 		return false;
 	}
 

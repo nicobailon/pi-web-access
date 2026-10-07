@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- New Ceramic search provider for [Ceramic](https://www.ceramic.ai)'s keyword web search API, used only when you select it. Set `ceramicApiKey` or `CERAMIC_API_KEY` to your Ceramic key. Ceramic is a paid API with free starter credits, so it is never picked by `auto` or `all`. Allowed domains are added to the query as `site:` filters, and excluded domains are removed from the results. Ceramic has no date filter, so `recencyFilter` is ignored. Thanks to [@sweepies](https://github.com/sweepies) for [issue #523](https://github.com/nicobailon/pi-web-access/issues/523).
+
 ### Changed
 
 - OpenAI `web_search` now runs on the newest Luna model by default, such as `gpt-6-luna` on a ChatGPT subscription, instead of `gpt-5.6-terra`. Terra costs about 20 times as much per token as `gpt-6-luna` and is a generation older, so searches were using a large share of subscription usage. With only an API key, the default is `gpt-6-luna`. Set `openaiSearchModel` to pick a different model. Thanks to [@sslotin](https://github.com/sslotin) for [issue #520](https://github.com/nicobailon/pi-web-access/issues/520).
