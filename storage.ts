@@ -527,6 +527,13 @@ export function loadSessionResults(ctx: ExtensionContext): StoredSearchData[] {
 		if (entry.type === "custom" && entry.customType === "web-search-results") {
 			const data = entry.data;
 			if (isValidStoredData(data) && now - data.timestamp < CACHE_TTL_MS) {
+				// Another live session may hold this result with its fetched content in memory;
+				// the journal copy only points at the disk cache, which can be pruned.
+				const live = storedResults.get(data.id);
+				if (live) {
+					loaded.push(live);
+					continue;
+				}
 				storedResults.set(data.id, data);
 				loaded.push(data);
 			}

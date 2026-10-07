@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
 import { after, afterEach, test } from "node:test";
@@ -111,6 +111,26 @@ test("sessions forked from one history each keep the results they share", async 
 
 	await room.emit("session_shutdown");
 	assert.equal(getResult(shared), null);
+});
+
+test("a session forked from history keeps the live session's fetched content when the disk cache is gone", async (t) => {
+	const cacheRoot = await mkdtemp(join(tmpdir(), "pi-web-access-fork-cache-"));
+	process.env.PI_WEB_ACCESS_CACHE_ROOT = cacheRoot;
+	t.after(async () => {
+		delete process.env.PI_WEB_ACCESS_CACHE_ROOT;
+		await rm(cacheRoot, { recursive: true, force: true });
+	});
+	servePage("Live content. ".repeat(80));
+	const room = startInstance();
+	await room.emit("session_start");
+	const shared = (await room.call("fetch_content", { url: "https://93.184.216.34/live" })).details.responseId;
+	// The cache file is pruned (or was never written) while the room still holds the content.
+	await rm(join(cacheRoot, "web-search-cache"), { recursive: true, force: true });
+
+	const thread = startInstance([...room.entries]);
+	await thread.emit("session_start");
+	assert.match(await retrieve(room, shared), /Live content/);
+	assert.match(await retrieve(thread, shared), /Live content/);
 });
 
 test("deleting a shared result in one session leaves it with the other sessions holding it", async () => {
