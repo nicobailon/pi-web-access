@@ -486,6 +486,13 @@ export function releaseResults(ids: Iterable<string>): void {
 	}
 }
 
+/** Delete a result for one session that holds it. Other live sessions holding the same
+ * result keep it and its fetch cache file; the last holder deletes both. */
+export function deleteHeldResult(id: string): void {
+	if ((resultHolders.get(id) ?? 0) > 1) releaseResults([id]);
+	else deleteResult(id);
+}
+
 function isValidStoredData(data: unknown): data is StoredSearchData {
 	if (!data || typeof data !== "object") return false;
 	const d = data as Record<string, unknown>;

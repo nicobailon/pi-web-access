@@ -10,7 +10,7 @@ import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getConfiguredSearchRou
 export type { ProviderAvailability } from "./gemini-search.ts";
 import { formatSeconds, getWebSearchConfigDir, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
 import {
-	deleteResult,
+	deleteHeldResult,
 	generateId,
 	getAllResults,
 	holdResults,
@@ -2650,7 +2650,7 @@ export default function (pi: ExtensionAPI) {
 			const action = await ctx.ui.select(`Result ${selected.id.slice(0, 6)}`, actions);
 
 			if (action === "Delete") {
-				deleteResult(selected.id);
+				deleteHeldResult(selected.id);
 				ownedResults.delete(selected.id);
 				ctx.ui.notify(`Deleted ${selected.id.slice(0, 6)}`, "info");
 			} else if (action === "View details") {

@@ -23,10 +23,11 @@ afterEach(async () => {
 
 function startInstance(entries = []) {
 	const tools = new Map();
+	const commands = new Map();
 	const handlers = new Map();
 	initializeExtension({
 		registerTool(tool) { tools.set(tool.name, tool); },
-		registerCommand() {},
+		registerCommand(name, command) { commands.set(name, command); },
 		registerShortcut() {},
 		on(event, handler) { handlers.set(event, [...(handlers.get(event) ?? []), handler]); },
 		appendEntry(customType, data) { entries.push({ type: "custom", customType, data }); },
@@ -37,13 +38,15 @@ function startInstance(entries = []) {
 		modelRegistry: {},
 		scopedModels: [],
 		sessionManager: { getBranch: () => entries },
-		ui: { setWidget() {}, notify() {} },
+		// `/search` picks the first stored result, then Delete.
+		ui: { setWidget() {}, notify() {}, select: async (title, choices) => (title.startsWith("Result ") ? "Delete" : choices[0]) },
 	};
 	const emit = async (event) => {
 		for (const handler of handlers.get(event) ?? []) await handler({ type: event }, ctx);
 	};
 	const call = (name, params) => tools.get(name).execute(`${name}-call`, params, undefined, undefined, ctx);
-	const instance = { emit, call, entries };
+	const deleteFirstResult = () => commands.get("search").handler("", ctx);
+	const instance = { emit, call, deleteFirstResult, entries };
 	started.push(instance);
 	return instance;
 }
@@ -108,6 +111,24 @@ test("sessions forked from one history each keep the results they share", async 
 
 	await room.emit("session_shutdown");
 	assert.equal(getResult(shared), null);
+});
+
+test("deleting a shared result in one session leaves it with the other sessions holding it", async () => {
+	servePage("Kept content. ".repeat(80));
+	const room = startInstance();
+	await room.emit("session_start");
+	const shared = (await room.call("fetch_content", { url: "https://93.184.216.34/kept" })).details.responseId;
+	const thread = startInstance([...room.entries]);
+	await thread.emit("session_start");
+
+	await room.deleteFirstResult();
+	assert.match(await retrieve(thread, shared), /Kept content/);
+
+	// A later session over the same history, then the thread ending, must not drop it.
+	const later = startInstance([...room.entries]);
+	await later.emit("session_start");
+	await thread.emit("session_shutdown");
+	assert.match(await retrieve(later, shared), /Kept content/);
 });
 
 test("a session forked from history keeps the clones its results point at after the original session ends", { skip: process.platform === "win32" }, async () => {
