@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - New Ceramic search provider for [Ceramic](https://www.ceramic.ai)'s keyword web search API, used only when you select it. Set `ceramicApiKey` or `CERAMIC_API_KEY` to your Ceramic key. Ceramic is a paid API with free starter credits, so it is never picked by `auto` or `all`. Allowed domains are added to the query as `site:` filters, and excluded domains are removed from the results. Ceramic has no date filter, so `recencyFilter` is ignored. Thanks to [@sweepies](https://github.com/sweepies) for [issue #523](https://github.com/nicobailon/pi-web-access/issues/523).
+- New Cohesivity search provider for [Cohesivity](https://cohesivity.ai)'s web search API, used only when you select it. Run `npx @cohesivity/init`, provision search once, and set `cohesivityApplicationKey` or `COHESIVITY_APPLICATION_KEY` to the `coh_application_key` from the `.cohesivity` file. It is never picked by `auto` or `all`. Allowed and excluded domains and `recencyFilter` are sent as native filters, and domains are also checked locally. The key has to travel in the request URL, so redirects are refused and the key is kept out of errors.
 
 ### Changed
 
