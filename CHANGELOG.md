@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- The `web_search` tool description is now four sentences on how to use the tool, instead of a paragraph listing every provider, the `all` policy and each workflow mode. The model still sees the providers and the `all` policy in the `provider` parameter and the modes in the `workflow` parameter. Thanks to [@mcwalrus](https://github.com/mcwalrus) for [issue #528](https://github.com/nicobailon/pi-web-access/issues/528).
 - OpenAI `web_search` now runs on the newest Luna model by default, such as `gpt-6-luna` on a ChatGPT subscription, instead of `gpt-5.6-terra`. Terra costs about 20 times as much per token as `gpt-6-luna` and is a generation older, so searches were using a large share of subscription usage. With only an API key, the default is `gpt-6-luna`. Set `openaiSearchModel` to pick a different model. Thanks to [@sslotin](https://github.com/sslotin) for [issue #520](https://github.com/nicobailon/pi-web-access/issues/520).
 
 ### Fixed

@@ -22,7 +22,7 @@ function child(config, script, extraEnv = {}) {
 
 const kagiResponse = `new Response(JSON.stringify({ data: { search: [{ title: "Kagi", url: "https://example.com/kagi", snippet: "answer" }] } }), { status: 200 })`;
 
-test("Kagi-only policy constrains schema and generated description", () => {
+test("Kagi-only policy constrains the provider schema", () => {
   const result = child({ webSearch: { allowedProviders: ["kagi"] } }, `
     const tools = [];
     (await import(${JSON.stringify(indexUrl)})).default({ registerTool(t) { tools.push(t); }, registerCommand() {}, registerShortcut() {}, on() {} });
@@ -32,7 +32,6 @@ test("Kagi-only policy constrains schema and generated description", () => {
   `);
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
-  assert.match(output.description, /Search the web with Kagi\./);
   assert.doesNotMatch(output.description, /Brave/);
   for (const schema of [output.searchProvider, output.sourceProvider]) {
     assert.deepEqual(schema.anyOf[0].enum, ["auto", "all", "kagi"]);
