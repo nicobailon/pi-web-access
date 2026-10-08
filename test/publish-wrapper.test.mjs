@@ -9,7 +9,9 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const publishScript = fileURLToPath(new URL("../scripts/publish.js", import.meta.url));
-const WAIT_TIMEOUT_MS = 5000;
+// Only a hang guard: these tests finish in about a second, but spawning node
+// child processes on a loaded CI runner or during the full suite has taken over 5s.
+const WAIT_TIMEOUT_MS = 30_000;
 
 async function withTimeout(promise, message) {
 	let timer;
