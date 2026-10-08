@@ -6,12 +6,12 @@ import { findModelWithProviderRouting, isModelInScope } from "./summary-model-sc
 async function resolveFirstAvailableModel(
 	ctx: SummaryGenerationContext,
 	candidates: Array<{ provider: string; id: string }>,
-): Promise<{ model: Model<Api>; apiKey: string; headers?: ProviderHeaders }> {
+): Promise<{ model: Model<Api>; apiKey?: string; headers?: ProviderHeaders }> {
 	for (const { provider, id } of candidates) {
 		const model = findModelWithProviderRouting(ctx.modelRegistry, provider, id);
 		if (!model || !isModelInScope(model, ctx.scopedModels)) continue;
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-		if (auth.ok && auth.apiKey) return { model, apiKey: auth.apiKey, headers: auth.headers };
+		if (auth.ok) return { model, apiKey: auth.apiKey, headers: auth.headers };
 	}
 	throw new Error(`No enabled model available: ${candidates.map(candidate => `${candidate.provider}/${candidate.id}`).join(", ")}`);
 }

@@ -282,3 +282,17 @@ test("answerFromPage preserves configured model auth checks", async () => {
 		/No API key available for answer model test\/configured-model/,
 	);
 });
+
+test("answerFromPage runs when the provider authenticates without an API key", async () => {
+	const configured = pageModel("configured-model");
+	await writeFetchConfig({ answerProvider: "test", answerModel: "configured-model" });
+	const { ctx, getRequest } = contextFor([configured], { auth: { ok: true } });
+
+	const result = await answerFromPage(
+		{ question: "Which model?", pageText: "The configured answer.", sourceUrl: "https://example.com" },
+		ctx,
+	);
+
+	assert.equal(result.text, "The configured answer.");
+	assert.equal(getRequest().model, configured);
+});

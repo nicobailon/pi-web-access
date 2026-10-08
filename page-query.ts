@@ -110,7 +110,7 @@ export async function answerFromPage(
 		? resolveModel(ctx, input.model)
 		: resolveModel(ctx, undefined, loadConfiguredAnswerModel());
 	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
-	if (!auth.ok || !auth.apiKey) throw new Error(`No API key available for answer model ${model.provider}/${model.id}`);
+	if (!auth.ok) throw new Error(`No API key available for answer model ${model.provider}/${model.id}`);
 	const sessionHeaders = openCodeSessionHeaders(model, ctx.sessionManager);
 	const registry = ctx.modelRegistry as typeof ctx.modelRegistry & { complete?: typeof complete };
 	const usesRegistryComplete = typeof registry.complete === "function";
