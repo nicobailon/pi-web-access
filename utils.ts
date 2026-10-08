@@ -326,7 +326,7 @@ export function installGlobalProxyFetch(): void {
 	const current = globalThis.fetch as ProxiedFetch;
 	if (typeof current !== "function" || current.__piWebAccessProxyFetch === true) return;
 	const nativeFetch = current;
-	const wrapped: ProxiedFetch = ((input: RequestInfo | URL, init?: ProxiedRequestInit) => {
+	const wrapped: ProxiedFetch = (async (input: RequestInfo | URL, init?: ProxiedRequestInit) => {
 		// Prefer caller-attached __proxy (survives pLimit context loss) over AsyncLocalStorage.
 		const proxy = init?.__proxy ?? getActiveProxy();
 		if (!proxy) return nativeFetch(input, init);
@@ -338,6 +338,15 @@ export function installGlobalProxyFetch(): void {
 		}
 		if (!url || (url.protocol !== "http:" && url.protocol !== "https:") || isProxyBypassedUrl(url)) {
 			return nativeFetch(input, init);
+		}
+		if (input instanceof Request) {
+			const request = new Request(input, init);
+			request.signal.throwIfAborted();
+			// Abort body buffering as well as the curl process.
+			const body = request.body === null ? null : new Uint8Array(await new Response(
+				request.body.pipeThrough(new TransformStream(), { signal: request.signal }),
+			).arrayBuffer());
+			init = { ...init, method: request.method, headers: request.headers, body, signal: request.signal, redirect: request.redirect };
 		}
 		return fetchViaCurl(url, init ?? {}, proxy);
 	});
