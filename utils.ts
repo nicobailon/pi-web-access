@@ -438,7 +438,8 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 		"--write-out", "%{json}",
 	];
 
-	if (method !== "GET" && method !== "HEAD") args.push("-X", method);
+	if (method === "HEAD") args.push("--head");
+	else if (method !== "GET") args.push("-X", method);
 
 	for (const [name, value] of headers.entries()) {
 		if (value === "") continue;
@@ -526,7 +527,7 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 		// Older curl without %{json}; the header dump already provided the status.
 	}
 
-	const nullBody = status === 204 || status === 205 || status === 304;
+	const nullBody = method === "HEAD" || status === 204 || status === 205 || status === 304;
 	const response = new Response(nullBody ? null : new Uint8Array(bodyBuffer), {
 		status,
 		statusText: statusText || undefined,

@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 
 import { installGlobalProxyFetch, runWithProxy } from "../utils.ts";
 
 const nativeFetch = globalThis.fetch;
 const target = "http://request.example.test/resource";
+const curlSkip = spawnSync("curl", ["--version"], { stdio: "ignore" }).status === 0 ? false : "requires curl on PATH";
 
 async function withProxy(t, respond = (_request, response) => response.end("ok")) {
 	const calls = [];
@@ -35,7 +37,7 @@ async function withProxy(t, respond = (_request, response) => response.end("ok")
 	return { calls, fetch: (input, init) => runWithProxy(proxy, () => fetch(input, init)) };
 }
 
-test("proxied Request retains its method, headers and JSON body", async (t) => {
+test("proxied Request retains its method, headers and JSON body", { skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t);
 	const request = new Request(target, {
 		method: "POST",
@@ -52,7 +54,24 @@ test("proxied Request retains its method, headers and JSON body", async (t) => {
 	assert.equal(request.bodyUsed, true);
 });
 
-test("proxied Request applies init overrides and replaces headers", async (t) => {
+test("proxied HEAD uses HEAD on the wire and returns no body", { skip: curlSkip }, async (t) => {
+	const proxy = await withProxy(t, (_request, response) => {
+		response.setHeader("Content-Length", "4");
+		response.setHeader("X-Test", "head");
+		response.end("body");
+	});
+	for (const [input, init] of [[new Request(target, { method: "HEAD" }), undefined], [target, { method: "HEAD" }]]) {
+		const response = await proxy.fetch(input, init);
+		assert.equal(proxy.calls.at(-1).method, "HEAD");
+		assert.equal(response.status, 200);
+		assert.equal(response.headers.get("x-test"), "head");
+		assert.equal(response.body, null);
+		assert.equal(await response.text(), "");
+	}
+	assert.deepEqual(proxy.calls.map(call => call.method), ["HEAD", "HEAD"]);
+});
+
+test("proxied Request applies init overrides and replaces headers", { skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t);
 	const request = new Request(target, {
 		method: "POST", headers: { "X-Original": "old" }, body: "original",
@@ -66,7 +85,7 @@ test("proxied Request applies init overrides and replaces headers", async (t) =>
 	assert.deepEqual(proxy.calls[0].body, Buffer.from([0, 255, 13, 10]));
 });
 
-test("proxied Request inherits body and content type when init only overrides method", async (t) => {
+test("proxied Request inherits body and content type when init only overrides method", { skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t);
 	await proxy.fetch(new Request(target, {
 		method: "POST", body: new URLSearchParams({ query: "a b" }),
@@ -76,7 +95,7 @@ test("proxied Request inherits body and content type when init only overrides me
 	assert.equal(proxy.calls[0].body.toString(), "query=a+b");
 });
 
-test("proxied Request keeps multipart headers and bytes from the same body", async (t) => {
+test("proxied Request keeps multipart headers and bytes from the same body", { skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t);
 	const form = new FormData();
 	form.set("message", "hello");
@@ -87,7 +106,7 @@ test("proxied Request keeps multipart headers and bytes from the same body", asy
 	assert.ok(proxy.calls[0].body.toString().includes('name="message"\r\n\r\nhello'));
 });
 
-test("proxied Request replays its bytes on 307 and drops its body on 303", async (t) => {
+test("proxied Request replays its bytes on 307 and drops its body on 303", { skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t, (request, response) => {
 		const status = request.url === target ? 307 : request.url.endsWith("/retry") ? 303 : 200;
 		response.writeHead(status, { Location: request.url === target ? "/retry" : "/final" });
@@ -100,7 +119,7 @@ test("proxied Request replays its bytes on 307 and drops its body on 303", async
 	assert.equal(proxy.calls[2].headers["content-type"], undefined);
 });
 
-test("proxied Request retains redirect policy and allows init to override it", async (t) => {
+test("proxied Request retains redirect policy and allows init to override it", { skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t, (_request, response) => {
 		response.writeHead(302, { Location: "http://other.example.test/final" });
 		response.end();
@@ -112,7 +131,7 @@ test("proxied Request retains redirect policy and allows init to override it", a
 	assert.equal(proxy.calls.length, 2);
 });
 
-test("proxied Request inherits abort signal and supports an override", async (t) => {
+test("proxied Request inherits abort signal and supports an override", { skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t);
 	const controller = new AbortController();
 	controller.abort();
@@ -122,7 +141,7 @@ test("proxied Request inherits abort signal and supports an override", async (t)
 	assert.equal(proxy.calls.length, 1);
 });
 
-test("proxied Request aborts a running curl request", { timeout: 5000 }, async (t) => {
+test("proxied Request aborts a running curl request", { timeout: 5000, skip: curlSkip }, async (t) => {
 	let received;
 	const started = new Promise((resolve) => { received = resolve; });
 	const proxy = await withProxy(t, () => received());
@@ -134,7 +153,7 @@ test("proxied Request aborts a running curl request", { timeout: 5000 }, async (
 	await rejected;
 });
 
-test("proxied Request cancels body buffering when its signal aborts", { timeout: 5000 }, async (t) => {
+test("proxied Request cancels body buffering when its signal aborts", { timeout: 5000, skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t);
 	let cancelled = false;
 	let reading;
@@ -153,7 +172,7 @@ test("proxied Request cancels body buffering when its signal aborts", { timeout:
 	assert.equal(proxy.calls.length, 0);
 });
 
-test("proxied Request rejects a consumed body before sending a request", async (t) => {
+test("proxied Request rejects a consumed body before sending a request", { skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t);
 	const request = new Request(target, { method: "POST", body: "used" });
 	await request.text();
