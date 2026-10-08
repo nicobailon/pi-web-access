@@ -131,6 +131,8 @@ test("registered tools do not advertise disabled get_search_content", () => {
 	assert.ok(fetchTool);
 	assert.doesNotMatch(fetchTool.description, /get_search_content/);
 	assert.match(fetchTool.description, /retrieval tool is not registered/);
+	assert.doesNotMatch(registeredTool({ tools: { getSearchContent: { enabled: false } } }, "web_search").description, /get_search_content/);
+	assert.match(registeredTool({ toolNames: { getSearchContent: "open_content" } }, "web_search").description, /retrieval with open_content /);
 });
 
 test("web activity shortcut renders through the supported string-array API", async () => {

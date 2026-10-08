@@ -1407,7 +1407,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Search",
 		prepareArguments: (args) => parseStringifiedArrays(args, ["provider", "queries", "domainFilter"]) as never,
 		description:
-			"Search the web and return source-linked results or provider answers. Full results are stored for retrieval with get_search_content using the returned responseId. For research, prefer queries with 2-4 varied angles over a single query. Omit provider to use the configured default; set it only to override that.",
+			`Search the web and return source-linked results or provider answers.${getSearchContentEnabled ? ` Full results are stored for retrieval with ${toolNames.getSearchContent} using the returned responseId.` : ""} For research, prefer queries with 2-4 varied angles over a single query. Omit provider to use the configured default; set it only to override that.`,
 		promptSnippet:
 			"Use for web research questions. Prefer {queries:[...]} with 2-4 varied angles over a single query for broader coverage. Omit provider unless explicitly overriding the configured default.",
 		parameters: Type.Object({
