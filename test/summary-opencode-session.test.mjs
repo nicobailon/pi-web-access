@@ -47,20 +47,16 @@ function openCodeModel() {
 	};
 }
 
-test("registry summary attributes the configured OpenCode candidate instead of falling through", async () => {
+test("registry summary passes the session id for the configured OpenCode candidate", async () => {
 	const configured = openCodeModel();
 	const fallback = { provider: "anthropic", id: "claude-haiku-4-5", api: "anthropic-messages" };
 	const calls = [];
 	const ctx = context([configured, fallback], async (model, _request, options) => {
 		calls.push(model);
 		if (model !== configured) throw new Error("configured candidate silently fell through");
-		assert.equal(typeof options.transformHeaders, "function");
-		const headers = await options.transformHeaders({ accept: "application/json" });
-		assert.deepEqual(headers, {
-			accept: "application/json",
-			"x-opencode-session": "summary-session-385",
-			"x-opencode-client": "pi",
-		});
+		assert.equal(options.sessionId, "summary-session-385");
+		assert.equal(options.cacheRetention, "none");
+		assert.equal(options.transformHeaders, undefined);
 		return { stopReason: "stop", content: [{ type: "text", text: "OpenCode registry summary" }] };
 	});
 
@@ -72,7 +68,7 @@ test("registry summary attributes the configured OpenCode candidate instead of f
 	assert.deepEqual(calls, [configured]);
 });
 
-test("direct summary completion merges OpenCode attribution with provider headers", async () => {
+test("direct summary completion passes the session id and keeps provider headers", async () => {
 	const model = openCodeModel();
 	let calls = 0;
 	const result = await generateSummaryDraft(
@@ -83,11 +79,9 @@ test("direct summary completion merges OpenCode attribution with provider header
 		undefined,
 		(_model, _request, options) => {
 			calls += 1;
-			assert.deepEqual(options.headers, {
-				"x-existing": "kept",
-				"x-opencode-session": "summary-session-385",
-				"x-opencode-client": "pi",
-			});
+			assert.equal(options.sessionId, "summary-session-385");
+			assert.equal(options.cacheRetention, "none");
+			assert.deepEqual(options.headers, { "x-existing": "kept" });
 			return Promise.resolve({ stopReason: "stop", content: [{ type: "text", text: "OpenCode direct summary" }] });
 		},
 	);
@@ -96,30 +90,19 @@ test("direct summary completion merges OpenCode attribution with provider header
 	assert.equal(calls, 1);
 });
 
-test("non-OpenCode registry summaries do not install a header transform", async () => {
-	const model = { provider: "test", id: "summary-model", api: "custom" };
+test("summary completion omits the session id when the session has none", async () => {
+	const model = openCodeModel();
 	const ctx = context([model], async (_model, _request, options) => {
-		assert.equal(options.transformHeaders, undefined);
-		return { stopReason: "stop", content: [{ type: "text", text: "Unchanged summary" }] };
+		assert.equal(options.sessionId, undefined);
+		return { stopReason: "stop", content: [{ type: "text", text: "No session summary" }] };
 	});
+	ctx.sessionManager = undefined;
 
-	const result = await generateSummaryDraft(results, ctx, undefined, "test/summary-model");
-	assert.equal(result.meta.model, "test/summary-model");
+	const result = await generateSummaryDraft(results, ctx, undefined, "opencode-go/deepseek-v4-flash");
+	assert.equal(result.summary, "No session summary");
 });
 
-test("non-OpenCode direct summaries preserve provider headers", async () => {
-	const model = { provider: "test", id: "summary-model", api: "custom" };
-	const providerHeaders = { "x-existing": "kept" };
-	const ctx = context([model]);
-	ctx.modelRegistry.getApiKeyAndHeaders = async () => ({ ok: true, apiKey: "test-key", headers: providerHeaders });
-
-	await generateSummaryDraft(results, ctx, undefined, "test/summary-model", undefined, (_model, _request, options) => {
-		assert.equal(options.headers, providerHeaders);
-		return Promise.resolve({ stopReason: "stop", content: [{ type: "text", text: "Unchanged direct summary" }] });
-	});
-});
-
-test("thinking summary completion sends OpenCode attribution headers", () => {
+test("thinking summary completion passes the session id", () => {
 	const summaryUrl = new URL("../summary-review.ts", import.meta.url).href;
 	const child = spawnSync(process.execPath, ["--input-type=module"], {
 		encoding: "utf8",
@@ -149,11 +132,9 @@ test("thinking summary completion sends OpenCode attribution headers", () => {
 			let calls = 0;
 			globalThis.completeSimple = (_model, _request, options) => {
 				calls += 1;
-				assert.deepEqual(options.headers, {
-					"x-existing": "kept",
-					"x-opencode-session": "thinking-session-385",
-					"x-opencode-client": "pi",
-				});
+				assert.equal(options.sessionId, "thinking-session-385");
+				assert.equal(options.cacheRetention, "none");
+				assert.deepEqual(options.headers, { "x-existing": "kept" });
 				return Promise.resolve({ stopReason: "stop", content: [{ type: "text", text: "Thinking summary" }] });
 			};
 			const model = { provider: "opencode-go", id: "deepseek-v4-flash", api: "openai-completions", reasoning: true };

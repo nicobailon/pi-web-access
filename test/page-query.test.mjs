@@ -141,7 +141,7 @@ test("answerFromPage gives a per-call model precedence over valid and partial co
 	assert.equal(call.getRequest().model, override);
 });
 
-test("answerFromPage adds opencode session headers on the registry path", async () => {
+test("answerFromPage passes the session id to the model call", async () => {
 	const openCodeModel = pageModel("gpt-5.6-luna");
 	openCodeModel.provider = "opencode-go";
 	openCodeModel.baseUrl = "https://opencode.ai/zen/go/v1";
@@ -157,55 +157,21 @@ test("answerFromPage adds opencode session headers on the registry path", async 
 	);
 
 	const options = getRequest().options;
-	assert.equal(typeof options.transformHeaders, "function");
-	const headers = await options.transformHeaders({ accept: "application/json" });
-	assert.equal(headers["x-opencode-session"], "01a08bfb-e1f6-7044-b797-d9eda1e61eb4");
-	assert.equal(headers["x-opencode-client"], "pi");
-	assert.equal(headers.accept, "application/json");
+	assert.equal(options.sessionId, "01a08bfb-e1f6-7044-b797-d9eda1e61eb4");
+	assert.equal(options.cacheRetention, "none");
+	assert.equal(options.transformHeaders, undefined);
 });
 
-test("answerFromPage adds opencode session headers for an opencode.ai base url", async () => {
-	const routed = pageModel("some-proxied-model");
-	routed.provider = "my-proxy";
-	routed.baseUrl = "https://opencode.ai/zen/go/v1";
+test("answerFromPage omits the session id when the session has none", async () => {
 	await rm(configPath, { force: true });
-	const { ctx, getRequest } = contextFor([routed], { sessionModel: routed, sessionId: "session-abc" });
+	const { ctx, getRequest } = contextFor([pageModel("page-model")]);
 
 	await answerFromPage(
 		{ question: "What is the answer?", pageText: "Content", sourceUrl: "https://example.com" },
 		ctx,
 	);
 
-	const headers = await getRequest().options.transformHeaders({});
-	assert.equal(headers["x-opencode-session"], "session-abc");
-});
-
-test("answerFromPage leaves request headers alone for non-opencode models", async () => {
-	const other = pageModel("page-model");
-	await rm(configPath, { force: true });
-	const { ctx, getRequest } = contextFor([other], { sessionModel: other, sessionId: "session-123" });
-
-	await answerFromPage(
-		{ question: "What is the answer?", pageText: "Content", sourceUrl: "https://example.com" },
-		ctx,
-	);
-
-	assert.equal(getRequest().options.transformHeaders, undefined);
-});
-
-test("answerFromPage omits opencode session headers when no session id is available", async () => {
-	const openCodeModel = pageModel("glm-5.3-flash");
-	openCodeModel.provider = "opencode-go";
-	openCodeModel.baseUrl = "https://opencode.ai/zen/go/v1";
-	await rm(configPath, { force: true });
-	const { ctx, getRequest } = contextFor([openCodeModel], { sessionModel: openCodeModel });
-
-	await answerFromPage(
-		{ question: "What is the answer?", pageText: "Content", sourceUrl: "https://example.com" },
-		ctx,
-	);
-
-	assert.equal(getRequest().options.transformHeaders, undefined);
+	assert.equal(getRequest().options.sessionId, undefined);
 });
 
 test("answerFromPage rejects partial configured answer defaults", async () => {
