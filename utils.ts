@@ -354,7 +354,9 @@ export function installGlobalProxyFetch(): void {
 	globalThis.fetch = wrapped;
 }
 
-function parseHeaderDump(dump: string): { status: number; statusText: string; headers: Array<[string, string]> } {
+// GET bodies are decoded by --compressed, so their length/encoding headers no longer match.
+// HEAD has no body, and its Content-Length is usually why the caller asked.
+function parseHeaderDump(dump: string, keepLengthHeaders: boolean): { status: number; statusText: string; headers: Array<[string, string]> } {
 	const blocks = dump.split(/\r?\n\r?\n/).filter((block) => /^HTTP\/[\d.]+\s+\d{3}/.test(block.trim()));
 	const block = (blocks.length > 0 ? blocks[blocks.length - 1] : "").trim();
 	const lines = block.split(/\r?\n/);
@@ -372,7 +374,7 @@ function parseHeaderDump(dump: string): { status: number; statusText: string; he
 		const separator = line.indexOf(":");
 		if (separator > 0) {
 			const name = line.slice(0, separator).trim();
-			if (name.toLowerCase() === "content-encoding" || name.toLowerCase() === "content-length") continue;
+			if (!keepLengthHeaders && (name.toLowerCase() === "content-encoding" || name.toLowerCase() === "content-length")) continue;
 			headers.push([name, line.slice(separator + 1).trim()]);
 		}
 	}
@@ -457,6 +459,9 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 		await writeFile(requestBodyFile, buffer);
 		args.push("--data-binary", `@${requestBodyFile}`);
 		if (method === "GET") args.unshift("-X", "GET");
+	} else if ((method === "POST" || method === "PUT") && !headers.has("content-length")) {
+		// Native fetch sends a zero length for a bodyless POST/PUT; some origins answer 411 without it.
+		args.push("-H", "Content-Length: 0");
 	}
 
 	args.push(url.toString());
@@ -509,7 +514,7 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 		await rm(dir, { recursive: true, force: true }).catch(() => {});
 	}
 
-	const { status, statusText, headers: responseHeaders } = parseHeaderDump(dump);
+	const { status, statusText, headers: responseHeaders } = parseHeaderDump(dump, method === "HEAD");
 	if (status === 0) {
 		throw new Error(`Proxy fetch to ${url.toString()} via ${redactProxyUrl(proxyUrl)} returned no HTTP status`);
 	}

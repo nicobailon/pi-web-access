@@ -54,6 +54,13 @@ test("proxied Request retains its method, headers and JSON body", { skip: curlSk
 	assert.equal(request.bodyUsed, true);
 });
 
+test("proxied bodyless POST and PUT send a zero Content-Length", { skip: curlSkip }, async (t) => {
+	const proxy = await withProxy(t);
+	await proxy.fetch(new Request(target, { method: "POST" }));
+	await proxy.fetch(target, { method: "PUT" });
+	assert.deepEqual(proxy.calls.map(call => [call.method, call.headers["content-length"]]), [["POST", "0"], ["PUT", "0"]]);
+});
+
 test("proxied HEAD uses HEAD on the wire and returns no body", { skip: curlSkip }, async (t) => {
 	const proxy = await withProxy(t, (_request, response) => {
 		response.setHeader("Content-Length", "4");
@@ -65,6 +72,7 @@ test("proxied HEAD uses HEAD on the wire and returns no body", { skip: curlSkip 
 		assert.equal(proxy.calls.at(-1).method, "HEAD");
 		assert.equal(response.status, 200);
 		assert.equal(response.headers.get("x-test"), "head");
+		assert.equal(response.headers.get("content-length"), "4");
 		assert.equal(response.body, null);
 		assert.equal(await response.text(), "");
 	}
