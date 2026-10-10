@@ -15,7 +15,7 @@ test("JSON-string arrays become arrays; other values are untouched", () => {
 		provider: ["parallel-mcp"], queries: ["a", "b"], domainFilter: "example.com", numResults: 8,
 	});
 	assert.equal(parseStringifiedArrays({ provider: "exa" }, ["provider"]).provider, "exa");
-	assert.equal(parseStringifiedArrays({ provider: "[not json" }, ["provider"]).provider, "[not json");
+	assert.throws(() => parseStringifiedArrays({ provider: "[not json" }, ["provider"]), /provider must be an array of strings; the given value is not valid JSON/);
 	assert.equal(parseStringifiedArrays({ provider: "[1, 2]" }, ["provider"]).provider, "[1, 2]");
 	const unchanged = { query: "x" };
 	assert.equal(parseStringifiedArrays(unchanged, ["provider"]), unchanged);
