@@ -9,6 +9,8 @@ const PERPLEXITY_SEARCH_URL = "https://api.perplexity.ai/search";
 const PERPLEXITY_CHAT_URL = "https://api.perplexity.ai/chat/completions";
 const CONFIG_PATH = getWebSearchConfigPath();
 
+const REQUEST_TIMEOUT_MS = 30_000;
+
 const RATE_LIMIT = {
 	maxRequests: 10,
 	windowMs: 60 * 1000,
@@ -139,7 +141,11 @@ async function postPerplexity(
 				"Content-Type": "application/json",
 			},
 			body: JSON.stringify(body),
-			...(options.signal ? { signal: options.signal } : {}),
+			// A stalled connection otherwise holds the search for the whole turn.
+			signal: AbortSignal.any([
+				AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+				...(options.signal ? [options.signal] : []),
+			]),
 		});
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
