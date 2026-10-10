@@ -37,6 +37,20 @@ function estimateTokens(text: string): number {
 	return Math.max(1, Math.ceil(trimmed.length / 4));
 }
 
+const SNIPPET_BUDGETS = {
+	/** No answer text: the snippets are the only evidence. */
+	evidence: { perSource: 600, perQuery: 12_000 },
+	/** Answer present: snippets only corroborate it. */
+	corroboration: { perSource: 200, perQuery: 3_000 },
+} as const;
+
+function clampSnippet(snippet: string, budgetLeft: number, perSource: number): string {
+	const text = snippet.replace(/\s+/g, " ").trim();
+	const limit = Math.min(perSource, budgetLeft);
+	if (!text || limit <= 0) return "";
+	return text.length <= limit ? text : `${text.slice(0, limit)}…`;
+}
+
 function summarizeQueryResult(result: QueryResultData): string {
 	if (result.error) {
 		return `Query: ${result.query}\nStatus: Error\nError: ${result.error}`;
@@ -54,9 +68,18 @@ function summarizeQueryResult(result: QueryResultData): string {
 	}
 
 	lines.push("Sources:");
+	// Without snippets a provider that returns raw results gives the model
+	// nothing to summarise; with all of them the request overruns its deadline.
+	const budget = result.answer?.trim() ? SNIPPET_BUDGETS.corroboration : SNIPPET_BUDGETS.evidence;
+	let budgetLeft = budget.perQuery;
 	for (let i = 0; i < result.results.length; i++) {
 		const source = result.results[i];
 		lines.push(`${i + 1}. ${source.title} — ${source.url}`);
+		const snippet = clampSnippet(source.snippet ?? "", budgetLeft, budget.perSource);
+		if (snippet) {
+			budgetLeft -= snippet.length;
+			lines.push(`   ${snippet}`);
+		}
 	}
 
 	return lines.join("\n");
