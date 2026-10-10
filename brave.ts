@@ -112,6 +112,27 @@ function matchesDomainFilters(url: string, filters: NormalizedDomainFilters): bo
 	return !filters.blocked.some(domain => hostMatchesDomain(hostname, domain));
 }
 
+const HTML_ENTITIES: Record<string, string> = {
+	"&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": "\"", "&apos;": "'", "&nbsp;": " ",
+	"&mdash;": "—", "&ndash;": "–", "&hellip;": "…", "&rsquo;": "’", "&lsquo;": "‘",
+	"&rdquo;": "”", "&ldquo;": "“", "&middot;": "·", "&bull;": "•", "&deg;": "°",
+};
+
+/** Brave marks matched terms with tags and escapes the rest. */
+function stripHtml(value: string): string {
+	return value
+		.replace(/<[^>]*>/g, "")
+		.replace(/&[a-z]+;|&#x?[0-9a-f]+;/gi, (entity) => {
+			const named = HTML_ENTITIES[entity.toLowerCase()];
+			if (named) return named;
+			const numeric = /^&#(x?)([0-9a-f]+);$/i.exec(entity);
+			if (!numeric) return entity;
+			const code = Number.parseInt(numeric[2], numeric[1] ? 16 : 10);
+			return Number.isFinite(code) ? String.fromCodePoint(code) : entity;
+		})
+		.trim();
+}
+
 export function isBraveAvailable(): boolean {
 	return hasCredentialSource({
 		provider: "Brave",
@@ -198,9 +219,9 @@ export async function searchWithBrave(
 		for (const item of data.web?.results ?? []) {
 			if (!item.url || !matchesDomainFilters(item.url, domainFilters)) continue;
 			results.push({
-				title: item.title || item.url,
+				title: stripHtml(item.title || "") || item.url,
 				url: item.url,
-				snippet: item.description || "",
+				snippet: stripHtml(item.description || ""),
 			});
 			if (results.length >= numResults) break;
 		}
