@@ -14,7 +14,9 @@ export function parseStringifiedArrays(args: unknown, keys: readonly string[]): 
 				output ??= { ...input };
 				output[key] = parsed;
 			}
-		} catch {}
+		} catch {
+			throw new Error(`${key} must be an array of strings; the given value is not valid JSON`);
+		}
 	}
 	return output ?? args;
 }
