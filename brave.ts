@@ -128,7 +128,8 @@ function stripHtml(value: string): string {
 			const numeric = /^&#(x?)([0-9a-f]+);$/i.exec(entity);
 			if (!numeric) return entity;
 			const code = Number.parseInt(numeric[2], numeric[1] ? 16 : 10);
-			return Number.isFinite(code) ? String.fromCodePoint(code) : entity;
+			const valid = code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
+			return valid ? String.fromCodePoint(code) : entity;
 		})
 		.trim();
 }
