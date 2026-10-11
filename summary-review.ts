@@ -48,7 +48,7 @@ function clampSnippet(snippet: string, budgetLeft: number, perSource: number): s
 	const text = snippet.replace(/\s+/g, " ").trim();
 	const limit = Math.min(perSource, budgetLeft);
 	if (!text || limit <= 0) return "";
-	return text.length <= limit ? text : `${text.slice(0, limit)}…`;
+	return text.length <= limit ? text : `${text.slice(0, limit - 1)}…`;
 }
 
 function summarizeQueryResult(result: QueryResultData): string {
