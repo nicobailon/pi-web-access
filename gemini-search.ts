@@ -279,32 +279,16 @@ function isAbortError(err: unknown): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
 }
 
-/** A 200 with neither an answer nor a source: the chain must keep going. */
-class EmptyResultError extends Error {
-	response: AttributedSearchResponse;
-	constructor(response: AttributedSearchResponse) {
-		super(`${response.provider} returned no results`);
-		this.response = response;
-	}
-}
+type TakeAutoResult = (result: SearchResponse, provider: ResolvedSearchProvider) => AttributedSearchResponse | null;
 
-/** Attribute a provider response, rejecting an empty one so AUTO falls through. */
-function attributed(result: SearchResponse, provider: AttributedSearchResponse["provider"]): AttributedSearchResponse {
-	const response = { ...result, provider };
-	if ((!result.results || result.results.length === 0) && !result.answer?.trim()) {
-		throw new EmptyResultError(response);
-	}
-	return response;
-}
-
-async function tryOpenAIInAuto(query: string, options: FullSearchOptions, fallbackErrors: string[]): Promise<AttributedSearchResponse | null> {
+async function tryOpenAIInAuto(query: string, options: FullSearchOptions, fallbackErrors: string[], take: TakeAutoResult): Promise<AttributedSearchResponse | null> {
 	try {
 		if (await isOpenAISearchAvailable(options.extensionContext)) {
 			const result = await searchWithOpenAI(query, options, options.extensionContext);
-			return attributed(result, "openai");
+			return take(result, "openai");
 		}
 	} catch (err) {
-		if (isAbortError(err) || err instanceof EmptyResultError) throw err;
+		if (isAbortError(err)) throw err;
 		fallbackErrors.push(`OpenAI: ${errorMessage(err)}`);
 	}
 	return null;
@@ -677,16 +661,24 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	const fallbackErrors: string[] = [];
+	// A 200 with neither an answer nor a source keeps the chain going. If every
+	// provider is empty, the first empty answer beats a synthesized failure.
 	let firstEmpty: AttributedSearchResponse | undefined;
+	const take: TakeAutoResult = (result, provider) => {
+		const response = { ...result, provider };
+		if (result.results?.length || result.answer?.trim()) return response;
+		firstEmpty ??= response;
+		fallbackErrors.push(`${providerLabel(provider)}: no results`);
+		return null;
+	};
 	const allowed = new Set(config.allowedProviders ?? RESOLVED_SEARCH_PROVIDERS);
 
 	if (allowed.has("searxng") && isSearXNGAvailable()) {
 		try {
 			const result = await searchWithSearXNG(query, options);
-			return attributed(result, "searxng");
+			const response = take(result, "searxng"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`SearXNG: ${errorMessage(err)}`);
 		}
 	}
@@ -694,45 +686,31 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	let triedOpenAI = false;
 	if (allowed.has("openai") && (!options.extensionContext || isOpenAISubscriptionModelSelected(options.extensionContext))) {
 		triedOpenAI = true;
-		try {
-			const result = await tryOpenAIInAuto(query, options, fallbackErrors);
-			if (result) return result;
-		} catch (err) {
-			if (!(err instanceof EmptyResultError)) throw err;
-			firstEmpty ??= err.response;
-			fallbackErrors.push(`OpenAI: ${errorMessage(err)}`);
-		}
+		const result = await tryOpenAIInAuto(query, options, fallbackErrors, take);
+		if (result) return result;
 	}
 
 	if (allowed.has("exa") && isExaAvailable()) {
 		try {
 			const result = await searchWithExa(query, options);
-			if (result) return attributed(result, "exa");
+			const response = result && take(result, "exa"); if (response) return response;
 		} catch (err) {
 			if (err instanceof CredentialResolutionError || isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
 		}
 	}
 
 	if (allowed.has("openai") && !triedOpenAI) {
-		try {
-			const result = await tryOpenAIInAuto(query, options, fallbackErrors);
-			if (result) return result;
-		} catch (err) {
-			if (!(err instanceof EmptyResultError)) throw err;
-			firstEmpty ??= err.response;
-			fallbackErrors.push(`OpenAI: ${errorMessage(err)}`);
-		}
+		const result = await tryOpenAIInAuto(query, options, fallbackErrors, take);
+		if (result) return result;
 	}
 
 	if (allowed.has("brave") && isBraveAvailable()) {
 		try {
 			const result = await searchWithBrave(query, options);
-			return attributed(result, "brave");
+			const response = take(result, "brave"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Brave: ${errorMessage(err)}`);
 		}
 	}
@@ -740,10 +718,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("parallel") && isParallelAvailable()) {
 		try {
 			const result = await searchWithParallel(query, options);
-			return attributed(result, "parallel");
+			const response = take(result, "parallel"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Parallel: ${errorMessage(err)}`);
 		}
 	}
@@ -751,10 +728,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("tinyfish") && isTinyFishAvailable()) {
 		try {
 			const result = await searchWithTinyFish(query, options);
-			return attributed(result, "tinyfish");
+			const response = take(result, "tinyfish"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`TinyFish: ${errorMessage(err)}`);
 		}
 	}
@@ -762,10 +738,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("search1api") && isSearch1APIAvailable()) {
 		try {
 			const result = await searchWithSearch1API(query, options);
-			return attributed(result, "search1api");
+			const response = take(result, "search1api"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Search1API: ${errorMessage(err)}`);
 		}
 	}
@@ -773,10 +748,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("searchinfinity") && isSearchinfinityAvailable()) {
 		try {
 			const result = await searchWithSearchinfinity(query, options);
-			return attributed(result, "searchinfinity");
+			const response = take(result, "searchinfinity"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Searchinfinity: ${errorMessage(err)}`);
 		}
 	}
@@ -784,10 +758,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("querit") && isQueritAvailable()) {
 		try {
 			const result = await searchWithQuerit(query, options);
-			return attributed(result, "querit");
+			const response = take(result, "querit"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Querit: ${errorMessage(err)}`);
 		}
 	}
@@ -795,10 +768,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("tavily") && isTavilyAvailable()) {
 		try {
 			const result = await searchWithTavily(query, options);
-			return attributed(result, "tavily");
+			const response = take(result, "tavily"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Tavily: ${errorMessage(err)}`);
 		}
 	}
@@ -806,10 +778,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("firecrawl") && isFirecrawlAvailable()) {
 		try {
 			const result = await searchWithFirecrawl(query, options);
-			return attributed(result, "firecrawl");
+			const response = take(result, "firecrawl"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Firecrawl: ${errorMessage(err)}`);
 		}
 	}
@@ -817,10 +788,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("jina") && isJinaSearchAvailable()) {
 		try {
 			const result = await searchWithJina(query, options);
-			return attributed(result, "jina");
+			const response = take(result, "jina"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Jina: ${errorMessage(err)}`);
 		}
 	}
@@ -828,10 +798,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("serpdive") && isSerpdiveAvailable()) {
 		try {
 			const result = await searchWithSerpdive(query, options);
-			return attributed(result, "serpdive");
+			const response = take(result, "serpdive"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`SERPdive: ${errorMessage(err)}`);
 		}
 	}
@@ -839,10 +808,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("kagi") && isKagiAvailable()) {
 		try {
 			const result = await searchWithKagi(query, options);
-			return attributed(result, "kagi");
+			const response = take(result, "kagi"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Kagi: ${errorMessage(err)}`);
 		}
 	}
@@ -850,10 +818,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("bocha") && isBochaAvailable()) {
 		try {
 			const result = await searchWithBocha(query, options);
-			return attributed(result, "bocha");
+			const response = take(result, "bocha"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Bocha: ${errorMessage(err)}`);
 		}
 	}
@@ -861,10 +828,9 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("ollama") && isOllamaAvailable()) {
 		try {
 			const result = await searchWithOllama(query, options);
-			return attributed(result, "ollama");
+			const response = take(result, "ollama"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Ollama: ${errorMessage(err)}`);
 		}
 	}
@@ -872,27 +838,23 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (allowed.has("perplexity") && isPerplexityAvailable()) {
 		try {
 			const result = await searchWithPerplexity(query, options);
-			return attributed(result, "perplexity");
+			const response = take(result, "perplexity"); if (response) return response;
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 			fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
 		}
 	}
 
 	if (allowed.has("gemini")) try {
 		const geminiResult = await searchWithGemini(query, options, false);
-		if (geminiResult) return attributed(geminiResult, "gemini");
+		const response = geminiResult && take(geminiResult, "gemini"); if (response) return response;
 	} catch (err) {
 		if (isAbortError(err)) throw err;
-		if (err instanceof EmptyResultError) firstEmpty ??= err.response;
 		fallbackErrors.push(`Gemini: ${errorMessage(err)}`);
 	}
 
+	if (firstEmpty) return firstEmpty;
 	if (fallbackErrors.length > 0) {
-		// Every provider answered, all of them empty: an honest empty answer from
-		// a real provider beats a synthesized failure.
-		if (firstEmpty) return firstEmpty;
 		throw new Error(`Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`);
 	}
 

@@ -4,21 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-test("AUTO keeps going when a provider answers 200 with nothing", async () => {
+const empty = { brave: { web: { results: [] } }, perplexity: { results: [] } };
+
+async function autoSearch(responses) {
 	const original = globalThis.fetch;
+	const called = [];
 	globalThis.fetch = async (url) => {
 		const target = String(url);
-		if (target.includes("brave.com")) {
-			return new Response(JSON.stringify({ web: { results: [] } }), { status: 200 });
-		}
-		if (target.includes("perplexity.ai")) {
-			return new Response(JSON.stringify({
-				results: [{ title: "Source", url: "https://example.com/a", snippet: "text" }],
-			}), { status: 200 });
-		}
-		throw new Error(`unexpected fetch: ${target}`);
+		const provider = target.includes("brave.com") ? "brave" : target.includes("perplexity.ai") ? "perplexity" : null;
+		if (!provider) throw new Error(`unexpected fetch: ${target}`);
+		called.push(provider);
+		return new Response(JSON.stringify(responses[provider]), { status: 200 });
 	};
-	// Only these two providers, so the chain is exactly "empty, then working".
+	// Only these two providers, so the chain is exactly Brave, then Perplexity.
 	const configDir = mkdtempSync(join(tmpdir(), "web-search-"));
 	writeFileSync(join(configDir, "web-search.json"), JSON.stringify({ allowedProviders: ["brave", "perplexity"] }));
 	process.env.PI_CODING_AGENT_DIR = configDir;
@@ -26,15 +24,29 @@ test("AUTO keeps going when a provider answers 200 with nothing", async () => {
 	process.env.PERPLEXITY_API_KEY = "pplx-key";
 	try {
 		const { search } = await import(`../gemini-search.ts?empty=${Date.now()}`);
-		// Only these two are allowed, so the chain is exactly "empty, then working".
-		const result = await search("query", { provider: "auto" });
-
-		assert.equal(result.provider, "perplexity");
-		assert.equal(result.results.length, 1);
+		return { result: await search("query", { provider: "auto" }), called };
 	} finally {
 		globalThis.fetch = original;
 		delete process.env.BRAVE_API_KEY;
 		delete process.env.PERPLEXITY_API_KEY;
 		delete process.env.PI_CODING_AGENT_DIR;
 	}
+}
+
+test("AUTO keeps going when a provider answers 200 with nothing", async () => {
+	const { result } = await autoSearch({
+		...empty,
+		perplexity: { results: [{ title: "Source", url: "https://example.com/a", snippet: "text" }] },
+	});
+
+	assert.equal(result.provider, "perplexity");
+	assert.equal(result.results.length, 1);
+});
+
+test("AUTO returns the first empty response when every provider is empty", async () => {
+	const { result, called } = await autoSearch(empty);
+
+	assert.deepEqual(called, ["brave", "perplexity"]);
+	assert.equal(result.provider, "brave");
+	assert.deepEqual(result.results, []);
 });
