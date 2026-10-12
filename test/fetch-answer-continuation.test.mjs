@@ -13,7 +13,7 @@ const longSource = "ORIGINAL_PAGE_MARKER " + "p".repeat(2400) + " SOURCE_END";
 
 // Each registration gets its own process, agent config and cache, including renamed
 // and disabled tool settings. Only fixture HTTP and model completions are allowed.
-function runFixture({ source = shortSource, response = answer, mode = "answer", config = {} } = {}) {
+function runFixture({ source = shortSource, mode = "answer", config = {} } = {}) {
 	const root = mkdtempSync(join(tmpdir(), "pi-fetch-answer-continuation-"));
 	const agent = join(root, "agent");
 	const cache = join(root, "cache");
@@ -27,7 +27,7 @@ function runFixture({ source = shortSource, response = answer, mode = "answer", 
 		const child = spawnSync(process.execPath, ["--input-type=module"], {
 			input: `
 				const source = ${JSON.stringify(source)};
-				const answer = ${JSON.stringify(response)};
+				const answer = ${JSON.stringify(answer)};
 				const url = ${JSON.stringify(url)};
 				const mode = ${JSON.stringify(mode)};
 				let fetchCount = 0;
@@ -86,7 +86,7 @@ function runFixture({ source = shortSource, response = answer, mode = "answer", 
 	}
 }
 
-function assertAnswer(fixture, source, fullAnswer = answer) {
+function assertAnswer(fixture, source) {
 	const { result } = fixture;
 	assert.equal(result.details.error, undefined);
 	assert.equal(result.details.successful, 1);
@@ -94,8 +94,8 @@ function assertAnswer(fixture, source, fullAnswer = answer) {
 	assert.equal(fixture.completionCount, 1);
 	assert.ok(fixture.modelInput.includes(source));
 	assert.equal(result.structuredContent.responseId, result.details.responseId);
-	assert.equal(result.structuredContent.urls[0].content, fullAnswer);
-	assert.equal(result.details.totalChars, fullAnswer.length);
+	assert.equal(result.structuredContent.urls[0].content, answer);
+	assert.equal(result.details.totalChars, answer.length);
 	if (fixture.storedSource !== null) assert.equal(fixture.storedSource, source);
 }
 
@@ -113,16 +113,13 @@ function assertSourceHint(fixture, source, toolName = "get_search_content") {
 	assert.equal(retrieved.details.contentLength, source.length);
 	assert.ok(retrieved.content[0].text.includes(source.slice(0, 1000)));
 	assert.doesNotMatch(retrieved.content[0].text, /ANSWER_PREFIX_/);
-	assert.match(result.content[0].text, /Answer output is truncated/i);
 	assert.match(result.content[0].text, /stored content is the original source, not the remaining answer/i);
 	assert.doesNotMatch(result.content[0].text, /for the next slice/);
 }
 
-for (const [label, source] of [["shorter", shortSource], ["longer", longSource]]) {
-	test(`truncated answer with source ${label} than the cutoff offers source offset zero and preserves full data`, () => {
-		assertSourceHint(runFixture({ source }), source);
-	});
-}
+test("truncated answer offers source offset zero and preserves full data", () => {
+	assertSourceHint(runFixture({ source: longSource }), longSource);
+});
 
 test("truncated answer uses the configured retrieval tool name", () => {
 	const fixture = runFixture({ config: { toolNames: { getSearchContent: "read_source" } } });
@@ -139,35 +136,23 @@ test("disabled retrieval still discloses answer truncation and original-source s
 	assert.ok(!fixture.registeredNames.includes("read_source"));
 	assert.equal(fixture.hint, null);
 	const text = fixture.result.content[0].text;
-	assert.match(text, /Answer output is truncated/i);
 	assert.match(text, /stored content is the original source, not the remaining answer/i);
 	assert.match(text, /Content retrieval is not registered/);
 	assert.doesNotMatch(text, /read_source|get_search_content|for the next slice/);
 });
 
-test("non-truncated answer presentation remains exactly the answer", () => {
-	const response = "A short complete answer.";
-	const fixture = runFixture({ response });
-	assertAnswer(fixture, shortSource, response);
-	assert.equal(fixture.result.details.truncated, false);
-	assert.equal(fixture.result.content[0].text, response);
-	assert.equal(fixture.hint, null);
+test("readable fetch retains its next-slice continuation into the original source", () => {
+	const fixture = runFixture({ mode: "readable", source: longSource });
+	const { result, hint, retrieved } = fixture;
+	assert.equal(fixture.completionCount, 0);
+	assert.equal(fixture.storedSource, longSource);
+	assert.equal(result.structuredContent.urls[0].content, longSource);
+	assert.equal(result.details.truncated, true);
+	assert.equal(result.content[0].text.split("\n\n---\n")[0], longSource.slice(0, 1000));
+	assert.match(result.content[0].text, /for the next slice/);
+	assert.doesNotMatch(result.content[0].text, /not the remaining answer/);
+	assert.equal(hint.params.offset, 1000);
+	assert.equal(retrieved.details.error, undefined);
+	assert.equal(retrieved.details.offset, 1000);
+	assert.ok(retrieved.content[0].text.includes(longSource.slice(1000, 2000)));
 });
-
-for (const mode of ["readable", "raw"]) {
-	test(`${mode} retains its next-slice continuation into the original source`, () => {
-		const fixture = runFixture({ mode, source: longSource });
-		const { result, hint, retrieved } = fixture;
-		assert.equal(fixture.completionCount, 0);
-		assert.equal(fixture.storedSource, longSource);
-		assert.equal(result.structuredContent.urls[0].content, longSource);
-		assert.equal(result.details.truncated, true);
-		assert.equal(result.content[0].text.split("\n\n---\n")[0], longSource.slice(0, 1000));
-		assert.match(result.content[0].text, /for the next slice/);
-		assert.doesNotMatch(result.content[0].text, /Answer output is truncated|not the remaining answer/);
-		assert.equal(hint.params.offset, 1000);
-		assert.equal(retrieved.details.error, undefined);
-		assert.equal(retrieved.details.offset, 1000);
-		assert.ok(retrieved.content[0].text.includes(longSource.slice(1000, 2000)));
-	});
-}

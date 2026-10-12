@@ -279,7 +279,7 @@ function isAbortError(err: unknown): boolean {
 	return errorMessage(err).toLowerCase().includes("abort");
 }
 
-type TakeAutoResult = (result: SearchResponse, provider: ResolvedSearchProvider) => AttributedSearchResponse | null;
+type TakeAutoResult = (result: SearchResponse | null, provider: ResolvedSearchProvider) => AttributedSearchResponse | null;
 
 async function tryOpenAIInAuto(query: string, options: FullSearchOptions, fallbackErrors: string[], take: TakeAutoResult): Promise<AttributedSearchResponse | null> {
 	try {
@@ -661,27 +661,29 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	}
 
 	const fallbackErrors: string[] = [];
-	// A 200 with neither an answer nor a source keeps the chain going. If every
-	// provider is empty, the first empty answer beats a synthesized failure.
+	// An empty 200 keeps the chain going; if every provider is empty, return the first.
 	let firstEmpty: AttributedSearchResponse | undefined;
 	const take: TakeAutoResult = (result, provider) => {
+		if (!result) return null;
 		const response = { ...result, provider };
-		if (result.results?.length || result.answer?.trim()) return response;
+		if (result.results.length || result.answer.trim()) return response;
 		firstEmpty ??= response;
-		fallbackErrors.push(`${providerLabel(provider)}: no results`);
 		return null;
 	};
 	const allowed = new Set(config.allowedProviders ?? RESOLVED_SEARCH_PROVIDERS);
-
-	if (allowed.has("searxng") && isSearXNGAvailable()) {
+	const attempt = async (provider: ResolvedSearchProvider): Promise<AttributedSearchResponse | null> => {
+		if (!allowed.has(provider) || !(await isResolvedProviderAvailable(provider, options))) return null;
 		try {
-			const result = await searchWithSearXNG(query, options);
-			const response = take(result, "searxng"); if (response) return response;
+			return take(await searchWithResolvedProvider(provider, query, options), provider);
 		} catch (err) {
 			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`SearXNG: ${errorMessage(err)}`);
+			fallbackErrors.push(`${providerLabel(provider)}: ${errorMessage(err)}`);
+			return null;
 		}
-	}
+	};
+
+	const searxng = await attempt("searxng");
+	if (searxng) return searxng;
 
 	let triedOpenAI = false;
 	if (allowed.has("openai") && (!options.extensionContext || isOpenAISubscriptionModelSelected(options.extensionContext))) {
@@ -692,8 +694,8 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 
 	if (allowed.has("exa") && isExaAvailable()) {
 		try {
-			const result = await searchWithExa(query, options);
-			const response = result && take(result, "exa"); if (response) return response;
+			const response = take(await searchWithExa(query, options), "exa");
+			if (response) return response;
 		} catch (err) {
 			if (err instanceof CredentialResolutionError || isAbortError(err)) throw err;
 			fallbackErrors.push(`Exa: ${errorMessage(err)}`);
@@ -705,149 +707,14 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		if (result) return result;
 	}
 
-	if (allowed.has("brave") && isBraveAvailable()) {
-		try {
-			const result = await searchWithBrave(query, options);
-			const response = take(result, "brave"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Brave: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("parallel") && isParallelAvailable()) {
-		try {
-			const result = await searchWithParallel(query, options);
-			const response = take(result, "parallel"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Parallel: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("tinyfish") && isTinyFishAvailable()) {
-		try {
-			const result = await searchWithTinyFish(query, options);
-			const response = take(result, "tinyfish"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`TinyFish: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("search1api") && isSearch1APIAvailable()) {
-		try {
-			const result = await searchWithSearch1API(query, options);
-			const response = take(result, "search1api"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Search1API: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("searchinfinity") && isSearchinfinityAvailable()) {
-		try {
-			const result = await searchWithSearchinfinity(query, options);
-			const response = take(result, "searchinfinity"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Searchinfinity: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("querit") && isQueritAvailable()) {
-		try {
-			const result = await searchWithQuerit(query, options);
-			const response = take(result, "querit"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Querit: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("tavily") && isTavilyAvailable()) {
-		try {
-			const result = await searchWithTavily(query, options);
-			const response = take(result, "tavily"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Tavily: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("firecrawl") && isFirecrawlAvailable()) {
-		try {
-			const result = await searchWithFirecrawl(query, options);
-			const response = take(result, "firecrawl"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Firecrawl: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("jina") && isJinaSearchAvailable()) {
-		try {
-			const result = await searchWithJina(query, options);
-			const response = take(result, "jina"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Jina: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("serpdive") && isSerpdiveAvailable()) {
-		try {
-			const result = await searchWithSerpdive(query, options);
-			const response = take(result, "serpdive"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`SERPdive: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("kagi") && isKagiAvailable()) {
-		try {
-			const result = await searchWithKagi(query, options);
-			const response = take(result, "kagi"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Kagi: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("bocha") && isBochaAvailable()) {
-		try {
-			const result = await searchWithBocha(query, options);
-			const response = take(result, "bocha"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Bocha: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("ollama") && isOllamaAvailable()) {
-		try {
-			const result = await searchWithOllama(query, options);
-			const response = take(result, "ollama"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Ollama: ${errorMessage(err)}`);
-		}
-	}
-
-	if (allowed.has("perplexity") && isPerplexityAvailable()) {
-		try {
-			const result = await searchWithPerplexity(query, options);
-			const response = take(result, "perplexity"); if (response) return response;
-		} catch (err) {
-			if (isAbortError(err)) throw err;
-			fallbackErrors.push(`Perplexity: ${errorMessage(err)}`);
-		}
+	for (const provider of ["brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "perplexity"] as const) {
+		const response = await attempt(provider);
+		if (response) return response;
 	}
 
 	if (allowed.has("gemini")) try {
-		const geminiResult = await searchWithGemini(query, options, false);
-		const response = geminiResult && take(geminiResult, "gemini"); if (response) return response;
+		const response = take(await searchWithGemini(query, options, false), "gemini");
+		if (response) return response;
 	} catch (err) {
 		if (isAbortError(err)) throw err;
 		fallbackErrors.push(`Gemini: ${errorMessage(err)}`);

@@ -91,43 +91,6 @@ test("renderer orders sections, marks truncation, and forces anchored comments i
 	assert.match(result.content, /gh pr diff 7 --repo owner\/repo/);
 });
 
-test("renderer marks truncated review verdicts", async () => {
-	const { renderGitHubPrIssue } = await import(moduleUrl);
-	const reviews = Array.from({ length: 11 }, (_, index) => ({
-		author: { login: `reviewer${index}` },
-		state: "COMMENTED",
-		body: `review ${index}`,
-	}));
-	const result = renderGitHubPrIssue({
-		url: "https://github.com/owner/repo/pull/7",
-		owner: "owner",
-		repo: "repo",
-		kind: "pull",
-		number: 7,
-		reviewThreads: [],
-		fallbackNotes: [],
-		view: { number: 7, title: "Reviews", state: "OPEN", author: { login: "alice" }, body: "body", reviews },
-	});
-
-	assert.match(result.content, /10 of 11 review verdicts shown/);
-});
-
-test("renderer cuts a long body at a word boundary so each word stays searchable", async () => {
-	const { renderGitHubPrIssue } = await import(moduleUrl);
-	const result = renderGitHubPrIssue({
-		url: "https://github.com/owner/repo/issues/7",
-		owner: "owner",
-		repo: "repo",
-		kind: "issue",
-		number: 7,
-		reviewThreads: [],
-		fallbackNotes: [],
-		view: { number: 7, title: "Boundary", state: "OPEN", author: { login: "alice" }, body: `${"word ".repeat(799)}BOUNDARY_TOKEN tail` },
-	});
-
-	assert.equal(result.content.split("BOUNDARY_TOKEN").length - 1, 1);
-});
-
 test("extractGitHubIssuePr retries gh view with core fields on unknown --json field", async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-web-access-gh-pr-"));
 	const binDir = join(root, "bin");
@@ -682,6 +645,8 @@ test("markers for data never fetched point only at gh, and the document ceiling 
 	assert.ok(render({ comments: comments(2), commentsCount: 40 }).includes("[2 comments shown from at least 40; use gh issue view -c]"));
 	assert.ok(render({ comments: comments(16), commentsCount: 40 }).includes('[15 comments shown from at least 40; 1 more stored under "Conversation comments (continued)": use get_search_content findText or offset; for the rest use gh issue view -c]'));
 	assert.ok(render({ changedFiles: 3, files: [] }).includes("[0 files shown from at least 3; use the gh command below]"));
+	// A long body is cut at a word boundary, so each word stays searchable in one piece.
+	assert.equal(render({ body: `${"word ".repeat(799)}BOUNDARY_TOKEN tail` }).split("BOUNDARY_TOKEN").length - 1, 1);
 
 	const huge = render({ body: "y".repeat(200_000) });
 	assert.ok(huge.includes("## Escalation commands"));

@@ -426,8 +426,7 @@ function milestoneTitle(value: unknown): string {
 	return stringValue((value as Record<string, unknown>).title) || "none";
 }
 
-// The appendix is the only copy of whatever an inline bound leaves out: each fetched
-// unit of text appears once in the document, so the stored document is complete.
+// The appendix holds the only copy of what an inline bound cuts, so each fetched text appears once.
 function truncateText(text: string, limit: number, label: string, appendix: string[], tool: string | null): string {
 	if (text.length <= limit) return text;
 	// Cut at a word boundary near the limit so a search for one word still matches.
@@ -442,7 +441,7 @@ function storeOmitted(appendix: string[], section: string, items: string[]): voi
 }
 
 /** `atLeast` means more items exist than were fetched; only gh can return those. */
-function omissionMarker(section: string, noun: string, shown: number, fetched: number, atLeast: number | null, tool: string | null, gh: string): string | null {
+function omissionMarker(section: string, noun: string, shown: number, fetched: number, atLeast: number | null, tool: string | null, gh = "the gh command below"): string | null {
 	const stored = fetched > shown && tool ? `${fetched - shown} more stored under "${section} (continued)": use ${tool} findText or offset` : "";
 	if (atLeast !== null) return `[${shown} ${noun} shown from at least ${atLeast}; ${stored ? `${stored}; for the rest ` : ""}use ${gh}]`;
 	if (fetched <= shown) return null;
@@ -457,7 +456,7 @@ function appendLimitedSection(lines: string[], title: string, items: string[], m
 	}
 	lines.push(...items.slice(0, max));
 	storeOmitted(appendix, title, items.slice(max));
-	const omitted = omissionMarker(title, marker, Math.min(max, items.length), items.length, null, tool, "the gh command below");
+	const omitted = omissionMarker(title, marker, max, items.length, null, tool);
 	if (omitted) lines.push(omitted);
 	lines.push("");
 }
@@ -488,7 +487,7 @@ function renderComments(comments: Record<string, unknown>[], anchor: string | un
 		return `- ${authorLogin(comment.author ?? comment.user)} at ${stringValue(comment.createdAt) || stringValue(comment.created_at)}${forced === comment ? " [anchored]" : ""}:\n  ${text.replace(/\n/g, "\n  ")}`;
 	};
 	const lines = selected.map(comment => render(comment, true));
-	storeOmitted(appendix, "Conversation comments", comments.filter(comment => !selected.includes(comment)).map(comment => render(comment, false)));
+	storeOmitted(appendix, "Conversation comments", comments.slice(MAX_INLINE_COMMENTS).filter(comment => comment !== forced).map(comment => render(comment, false)));
 	return lines;
 }
 
@@ -517,7 +516,7 @@ function renderChecks(value: unknown, appendix: string[], tool: string | null): 
 	});
 	const failing = rows.filter(row => !/(success|neutral|skipped|completed)$/i.test(row));
 	storeOmitted(appendix, "Checks", rows.slice(MAX_INLINE_CHECKS));
-	const omitted = omissionMarker("Checks", "checks", Math.min(MAX_INLINE_CHECKS, rows.length), rows.length, null, tool, "the gh command below");
+	const omitted = omissionMarker("Checks", "checks", MAX_INLINE_CHECKS, rows.length, null, tool);
 	return [`Rollup: ${failing.length === 0 ? "no failing checks in shown data" : `${failing.length} non-passing checks in shown data`}`, ...rows.slice(0, MAX_INLINE_CHECKS), ...(omitted ? [omitted] : [])];
 }
 
@@ -550,7 +549,7 @@ function appendFilesSection(lines: string[], view: Record<string, unknown>, appe
 	lines.push("## Files");
 	const files = renderFiles(view.files);
 	const total = numberValue(view.changedFiles);
-	const omitted = omissionMarker("Files", "files", Math.min(files.length, MAX_INLINE_FILES), files.length, total !== null && total > files.length ? total : null, tool, "the gh command below");
+	const omitted = omissionMarker("Files", "files", Math.min(files.length, MAX_INLINE_FILES), files.length, total !== null && total > files.length ? total : null, tool);
 	if (files.length === 0 && !omitted) lines.push("none");
 	lines.push(...files.slice(0, MAX_INLINE_FILES));
 	storeOmitted(appendix, "Files", files.slice(MAX_INLINE_FILES));
@@ -595,7 +594,7 @@ function renderReviewThreads(comments: Record<string, unknown>[], anchor: string
 		return `- ${path}:${line} — ${authorLogin(comment.user ?? comment.author)}${forced === comment ? " [anchored]" : ""} (resolution state unknown):\n  ${body.replace(/\n/g, "\n  ")}`;
 	};
 	const lines = selected.map(comment => render(comment, true));
-	storeOmitted(appendix, "Review thread comments", comments.filter(comment => !selected.includes(comment)).map(comment => render(comment, false)));
+	storeOmitted(appendix, "Review thread comments", comments.slice(MAX_INLINE_REVIEW_THREADS).filter(comment => comment !== forced).map(comment => render(comment, false)));
 	const knownTotal = numberValue(total);
 	const atLeast = bounded ? comments.length : knownTotal !== null && knownTotal > comments.length ? knownTotal : null;
 	const omitted = omissionMarker("Review thread comments", "review thread comments", selected.length, comments.length, atLeast, tool, "gh api repos/<owner>/<repo>/pulls/<number>/comments");

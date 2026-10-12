@@ -1,15 +1,5 @@
-/**
- * Self-hosted PDF parser endpoint provider.
- *
- * Posts the PDF bytes to a user-configured document-parsing HTTP endpoint
- * (multipart `file`, `{ markdown }` response — the shape served by
- * doc-tools-style FastAPI appliances running marker/pdf-OCR pipelines) and
- * returns its markdown. Fully local: no API key, no cloud egress beyond the
- * configured URL. The URL is validated through the shared SSRF guard, so a
- * private or loopback parser requires the same `ssrf.allowRanges` opt-in as
- * the self-hosted Firecrawl/Crawl4AI providers.
- */
 import { existsSync, readFileSync } from "node:fs";
+import { setTimeout as sleep } from "node:timers/promises";
 import { fetchRemoteUrl, loadSsrfConfig, type Lookup } from "./ssrf-protection.ts";
 import { getWebSearchConfigPath, isLoopbackHostname } from "./utils.ts";
 
@@ -31,24 +21,16 @@ export interface EndpointPDFExtractResult {
 	pages?: number;
 }
 
-interface EndpointConfig {
-	pdf?: unknown;
-	ssrf?: unknown;
-}
-
-function loadConfig(): EndpointConfig {
+function pdfSection(): Record<string, unknown> {
 	if (!existsSync(CONFIG_PATH)) return {};
+	let parsed: unknown;
 	try {
-		const parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8")) as unknown;
-		return parsed && typeof parsed === "object" ? (parsed as EndpointConfig) : {};
+		parsed = JSON.parse(readFileSync(CONFIG_PATH, "utf-8"));
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
-}
-
-function pdfSection(): Record<string, unknown> {
-	const pdf = loadConfig().pdf;
+	const pdf = (parsed as { pdf?: unknown } | null)?.pdf;
 	return pdf && typeof pdf === "object" ? (pdf as Record<string, unknown>) : {};
 }
 
@@ -59,37 +41,24 @@ function normalizeString(value: unknown): string | null {
 }
 
 /**
- * Resolve the parser endpoint. `pdf.endpointUrl` (or the `PDF_ENDPOINT_URL`
- * env override) must be an absolute http(s) URL ending in `/parse` (or a URL
- * whose path is treated verbatim); it is returned exactly as configured with
- * trailing slashes removed. Null means the provider is not configured.
+ * Null means the provider is not configured. Trailing slashes are stripped so the
+ * relative `jobs/<id>` poll URL resolves beside the parse path.
  */
 export function getEndpointUrl(): string | null {
 	const configured =
 		normalizeString(process.env.PDF_ENDPOINT_URL) ??
 		normalizeString(pdfSection().endpointUrl);
 	if (!configured) return null;
-	let url: URL;
-	try {
-		url = new URL(configured);
-	} catch {
+	const protocol = URL.parse(configured)?.protocol;
+	if (protocol !== "http:" && protocol !== "https:") {
 		throw new Error(
 			`Failed to parse pdf.endpointUrl: expected an absolute http(s) URL, got "${configured}"`,
-		);
-	}
-	if (url.protocol !== "http:" && url.protocol !== "https:") {
-		throw new Error(
-			`Failed to parse pdf.endpointUrl: expected an http(s) URL, got "${configured}"`,
 		);
 	}
 	return configured.replace(/\/+$/, "");
 }
 
-export function getEndpointEngine(): string | null {
-	return normalizeString(pdfSection().endpointEngine);
-}
-
-export function getEndpointTimeoutMs(): number {
+function getEndpointTimeoutMs(): number {
 	const configured = pdfSection().endpointTimeoutMs;
 	if (typeof configured === "number" && Number.isFinite(configured) && configured > 0) {
 		return Math.min(configured, 300_000);
@@ -107,45 +76,31 @@ export function isEndpointApiAvailable(): boolean {
 	}
 }
 
-function errorMessage(err: unknown): string {
-	return err instanceof Error ? err.message : String(err);
-}
-
 /**
- * Read at most `maxBytes` of the response body, cancelling the stream past
- * the cap so a runaway parser cannot exhaust memory before we notice.
- * `overflowThrows` distinguishes the JSON path (oversized is an error) from
- * the error-preview path (an oversized body is still worth its prefix).
+ * Read at most `maxBytes`, cancelling the stream at the cap. Error previews
+ * keep the prefix; JSON bodies past the cap are an error.
  */
 async function readCapped(response: Response, maxBytes: number, overflowThrows: boolean): Promise<string> {
-	const body = response.body;
-	if (!body) return "";
-	const reader = body.getReader();
+	const reader = response.body?.getReader();
+	if (!reader) return "";
 	const decoder = new TextDecoder();
 	let text = "";
 	let received = 0;
 	for (;;) {
 		const { done, value } = await reader.read();
-		if (done) break;
+		if (done) return text + decoder.decode();
 		const room = maxBytes - received;
 		received += value.byteLength;
-		if (received > maxBytes) {
+		// Stop at exactly the cap too: a full preview must not wait on a parser that stalls after it.
+		if (received >= maxBytes) {
 			await reader.cancel();
-			if (overflowThrows) {
+			if (overflowThrows && received > maxBytes) {
 				throw new Error("PDF parser endpoint returned an oversized response");
 			}
-			// Keep the allowed prefix of the chunk that crosses the cap: a
-			// single-chunk error body would otherwise yield no preview at all.
-			return text + decoder.decode(value.subarray(0, room), { stream: true });
+			return text + decoder.decode(value.subarray(0, room));
 		}
 		text += decoder.decode(value, { stream: true });
-		// A complete preview must not wait on a parser that stalls after sending it.
-		if (!overflowThrows && received === maxBytes) {
-			await reader.cancel();
-			return text + decoder.decode();
-		}
 	}
-	return text + decoder.decode();
 }
 
 async function readJson(response: Response): Promise<Record<string, unknown>> {
@@ -161,43 +116,29 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
 
 async function errorBody(response: Response): Promise<string> {
 	try {
-		const text = (await readCapped(response, MAX_ERROR_BODY_BYTES, false)).slice(0, MAX_ERROR_BODY_BYTES);
+		const text = await readCapped(response, MAX_ERROR_BODY_BYTES, false);
 		return text ? `: ${text}` : "";
 	} catch {
 		return "";
 	}
 }
 
-/**
- * Strip NUL characters that PDF text layers with broken encodings (common on
- * dompdf-generated files) leak into parser output as `G\x00r\x00a\x00p...`.
- */
-export function stripNullCharacters(markdown: string): string {
-	return markdown.includes("\x00") ? markdown.replace(/\x00/g, "") : markdown;
-}
-
 function markdownResult(payload: Record<string, unknown>): EndpointPDFExtractResult {
-	// Strip NULs before the emptiness check: output that is only NUL bytes is
-	// an empty conversion, and must fail so the provider chain can fall back.
-	const markdown = typeof payload.markdown === "string" ? stripNullCharacters(payload.markdown) : "";
+	// Strip NULs (leaked by PDF text layers with broken encodings) before the emptiness
+	// check: NUL-only output is an empty conversion and must fail so the chain falls back.
+	const markdown = typeof payload.markdown === "string" ? payload.markdown.replaceAll("\x00", "") : "";
 	if (markdown.trim().length === 0) {
 		const error = normalizeString(payload.error);
 		throw new Error(
 			error ? `PDF parser endpoint failed: ${error}` : "PDF parser endpoint returned no markdown",
 		);
 	}
-	const pages = typeof payload.pages === "number" ? payload.pages : undefined;
-	return { markdown, ...(pages !== undefined ? { pages } : {}) };
+	return { markdown, pages: typeof payload.pages === "number" ? payload.pages : undefined };
 }
 
 /**
- * Convert a PDF buffer to Markdown through the configured self-hosted parser.
- *
- * The flow is a single multipart POST (`file`, optional `engine`). Endpoints
- * that answer `{ "markdown": ... }` complete in one round-trip; endpoints
- * that answer `{ "job_id": ... }` (async queues for large documents) are
- * polled at `GET <base>/jobs/{id}` until `done` (result carried as an object
- * or JSON string), `error`, or the deadline.
+ * POST the PDF as multipart `file`. A `{ markdown }` answer completes at once; a
+ * `{ job_id }` answer is polled at `jobs/{id}` until `done`, `error`, or the deadline.
  */
 export async function extractPDFViaEndpoint(
 	buffer: ArrayBuffer,
@@ -210,10 +151,8 @@ export async function extractPDFViaEndpoint(
 	}
 
 	const ssrf = loadSsrfConfig();
-	// A parser URL is user-configured, exactly like firecrawlBaseUrl, so a
-	// loopback host is allowed; private/LAN ranges still need ssrf.allowRanges.
-	// fetchRemoteUrl re-validates every redirect hop, so the parser cannot
-	// bounce the PDF onto a host the policy blocks.
+	// The parser URL is user-configured, like firecrawlBaseUrl, so loopback is allowed;
+	// LAN ranges still need ssrf.allowRanges, and every redirect hop is re-validated.
 	const guard = {
 		allowRanges: ssrf.allowRanges,
 		trustEnvProxy: ssrf.trustEnvProxy,
@@ -221,15 +160,16 @@ export async function extractPDFViaEndpoint(
 		...(options.lookup ? { lookup: options.lookup } : {}),
 	};
 
-	const engine = getEndpointEngine();
+	const engine = normalizeString(pdfSection().endpointEngine);
 	const form = new FormData();
 	form.append("file", new Blob([buffer], { type: "application/pdf" }), "document.pdf");
 	if (engine) form.append("engine", engine);
 	form.append("max_pages", String(options.maxPages));
 
-	const deadline = Date.now() + (options.timeoutMs ?? getEndpointTimeoutMs());
+	const timeoutMs = options.timeoutMs ?? getEndpointTimeoutMs();
+	const deadline = Date.now() + timeoutMs;
 	const signal = options.signal;
-	const timeout = AbortSignal.timeout(Math.max(1, deadline - Date.now()));
+	const timeout = AbortSignal.timeout(timeoutMs);
 	const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
 
 	const response = await fetchRemoteUrl(
@@ -244,34 +184,14 @@ export async function extractPDFViaEndpoint(
 	}
 
 	let payload = await readJson(response);
-	if (typeof payload.markdown === "string" || !normalizeString(payload.job_id)) {
+	const jobId = normalizeString(payload.job_id);
+	if (typeof payload.markdown === "string" || !jobId) {
 		return markdownResult(payload);
 	}
 
-	const jobId = normalizeString(payload.job_id)!;
 	const jobsUrl = new URL(`jobs/${encodeURIComponent(jobId)}`, endpointUrl).toString();
-	let interval = 1_000;
-	while (Date.now() < deadline) {
-		const remaining = deadline - Date.now();
-		if (remaining <= 0) break;
-		const wait = Math.min(interval, Math.max(1, remaining), MAX_POLL_INTERVAL_MS);
-		interval = Math.min(interval * 2, MAX_POLL_INTERVAL_MS);
-		await new Promise<void>((resolve, reject) => {
-			const timer = setTimeout(() => {
-				signal?.removeEventListener("abort", onAbort);
-				resolve();
-			}, wait);
-			const onAbort = () => {
-				clearTimeout(timer);
-				reject(new Error("PDF endpoint poll aborted"));
-			};
-			if (signal?.aborted) {
-				clearTimeout(timer);
-				reject(new Error("PDF endpoint poll aborted"));
-				return;
-			}
-			signal?.addEventListener("abort", onAbort, { once: true });
-		});
+	for (let interval = 1_000; Date.now() < deadline; interval = Math.min(interval * 2, MAX_POLL_INTERVAL_MS)) {
+		await sleep(Math.min(interval, deadline - Date.now()), undefined, { signal });
 
 		const poll = await fetchRemoteUrl(jobsUrl, { signal: combined }, guard);
 		if (!poll.ok) {
@@ -286,24 +206,18 @@ export async function extractPDFViaEndpoint(
 			throw new Error(`PDF parser endpoint job failed: ${error}`);
 		}
 		if (status === "done") {
-			const result = payload.result;
+			let result = payload.result;
 			if (typeof result === "string") {
-				let parsed: unknown;
+				const raw = result;
 				try {
-					parsed = JSON.parse(result);
+					result = JSON.parse(raw);
 				} catch {
-					// Only a genuinely non-JSON body is treated as raw markdown;
-					// malformed job payloads must fail so the chain falls back.
-					return { markdown: stripNullCharacters(result) };
+					// Only a genuinely non-JSON body is raw markdown; a malformed JSON
+					// payload must fail so the chain falls back.
+					return { markdown: raw.replaceAll("\x00", "") };
 				}
-				if (parsed && typeof parsed === "object") {
-					return markdownResult(parsed as Record<string, unknown>);
-				}
-				throw new Error("PDF parser endpoint job completed without a result");
 			}
-			if (result && typeof result === "object") {
-				return markdownResult(result as Record<string, unknown>);
-			}
+			if (result && typeof result === "object") return markdownResult(result as Record<string, unknown>);
 			throw new Error("PDF parser endpoint job completed without a result");
 		}
 	}

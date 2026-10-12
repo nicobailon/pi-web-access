@@ -18,7 +18,7 @@ async function autoSearch(responses) {
 	};
 	// Only these two providers, so the chain is exactly Brave, then Perplexity.
 	const configDir = mkdtempSync(join(tmpdir(), "web-search-"));
-	writeFileSync(join(configDir, "web-search.json"), JSON.stringify({ allowedProviders: ["brave", "perplexity"] }));
+	writeFileSync(join(configDir, "web-search.json"), JSON.stringify({ webSearch: { allowedProviders: ["brave", "perplexity"] } }));
 	process.env.PI_CODING_AGENT_DIR = configDir;
 	process.env.BRAVE_API_KEY = "brave-key";
 	process.env.PERPLEXITY_API_KEY = "pplx-key";

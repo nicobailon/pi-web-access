@@ -1031,9 +1031,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 
 				if (truncated) {
 					output += `\n\n---\nShowing ${slice.endOffset} of ${fullLength} chars, ${slice.shownBytes} of ${slice.totalBytes} bytes, and ${slice.shownLines} of ${slice.totalLines} lines. `;
-					if (mode === "answer") {
-						output += "Answer output is truncated. Stored content is the original source, not the remaining answer. ";
-					}
+					if (mode === "answer") output += "Stored content is the original source, not the remaining answer. ";
 					output += storedContent
 						? getSearchContentEnabled
 							? mode === "answer"
@@ -1090,34 +1088,21 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				};
 			}
 
-			let output: string;
-			if (mode === "answer") {
-				// Answers are generated, not stored, so they must be visible here; the
-				// stored responseId only reaches the original source pages.
-				let budget = getMaxInlineContentChars();
-				output = "## Page answers\n";
-				for (const { url, title, content, error } of presentedResults) {
-					if (error) {
-						output += `\n### ${url}\nError: ${error}\n`;
-						continue;
-					}
+			// Answers are generated, not stored, so they must be shown here in full up to the output limit.
+			let budget = mode === "answer" ? getMaxInlineContentChars() : 0;
+			let output = mode === "answer" ? "## Page answers\n" : "## Fetched URLs\n\n";
+			for (const { url, title, content, error } of presentedResults) {
+				if (mode !== "answer") {
+					output += error ? `- ${url}: Error - ${error}\n` : `- ${title || url} (${content.length} chars)\n`;
+				} else if (error) {
+					output += `\n### ${url}\nError: ${error}\n`;
+				} else {
 					const shown = content.slice(0, budget);
 					budget -= shown.length;
 					const marker = shown.length === content.length
 						? ""
-						: shown.length === 0
-							? "\n[answer omitted; earlier answers used the output limit, fetch fewer URLs per call for complete answers]"
-							: "\n[answer truncated at the output limit; fetch fewer URLs per call for complete answers]";
+						: `\n[answer ${shown.length ? "truncated at the output limit;" : "omitted; earlier answers used the output limit,"} fetch fewer URLs per call for complete answers]`;
 					output += `\n### ${title || url}\n${shown}${marker}\n`;
-				}
-			} else {
-				output = "## Fetched URLs\n\n";
-				for (const { url, title, content, error } of presentedResults) {
-					if (error) {
-						output += `- ${url}: Error - ${error}\n`;
-					} else {
-						output += `- ${title || url} (${content.length} chars)\n`;
-					}
 				}
 			}
 			const retrievalHint = mode === "answer"

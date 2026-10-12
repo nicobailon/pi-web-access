@@ -16,7 +16,6 @@ const {
 	extractPDFViaEndpoint,
 	getEndpointUrl,
 	isEndpointApiAvailable,
-	stripNullCharacters,
 } = await import("../endpoint-pdf-extract.ts");
 
 after(() => {
@@ -47,10 +46,11 @@ test("endpoint URL resolves from PDF_ENDPOINT_URL and pdf.endpointUrl is unset b
 test("a non-http endpoint URL is a fatal config error", () => {
 	useEndpoint("ftp://parser.local/parse");
 	assert.throws(() => getEndpointUrl(), /Failed to parse pdf\.endpointUrl/);
+	useEndpoint("not a url");
+	assert.throws(() => getEndpointUrl(), /Failed to parse pdf\.endpointUrl/);
 });
 
 test("extractPDFViaEndpoint posts the PDF as multipart file and returns markdown", async () => {
-	process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-endpoint-pdf-"));
 	useEndpoint("http://parser.test/parse");
 	const calls = [];
 	globalThis.fetch = async (url, init) => {
@@ -80,7 +80,6 @@ test("extractPDFViaEndpoint posts the PDF as multipart file and returns markdown
 });
 
 test("extractPDFViaEndpoint refuses redirects from the parser onto blocked hosts", async () => {
-	process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-endpoint-pdf-"));
 	useEndpoint("http://parser.test/parse");
 	globalThis.fetch = async (url) => {
 		if (String(url) === "http://parser.test/parse") {
@@ -99,7 +98,6 @@ test("extractPDFViaEndpoint refuses redirects from the parser onto blocked hosts
 });
 
 test("extractPDFViaEndpoint cancels oversized JSON responses while streaming", async () => {
-	process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-endpoint-pdf-"));
 	useEndpoint("http://parser.test/parse");
 	let cancelled = false;
 	globalThis.fetch = async () => {
@@ -126,7 +124,6 @@ test("extractPDFViaEndpoint cancels oversized JSON responses while streaming", a
 });
 
 test("extractPDFViaEndpoint polls job responses until done", async () => {
-	process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-endpoint-pdf-"));
 	useEndpoint("http://parser.test/parse");
 	const calls = [];
 	globalThis.fetch = async (url, init) => {
@@ -161,7 +158,6 @@ test("extractPDFViaEndpoint polls job responses until done", async () => {
 });
 
 test("extractPDFViaEndpoint reports endpoint errors and failed jobs", async () => {
-	process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-endpoint-pdf-"));
 	useEndpoint("http://parser.test/parse");
 	globalThis.fetch = async () =>
 		new Response(JSON.stringify({ error: "llama-server binary not found" }), {
@@ -191,7 +187,6 @@ test("extractPDFViaEndpoint reports endpoint errors and failed jobs", async () =
 });
 
 test("malformed job results fail so the provider chain can fall back", async () => {
-	process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-endpoint-pdf-"));
 	useEndpoint("http://parser.test/parse");
 	const respond = (result) => async (url) => {
 		if (!String(url).includes("/jobs/")) {
@@ -213,7 +208,6 @@ test("malformed job results fail so the provider chain can fall back", async () 
 });
 
 test("parser output that is only NUL bytes fails instead of saving empty text", async () => {
-	process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-endpoint-pdf-"));
 	useEndpoint("http://parser.test/parse");
 	globalThis.fetch = async () =>
 		new Response(JSON.stringify({ markdown: "\x00\x00\x00" }), { status: 200 });
@@ -224,7 +218,6 @@ test("parser output that is only NUL bytes fails instead of saving empty text", 
 });
 
 test("extractPDFViaEndpoint aborts poll waits on caller cancellation", async () => {
-	process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-endpoint-pdf-"));
 	useEndpoint("http://parser.test/parse");
 	const controller = new AbortController();
 	globalThis.fetch = async (url) => {
@@ -240,11 +233,10 @@ test("extractPDFViaEndpoint aborts poll waits on caller cancellation", async () 
 		lookup: LOOKUP_PUBLIC,
 	});
 	setTimeout(() => controller.abort(), 50);
-	await assert.rejects(pending, /poll aborted/i);
+	await assert.rejects(pending, { name: "AbortError" });
 });
 
 test("extractPDFViaEndpoint refuses parser hosts outside the SSRF policy", async () => {
-	process.env.PI_CODING_AGENT_DIR = await mkdtemp(join(tmpdir(), "pi-endpoint-pdf-"));
 	useEndpoint("http://10.0.0.9:8070/parse");
 	globalThis.fetch = async () => {
 		throw new Error("fetch must not be attempted");
@@ -253,9 +245,4 @@ test("extractPDFViaEndpoint refuses parser hosts outside the SSRF policy", async
 		extractPDFViaEndpoint(PDF_BYTES, { maxPages: 1, lookup: LOOKUP_PUBLIC }),
 		/Blocked internal address/i,
 	);
-});
-
-test("stripNullCharacters leaves clean markdown untouched", () => {
-	assert.equal(stripNullCharacters("# clean"), "# clean");
-	assert.equal(stripNullCharacters("\x00a\x00"), "a");
 });

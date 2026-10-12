@@ -49,7 +49,7 @@ function runChild(script, env) {
 	});
 }
 
-test("Brave search applies domain filters in the query and returned results", async () => {
+test("Brave search applies domain filters and strips markup from results", async () => {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-brave-"));
 	const child = runChild(`
 		let capturedUrl = "";
@@ -59,7 +59,7 @@ test("Brave search applies domain filters in the query and returned results", as
 			capturedHeaders = init.headers;
 			return new Response(JSON.stringify({
 				web: { results: [
-					{ title: "GitHub", url: "https://github.com/nicobailon/pi-web-access", description: "repo" },
+					{ title: "Node.js &mdash; <strong>fs</strong> module", url: "https://github.com/nicobailon/pi-web-access", description: "Work with files &amp; directories <strong>fast</strong> &#x110000;" },
 					{ title: "Gist", url: "https://gist.github.com/nicobailon/abc", description: "gist" },
 					{ title: "Example", url: "https://example.com/nope", description: "example" },
 				] },
@@ -90,7 +90,11 @@ test("Brave search applies domain filters in the query and returned results", as
 	assert.match(output.q, /NOT site:gist\.github\.com/);
 	assert.equal(output.count, "20");
 	assert.equal(output.token, "brave-test-key");
-	assert.deepEqual(output.results.map((result) => result.url), ["https://github.com/nicobailon/pi-web-access"]);
+	assert.deepEqual(output.results, [{
+		title: "Node.js — fs module",
+		url: "https://github.com/nicobailon/pi-web-access",
+		snippet: "Work with files & directories fast &#x110000;",
+	}]);
 });
 
 test("Perplexity searches through the Search API and maps result snippets", async () => {

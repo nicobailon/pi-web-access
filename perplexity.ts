@@ -8,8 +8,7 @@ import { getWebSearchConfigPath } from "./utils.ts";
 const PERPLEXITY_SEARCH_URL = "https://api.perplexity.ai/search";
 const PERPLEXITY_CHAT_URL = "https://api.perplexity.ai/chat/completions";
 const CONFIG_PATH = getWebSearchConfigPath();
-
-const REQUEST_TIMEOUT_MS = 30_000;
+const SEARCH_TIMEOUT_MS = 30_000;
 
 const RATE_LIMIT = {
 	maxRequests: 10,
@@ -132,9 +131,8 @@ async function postPerplexity(
 
 	const apiKey = await getApiKey(options.signal);
 
-	// A stalled connection otherwise holds the search for the whole turn. The deadline is reported as a
-	// timeout, not an abort, so callers fall through to another provider instead of treating it as cancellation.
-	const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+	// Reported as a timeout, not an abort: a raw TimeoutError reads as cancellation and would end the search.
+	const timeout = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	const timedOut = () => timeout.aborted && !options.signal?.aborted;
 	const timeoutError = () => new Error("Perplexity API error 408: request timed out");
 

@@ -23,7 +23,6 @@ import {
 import { isGeminiApiAvailable } from "./gemini-api.ts";
 import {
 	extractPDFViaEndpoint,
-	getEndpointTimeoutMs,
 	isEndpointApiAvailable,
 } from "./endpoint-pdf-extract.ts";
 import { extractPDFViaGemini } from "./gemini-pdf-extract.ts";
@@ -200,7 +199,6 @@ export async function extractPDFToMarkdown(
 			if (isEndpointApiAvailable()) {
 				const result = await extractPDFViaEndpoint(buffer, {
 					maxPages: safeMaxPages,
-					timeoutMs: getEndpointTimeoutMs(),
 					...(signal ? { signal } : {}),
 				});
 				return writeMarkdownResult({
@@ -340,8 +338,7 @@ async function writeMarkdownResult(options: {
 	lines.push(`# ${options.title}`);
 	lines.push("");
 	lines.push(`> Source: ${options.url}`);
-	// Providers that report no page count (parser endpoints, LLM output
-	// without page markers) omit the line rather than claiming zero pages.
+	// Providers that report no page count omit the line rather than claim zero pages.
 	if (options.pages > 0) {
 		lines.push(
 			`> Pages: ${options.pages}${options.truncated ? ` (extracted first ${options.pagesToExtract})` : ""}`,

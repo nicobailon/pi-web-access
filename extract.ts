@@ -1280,9 +1280,7 @@ async function extractViaHttp(
 		if (options?.mode === "raw") {
 			if (!isTextContentType(contentType)) {
 				activityMonitor.logComplete(activityId, response.status);
-				const hint = isPDFContent
-					? " — raw mode does not decode PDFs; retry without mode (Markdown extraction) or with mode \"answer\" and a prompt"
-					: "";
+				const hint = isPDFContent ? "; retry without mode for Markdown, or with mode \"answer\" and a prompt" : "";
 				return { url, title: "", content: "", error: `Unsupported content type in raw mode: ${mimeType || "missing"}${hint}`, mimeType, status: response.status };
 			}
 			const text = await readTextResponseWithLimit(response, maxResponseSize);

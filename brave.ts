@@ -122,14 +122,10 @@ const HTML_ENTITIES: Record<string, string> = {
 function stripHtml(value: string): string {
 	return value
 		.replace(/<[^>]*>/g, "")
-		.replace(/&[a-z]+;|&#x?[0-9a-f]+;/gi, (entity) => {
-			const named = HTML_ENTITIES[entity.toLowerCase()];
-			if (named) return named;
-			const numeric = /^&#(x?)([0-9a-f]+);$/i.exec(entity);
-			if (!numeric) return entity;
-			const code = Number.parseInt(numeric[2], numeric[1] ? 16 : 10);
-			const valid = code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
-			return valid ? String.fromCodePoint(code) : entity;
+		.replace(/&(?:#(x?)([0-9a-f]+)|[a-z]+);/gi, (entity, hex: string | undefined, digits: string | undefined) => {
+			if (!digits) return HTML_ENTITIES[entity.toLowerCase()] ?? entity;
+			const code = Number.parseInt(digits, hex ? 16 : 10);
+			return code <= 0x10ffff && (code < 0xd800 || code > 0xdfff) ? String.fromCodePoint(code) : entity;
 		})
 		.trim();
 }
