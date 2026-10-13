@@ -4,8 +4,8 @@ import pLimit from "p-limit";
 import { activityMonitor } from "./activity.ts";
 import { extractRSCContent } from "./rsc-extract.ts";
 import { extractPDFToMarkdown, isPDF, loadPDFConfig } from "./pdf-extract.ts";
-import { extractGitHub } from "./github-extract.ts";
-import { extractGitHubIssuePr } from "./github-issue-pr.ts";
+import { extractGitHub, parseGitHubUrl } from "./github-extract.ts";
+import { extractGitHubIssuePr, parseGitHubIssuePrUrl } from "./github-issue-pr.ts";
 import { isYouTubeURL, isYouTubeEnabled, extractYouTube, extractYouTubeFrame, extractYouTubeFrames, getYouTubeStreamInfo } from "./youtube-extract.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
 import { extractWithUrlContext, extractWithGeminiWeb } from "./gemini-url-context.ts";
@@ -21,7 +21,7 @@ import { extractWithCrawl4ai, isCrawl4aiAvailable } from "./crawl4ai.ts";
 import { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } from "./brightdata-unlocker.ts";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./video-extract.ts";
 import { appendDeclaredWebLinks, discoverDeclaredWebLinks, type DeclaredWebLink } from "./declared-web-links.ts";
-import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type DomainPolicy, type Lookup, type SsrfConfig } from "./ssrf-protection.ts";
+import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadSsrfConfig, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
 import { formatSeconds, getWebSearchConfigPath, type ProxiedRequestInit } from "./utils.ts";
 import { isImageEnabled } from "./feature-config.ts";
 import { assertAuthFetchUrl, authFetchRedirectGuard, type AuthFetchProfile } from "./auth-fetch.ts";
@@ -140,6 +140,8 @@ function isAbortException(err: unknown): boolean {
 
 function isRedirectPolicyError(message: string): boolean {
 	return message.startsWith("Authenticated fetch refused cross-origin redirect") ||
+		message.startsWith("Refused cross-origin redirect by fetch_content redirect policy") ||
+		(message.startsWith("Extraction path ") && message.endsWith(" is disabled by the fetch_content same-origin redirect policy because its redirect chain cannot be observed")) ||
 		message.startsWith("Blocked internal ") ||
 		message.startsWith("Blocked hostname by fetch_content domain policy") ||
 		message.startsWith("Hostname not allowed by fetch_content domain policy") ||
@@ -163,6 +165,10 @@ function imageGateError(): string | null {
 	}
 }
 
+function redirectPolicyRouteRefusal(url: string, path: string): ExtractedContent {
+	return { url, title: "", content: "", error: `Extraction path ${path} is disabled by the fetch_content same-origin redirect policy because its redirect chain cannot be observed` };
+}
+
 async function resolveAuthCookieHeader(url: string | URL, profile: AuthFetchProfile): Promise<string> {
 	const parsed = assertAuthFetchUrl(profile, url.toString());
 	const result = await getBrowserCookiesForHosts({ hosts: [parsed.hostname], profile: profile.chromeProfile, requestUrl: parsed });
@@ -179,7 +185,7 @@ const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 async function fetchAuthenticatedRemoteUrl(
 	url: string,
 	init: RequestInit,
-	validationOptions: { ssrf: SsrfConfig; domainPolicy: DomainPolicy; lookup?: Lookup; proxy?: string },
+	validationOptions: { ssrf: SsrfConfig; domainPolicy: DomainPolicy; lookup?: Lookup; proxy?: string; redirects?: RedirectPolicy },
 	profile: AuthFetchProfile,
 ): Promise<Response> {
 	let current = await validateRemoteUrl(url, {
@@ -189,6 +195,7 @@ async function fetchAuthenticatedRemoteUrl(
 		proxy: validationOptions.proxy,
 		...(validationOptions.lookup ? { lookup: validationOptions.lookup } : {}),
 	});
+	const originalOrigin = current.origin;
 	let requestInit = init;
 	for (let redirects = 0; redirects <= 5; redirects++) {
 		const cookieHeader = await resolveAuthCookieHeader(current, profile);
@@ -199,7 +206,11 @@ async function fetchAuthenticatedRemoteUrl(
 		if (!location) return response;
 		if (redirects === 5) throw new Error(`Too many redirects fetching ${current.toString()}`);
 		const from = current;
-		current = await validateRemoteUrl(new URL(location, current), {
+		const next = new URL(location, current);
+		if (validationOptions.redirects === "same-origin" && next.origin !== originalOrigin) {
+			throw new Error(`Refused cross-origin redirect by fetch_content redirect policy: ${originalOrigin} -> ${next.origin}`);
+		}
+		current = await validateRemoteUrl(next, {
 			allowRanges: validationOptions.ssrf.allowRanges,
 			trustEnvProxy: validationOptions.ssrf.trustEnvProxy,
 			domainPolicy: validationOptions.domainPolicy,
@@ -372,6 +383,9 @@ export interface ExtractOptions {
 	rejectDirectImages?: string;
 	/** Custom DNS resolver used for SSRF validation. Primarily a test seam. */
 	lookup?: Lookup;
+	/** "same-origin" refuses cross-origin redirects and extraction paths whose redirect
+	 * chain cannot be observed. fetchContent.redirects in config is a floor. */
+	redirects?: RedirectPolicy;
 }
 
 /** Resolve the direct HTTP/Jina fetch budget, with a per-call override taking precedence. */
@@ -541,6 +555,7 @@ export async function extractContent(
 	}
 
 	let remoteUrl: URL | null = null;
+	let redirectPolicy: RedirectPolicy | undefined;
 	try {
 		const parsed = new URL(url);
 		if (parsed.protocol === "http:" || parsed.protocol === "https:") remoteUrl = parsed;
@@ -550,6 +565,7 @@ export async function extractContent(
 		try {
 			const ssrf = loadSsrfConfig();
 			const domainPolicy = loadFetchContentDomainPolicy();
+			redirectPolicy = options?.redirects ?? loadFetchContentRedirectPolicy();
 			await validateRemoteUrl(remoteUrl, {
 				allowRanges: ssrf.allowRanges,
 				trustEnvProxy: ssrf.trustEnvProxy,
@@ -568,6 +584,12 @@ export async function extractContent(
 		} catch (err) {
 			return { url, title: "", content: "", error: errorMessage(err) };
 		}
+	}
+
+	if (redirectPolicy) {
+		if (parseGitHubIssuePrUrl(url)) return redirectPolicyRouteRefusal(url, "GitHub issue/PR");
+		if (parseGitHubUrl(url)) return redirectPolicyRouteRefusal(url, "GitHub repository");
+		if (isYouTubeURL(url).isYouTube) return redirectPolicyRouteRefusal(url, "YouTube");
 	}
 
 	if (options?.frames || options?.timestamp) {
@@ -796,9 +818,14 @@ export async function extractContent(
 	} catch (err) {
 		return { url, title: "", content: "", error: errorMessage(err) };
 	}
-	const providerOrder = remoteUrl && !fetchRouting.allowRemoteHostedProviders
-		? fetchRouting.providers.filter(provider => !REMOTE_HOSTED_FETCH_PROVIDERS.has(provider))
-		: fetchRouting.providers;
+	if (redirectPolicy && !fetchRouting.providers.includes("http")) {
+		return redirectPolicyRouteRefusal(url, fetchRouting.providers[0]!);
+	}
+	const providerOrder: FetchProvider[] = redirectPolicy
+		? ["http"]
+		: remoteUrl && !fetchRouting.allowRemoteHostedProviders
+			? fetchRouting.providers.filter(provider => !REMOTE_HOSTED_FETCH_PROVIDERS.has(provider))
+			: fetchRouting.providers;
 	if (providerOrder.length === 0) {
 		return {
 			url,
@@ -1048,6 +1075,8 @@ export async function extractContent(
 	if (finalHttpResult?.status === 404 || finalHttpResult?.status === 410) {
 		return { ...finalHttpResult, error: notFoundGuidance(finalHttpResult, options?.toolNames) };
 	}
+	// Under the redirect policy no other provider may run, so provider setup hints do not apply.
+	if (redirectPolicy && finalHttpResult) return finalHttpResult;
 
 	const searchToolName = options?.toolNames?.webSearch;
 	const jinaHint = jinaReaderGuidance(fetchRouting, providerOrder, Boolean(remoteUrl) && !fetchRouting.allowRemoteHostedProviders);
@@ -1213,6 +1242,7 @@ async function extractViaHttp(
 	try {
 		const ssrf = loadSsrfConfig();
 		const domainPolicy = loadFetchContentDomainPolicy();
+		const redirects = options?.redirects ?? loadFetchContentRedirectPolicy();
 		const authProfile = options?.authFetchProfile;
 		const requestInit: ProxiedRequestInit = {
 			signal: controller.signal,
@@ -1230,7 +1260,7 @@ async function extractViaHttp(
 			},
 		};
 		const response = authProfile
-			? await fetchAuthenticatedRemoteUrl(url, requestInit, { ssrf, domainPolicy, proxy: options?.proxy, ...(options?.lookup ? { lookup: options.lookup } : {}) }, authProfile)
+			? await fetchAuthenticatedRemoteUrl(url, requestInit, { ssrf, domainPolicy, redirects, proxy: options?.proxy, ...(options?.lookup ? { lookup: options.lookup } : {}) }, authProfile)
 			: await fetchRemoteUrl(
 				url,
 				requestInit,
@@ -1238,6 +1268,7 @@ async function extractViaHttp(
 					allowRanges: ssrf.allowRanges,
 					trustEnvProxy: ssrf.trustEnvProxy,
 					domainPolicy,
+					redirects,
 					proxy: options?.proxy,
 					...(options?.lookup ? { lookup: options.lookup } : {}),
 				},
