@@ -65,6 +65,32 @@ test("findContent preserves document order and formatting when all excerpts fit"
 	].join("\n\n"));
 });
 
+for (const [edge, text, count] of [
+	["left", "x".repeat(399) + "😀" + "x".repeat(399) + "needle" + "x".repeat(1_000), 1],
+	["right", "needle" + "x".repeat(399) + "😀" + "x".repeat(1_000), 1],
+	["overflow", ("needle" + "x".repeat(399) + "😀" + "x".repeat(1_000)).repeat(60), 60],
+]) {
+	test(`findContent returns well-formed Unicode at the ${edge} excerpt boundary`, () => {
+		assert.ok(text.isWellFormed());
+		const result = findContent(text, ["needle"], "exact");
+		const sameWidth = findContent(text.replace(/😀/gu, "xx"), ["needle"], "exact");
+
+		assert.ok(result.text.isWellFormed());
+		assert.ok(result.text.includes("\uFFFD"));
+		assert.equal(result.matchCount, count);
+		assert.equal(result.returnedMatches, count);
+		assert.deepEqual(result.queryResults, [{ query: "needle", matchCount: count }]);
+		assert.equal(result.text.length, sameWidth.text.length);
+		assert.ok(result.text.length <= 20_000);
+		if (edge === "overflow") assert.match(result.text, /Queries: Q1 = "needle"/);
+	});
+}
+
+test("findContent preserves intact Unicode while formatting whitespace", () => {
+	const result = findContent("Café 雪 😀\n\nneedle\t🧪", ["needle"], "exact");
+	assert.equal(result.text, 'Text matches (exact)\n\n1. "needle" ×1\nCafé 雪 😀 needle 🧪');
+});
+
 test("findContent measures formatted output rather than raw whitespace", () => {
 	const text = ("common" + " ".repeat(500)).repeat(99) + "common";
 	const result = findContent(text, ["common"], "exact");

@@ -195,7 +195,8 @@ export function findContent(
 			if (contained.length === 0) continue;
 			const prefix = range.start > 0 ? "…" : "";
 			const suffix = range.end < text.length ? "…" : "";
-			const snippet = `${prefix}${text.slice(range.start, range.end).replace(/\s+/g, " ").trim()}${suffix}`;
+			const snippet = `${prefix}${text.slice(range.start, range.end)
+				.replace(/[\uD800-\uDFFF]/gu, "\uFFFD").replace(/\s+/g, " ").trim()}${suffix}`;
 			const counts = contained
 				.map(result => `${overflow ? result.id : `\"${result.query}\"`} ×${result.count}`)
 				.join(", ");
