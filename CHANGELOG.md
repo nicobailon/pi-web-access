@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in same-origin redirect policy for page fetches. Set `fetchContent.redirects: "same-origin"` in config, or pass `redirects: "same-origin"` to one `fetch_content` call, and every redirect must stay on the requested URL's scheme, hostname and port. A redirect that leaves it is refused before the new target is contacted, with no page content and no fallback to another provider. Extraction paths that fetch on their own (Jina Reader, hosted providers, Gemini, GitHub and YouTube integrations) are disabled while the policy is on. Thanks to [@jordan-droverinsights](https://github.com/jordan-droverinsights) for [issue #560](https://github.com/nicobailon/pi-web-access/issues/560).
+
 ### Fixed
 
 - With `geminiBaseUrl` pointing at a gateway, video uploads to the Gemini Files API now send the file bytes through the gateway too. Previously the upload URL Google returned sent the bytes, along with the gateway credential, straight to `generativelanguage.googleapis.com`. Thanks to [@goodman-b](https://github.com/goodman-b) for [PR #561](https://github.com/nicobailon/pi-web-access/pull/561).
