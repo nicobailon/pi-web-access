@@ -496,3 +496,55 @@ test("trustEnvProxy still performs DNS for NO_PROXY hosts", async () => {
 		}
 	}
 });
+
+function redirectChain(locations) {
+	const requested = [];
+	const looked = [];
+	const fetchImpl = async (url) => {
+		requested.push(url.toString());
+		const location = locations[requested.length - 1];
+		return location
+			? new Response("", { status: 302, headers: { location } })
+			: new Response("ok", { status: 200 });
+	};
+	const lookup = async (hostname) => {
+		looked.push(hostname);
+		return [{ address: "93.184.216.34", family: 4 }];
+	};
+	return { requested, looked, fetchImpl, lookup };
+}
+
+test("same-origin redirect policy follows redirects that stay on the original origin", async () => {
+	const { requested, fetchImpl, lookup } = redirectChain(["/next", "https://a.example:443/final"]);
+	const response = await fetchRemoteUrl("https://a.example/start", {}, { lookup, fetch: fetchImpl, redirects: "same-origin" });
+	assert.equal(response.status, 200);
+	assert.deepEqual(requested, ["https://a.example/start", "https://a.example/next", "https://a.example/final"]);
+});
+
+test("same-origin redirect policy refuses a cross-origin hop before requesting or resolving it", async () => {
+	const { requested, looked, fetchImpl, lookup } = redirectChain(["https://b.example/x", "https://a.example/back"]);
+	await assert.rejects(
+		fetchRemoteUrl("https://a.example/start", {}, { lookup, fetch: fetchImpl, redirects: "same-origin" }),
+		{ message: "Refused cross-origin redirect by fetch_content redirect policy: https://a.example -> https://b.example" },
+	);
+	assert.deepEqual(requested, ["https://a.example/start"]);
+	assert.deepEqual(looked, ["a.example"]);
+});
+
+test("same-origin redirect policy treats scheme and effective-port changes as cross-origin", async () => {
+	for (const [location, target] of [["http://a.example/x", "http://a.example"], ["https://a.example:8443/x", "https://a.example:8443"]]) {
+		const { requested, fetchImpl, lookup } = redirectChain([location]);
+		await assert.rejects(
+			fetchRemoteUrl("https://a.example/start", {}, { lookup, fetch: fetchImpl, redirects: "same-origin" }),
+			{ message: `Refused cross-origin redirect by fetch_content redirect policy: https://a.example -> ${target}` },
+		);
+		assert.deepEqual(requested, ["https://a.example/start"]);
+	}
+});
+
+test("fetchRemoteUrl without a redirect policy still follows cross-origin redirects", async () => {
+	const { requested, fetchImpl, lookup } = redirectChain(["https://b.example/x"]);
+	const response = await fetchRemoteUrl("https://a.example/start", {}, { lookup, fetch: fetchImpl });
+	assert.equal(response.status, 200);
+	assert.deepEqual(requested, ["https://a.example/start", "https://b.example/x"]);
+});

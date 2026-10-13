@@ -66,15 +66,30 @@ export interface DomainPolicy {
 
 const DEFAULT_DOMAIN_POLICY: DomainPolicy = { allow: [], deny: [] };
 
-export function loadFetchContentDomainPolicy(): DomainPolicy {
+export type RedirectPolicy = "same-origin";
+
+function loadFetchContentConfig(): Record<string, unknown> | undefined {
 	const parsed = loadConfigRoot();
-	if (!parsed) return { ...DEFAULT_DOMAIN_POLICY };
+	if (!parsed) return undefined;
 	const fetchContent = parsed.fetchContent;
-	if (fetchContent === undefined || fetchContent === null) return { ...DEFAULT_DOMAIN_POLICY };
+	if (fetchContent === undefined || fetchContent === null) return undefined;
 	if (typeof fetchContent !== "object" || Array.isArray(fetchContent)) {
 		throw new Error(`fetchContent in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
 	}
-	const policy = (fetchContent as { domainPolicy?: unknown }).domainPolicy;
+	return fetchContent as Record<string, unknown>;
+}
+
+export function loadFetchContentRedirectPolicy(): RedirectPolicy | undefined {
+	const redirects = loadFetchContentConfig()?.redirects;
+	if (redirects === undefined || redirects === null) return undefined;
+	if (redirects !== "same-origin") {
+		throw new Error(`fetchContent.redirects in ${WEB_SEARCH_CONFIG_PATH} must be "same-origin"`);
+	}
+	return redirects;
+}
+
+export function loadFetchContentDomainPolicy(): DomainPolicy {
+	const policy = loadFetchContentConfig()?.domainPolicy;
 	if (policy === undefined || policy === null) return { ...DEFAULT_DOMAIN_POLICY };
 	if (typeof policy !== "object" || Array.isArray(policy)) {
 		throw new Error(`fetchContent.domainPolicy in ${WEB_SEARCH_CONFIG_PATH} must be an object`);
@@ -179,6 +194,8 @@ interface FetchRemoteOptions extends ValidationOptions {
 	fetch?: Fetch;
 	maxRedirects?: number;
 	onRedirect?: (args: RedirectRequestInitArgs) => RequestInit;
+	/** "same-origin" refuses any redirect that leaves the original URL's origin. */
+	redirects?: RedirectPolicy;
 }
 
 async function defaultLookup(hostname: string): Promise<LookupAddress[]> {
@@ -257,6 +274,9 @@ export async function fetchRemoteUrl(
 
 		const from = current;
 		const next = new URL(location, current);
+		if (options.redirects === "same-origin" && next.origin !== configuredOrigin) {
+			throw new Error(`Refused cross-origin redirect by fetch_content redirect policy: ${configuredOrigin} -> ${next.origin}`);
+		}
 		// allowLoopback exempts an explicitly configured endpoint, never a redirect target: a loopback
 		// base must not be able to pivot the request onto a different loopback origin.
 		current = await validateRemoteUrl(next, next.origin === configuredOrigin ? options : { ...options, allowLoopback: false });

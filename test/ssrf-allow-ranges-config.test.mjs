@@ -125,6 +125,43 @@ test("loadFetchContentDomainPolicy rejects malformed policy values", async () =>
 	}
 });
 
+function runLoadRedirectPolicy(env) {
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			const { loadFetchContentRedirectPolicy } = await import(${JSON.stringify(extractUrl.replace("/extract.ts", "/ssrf-protection.ts"))});
+			try { console.log(JSON.stringify({ ok: true, policy: loadFetchContentRedirectPolicy() ?? null })); }
+			catch (err) { console.log(JSON.stringify({ ok: false, error: err.message })); }
+		`,
+		encoding: "utf8",
+		env,
+	});
+	assert.equal(child.status, 0, child.stderr);
+	return JSON.parse(child.stdout);
+}
+
+test("loadFetchContentRedirectPolicy is off unless fetchContent.redirects is set", async () => {
+	const missing = await makeConfigDir("pi-redirect-policy-missing-");
+	assert.deepEqual(runLoadRedirectPolicy(envFor(missing.root, missing.agentDir)), { ok: true, policy: null });
+
+	const unset = await makeConfigDir("pi-redirect-policy-unset-");
+	await writeFile(unset.configPath, JSON.stringify({ fetchContent: { domainPolicy: { allow: ["example.com"] } } }), "utf8");
+	assert.deepEqual(runLoadRedirectPolicy(envFor(unset.root, unset.agentDir)), { ok: true, policy: null });
+
+	const set = await makeConfigDir("pi-redirect-policy-set-");
+	await writeFile(set.configPath, JSON.stringify({ fetchContent: { redirects: "same-origin" } }), "utf8");
+	assert.deepEqual(runLoadRedirectPolicy(envFor(set.root, set.agentDir)), { ok: true, policy: "same-origin" });
+});
+
+test("loadFetchContentRedirectPolicy rejects values other than same-origin", async () => {
+	for (const redirects of ["follow", "Same-Origin", true, { mode: "same-origin" }]) {
+		const { root, agentDir, configPath } = await makeConfigDir("pi-redirect-policy-invalid-");
+		await writeFile(configPath, JSON.stringify({ fetchContent: { redirects } }), "utf8");
+		const result = runLoadRedirectPolicy(envFor(root, agentDir));
+		assert.equal(result.ok, false, JSON.stringify(redirects));
+		assert.match(result.error, /fetchContent\.redirects in .*web-search\.json must be "same-origin"/);
+	}
+});
+
 test("loadSsrfConfig accepts an explicit trustEnvProxy opt-in", async () => {
 	const { root, agentDir, configPath } = await makeConfigDir("pi-ssrf-proxy-enabled-");
 	await writeFile(configPath, JSON.stringify({ ssrf: { trustEnvProxy: true } }), "utf8");
