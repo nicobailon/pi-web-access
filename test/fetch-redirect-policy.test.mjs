@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
 
 const extractUrl = new URL("../extract.ts", import.meta.url).href;
@@ -11,7 +12,7 @@ const HOSTED = { fetchRouting: { allowRemoteHostedProviders: true }, tinyfishApi
 
 // Runs extractContent in a child process with a fresh config dir and a stubbed
 // fetch. `routes` maps request URL -> [status, location?]; anything else is 200 text.
-async function run({ config, url, options = {}, routes = {} }) {
+async function run({ config, url, options = {}, routes = {}, env = {} }) {
 	const root = await mkdtemp(join(tmpdir(), "pi-redirect-policy-"));
 	const agentDir = join(root, "agent");
 	await mkdir(agentDir, { recursive: true });
@@ -33,7 +34,7 @@ async function run({ config, url, options = {}, routes = {} }) {
 			console.log(JSON.stringify({ fetched, result }));
 		`,
 		encoding: "utf8",
-		env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, HOME: join(root, "home"), USERPROFILE: join(root, "home") },
+		env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, HOME: join(root, "home"), USERPROFILE: join(root, "home"), ...env },
 	});
 	assert.equal(child.status, 0, child.stderr);
 	return JSON.parse(child.stdout.trim().split("\n").at(-1));
@@ -60,6 +61,23 @@ test("GitHub and YouTube routes are refused by name with no network request", as
 		const { fetched, result } = await run({ config: { fetchContent: { redirects: "same-origin" } }, url });
 		assert.equal(result.error, REFUSED_PATH(path), url);
 		assert.deepEqual(fetched, [], url);
+	}
+});
+
+test("scheme-less YouTube frame requests are refused before yt-dlp runs", async () => {
+	const binDir = await mkdtemp(join(tmpdir(), "pi-redirect-policy-bin-"));
+	const marker = join(binDir, "yt-dlp-ran");
+	await writeFile(join(binDir, "yt-dlp"), `#!/bin/sh\ntouch "${marker}"\nexit 1\n`);
+	await chmod(join(binDir, "yt-dlp"), 0o755);
+	for (const options of [{ frames: 2 }, { timestamp: "10" }]) {
+		const { fetched, result } = await run({
+			url: "youtu.be/jNQXAC9IVRw",
+			options: { redirects: "same-origin", ...options },
+			env: { PATH: `${binDir}${delimiter}${process.env.PATH}` },
+		});
+		assert.equal(result.error, REFUSED_PATH("YouTube"), JSON.stringify(options));
+		assert.deepEqual(fetched, []);
+		assert.equal(existsSync(marker), false, `yt-dlp ran for ${JSON.stringify(options)}`);
 	}
 });
 

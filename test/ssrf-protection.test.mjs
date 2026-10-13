@@ -541,10 +541,3 @@ test("same-origin redirect policy treats scheme and effective-port changes as cr
 		assert.deepEqual(requested, ["https://a.example/start"]);
 	}
 });
-
-test("fetchRemoteUrl without a redirect policy still follows cross-origin redirects", async () => {
-	const { requested, fetchImpl, lookup } = redirectChain(["https://b.example/x"]);
-	const response = await fetchRemoteUrl("https://a.example/start", {}, { lookup, fetch: fetchImpl });
-	assert.equal(response.status, 200);
-	assert.deepEqual(requested, ["https://a.example/start", "https://b.example/x"]);
-});

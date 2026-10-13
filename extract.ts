@@ -141,7 +141,6 @@ function isAbortException(err: unknown): boolean {
 function isRedirectPolicyError(message: string): boolean {
 	return message.startsWith("Authenticated fetch refused cross-origin redirect") ||
 		message.startsWith("Refused cross-origin redirect by fetch_content redirect policy") ||
-		(message.startsWith("Extraction path ") && message.endsWith(" is disabled by the fetch_content same-origin redirect policy because its redirect chain cannot be observed")) ||
 		message.startsWith("Blocked internal ") ||
 		message.startsWith("Blocked hostname by fetch_content domain policy") ||
 		message.startsWith("Hostname not allowed by fetch_content domain policy") ||
@@ -554,8 +553,13 @@ export async function extractContent(
 		return { url, title: "", content: "", error: "Aborted" };
 	}
 
-	let remoteUrl: URL | null = null;
 	let redirectPolicy: RedirectPolicy | undefined;
+	try {
+		redirectPolicy = options?.redirects ?? loadFetchContentRedirectPolicy();
+	} catch (err) {
+		return { url, title: "", content: "", error: errorMessage(err) };
+	}
+	let remoteUrl: URL | null = null;
 	try {
 		const parsed = new URL(url);
 		if (parsed.protocol === "http:" || parsed.protocol === "https:") remoteUrl = parsed;
@@ -565,7 +569,6 @@ export async function extractContent(
 		try {
 			const ssrf = loadSsrfConfig();
 			const domainPolicy = loadFetchContentDomainPolicy();
-			redirectPolicy = options?.redirects ?? loadFetchContentRedirectPolicy();
 			await validateRemoteUrl(remoteUrl, {
 				allowRanges: ssrf.allowRanges,
 				trustEnvProxy: ssrf.trustEnvProxy,
