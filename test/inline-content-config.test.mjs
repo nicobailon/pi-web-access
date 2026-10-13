@@ -97,3 +97,32 @@ test("stored content schema and execution keep one registered limit", async () =
 	assert.equal(child.status, 0, child.stderr);
 	assert.deepEqual(JSON.parse(child.stdout), { schemaMax: 40_000, rejectedMax: 40_000 });
 });
+
+test("the first fetch_content page never ends inside a surrogate pair", async () => {
+	const agentDir = await mkdtemp(join(tmpdir(), "pi-web-access-inline-content-"));
+	await writeFile(join(agentDir, "web-search.json"), JSON.stringify({ maxInlineContentChars: 1000 }) + "\n", "utf8");
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			import initializeExtension from ${JSON.stringify(indexUrl)};
+			import { clearResults } from ${JSON.stringify(storageUrl)};
+			clearResults();
+			globalThis.fetch = async () => new Response("A".repeat(999) + "\\u{1F600}" + "B".repeat(2000), {
+				status: 200,
+				headers: { "content-type": "text/plain" },
+			});
+			const tools = [];
+			initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
+			const fetchTool = tools.find(tool => tool.name === "fetch_content");
+			const fetched = await fetchTool.execute("call", { url: "https://93.184.216.34/page" });
+			const text = fetched.content.find(item => item.type === "text").text;
+			console.log(JSON.stringify({
+				wellFormed: text.isWellFormed(),
+				nextOffset: Number(/offset: (\\d+) \\}\\) for the next slice/.exec(text)?.[1]),
+			}));
+		`,
+		encoding: "utf8",
+		env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, XDG_CONFIG_HOME: undefined },
+	});
+	assert.equal(child.status, 0, child.stderr);
+	assert.deepEqual(JSON.parse(child.stdout), { wellFormed: true, nextOffset: 999 });
+});

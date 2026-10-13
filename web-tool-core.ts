@@ -327,7 +327,7 @@ function initialContentSlice(content: string, maxChars: number): {
 	shownBytes: number;
 	shownLines: number;
 } {
-	let endOffset = Math.min(content.length, maxChars);
+	let endOffset = pageEnd(content, 0, Math.min(content.length, maxChars));
 	if (endOffset < content.length) {
 		const lineBreak = content.lastIndexOf("\n", endOffset);
 		if (lineBreak >= Math.floor(maxChars * 0.8)) endOffset = lineBreak + 1;
