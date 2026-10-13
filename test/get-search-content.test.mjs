@@ -113,6 +113,38 @@ test("get_search_content returns requested fetched content slices", async () => 
 	assert.match(text, /urlIndex: 0, offset: 30005, limit: 5/);
 });
 
+test("get_search_content pages never split a surrogate pair", async () => {
+	const tool = getContentTool();
+	const content = `a${"😀".repeat(6)}b`;
+	storeFetchedContent(content);
+	storeResult("emoji-search", {
+		id: "emoji-search",
+		type: "search",
+		timestamp: Date.now(),
+		queries: [{ query: "emoji", answer: "", results: [{ title: "Emoji", url: "https://example.com/emoji", snippet: content }], error: null }],
+	});
+	const searchContent = (await tool.execute("call", { responseId: "emoji-search", queryIndex: 0 })).content[0].text;
+	const header = "# Large Page\n\n";
+	const sources = [
+		{ full: content, page: (offset, limit) => ({ responseId: "large-fetch", urlIndex: 0, offset, limit }), skip: header.length },
+		{ full: searchContent, page: (offset, limit) => ({ responseId: "emoji-search", queryIndex: 0, offset, limit }), skip: 0 },
+	];
+	for (const { full, page, skip } of sources) {
+		for (const limit of [1, 2, 3]) {
+			const pages = [];
+			for (let offset = 0; offset !== null && offset < full.length;) {
+				const result = await tool.execute("call", page(offset, limit));
+				const slice = result.content[0].text.slice(skip, skip + result.details.returnedChars);
+				assert.ok(slice.length > 0 && slice.isWellFormed(), `ill-formed page at offset ${offset} with limit ${limit}: ${JSON.stringify(slice)}`);
+				if (result.details.nextOffset !== null) assert.match(result.content[0].text, new RegExp(`offset: ${result.details.nextOffset}, limit: ${limit}`));
+				pages.push(slice);
+				offset = result.details.nextOffset;
+			}
+			assert.equal(pages.join(""), full);
+		}
+	}
+});
+
 test("get_search_content rejects unsafe fetched content ranges", async () => {
 	const tool = getContentTool();
 	storeFetchedContent("short content");

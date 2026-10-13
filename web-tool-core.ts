@@ -570,16 +570,26 @@ export function storedContentSourceNames(settings: WebToolCoreSettings): string 
 	]);
 }
 
+/** Keeps a page end from splitting a surrogate pair: it moves back one code unit,
+ * or past the pair when moving back would leave the page empty. */
+function pageEnd(content: string, offset: number, end: number): number {
+	if (end <= offset || end >= content.length) return end;
+	const high = content.charCodeAt(end - 1);
+	const low = content.charCodeAt(end);
+	if (high < 0xd800 || high > 0xdbff || low < 0xdc00 || low > 0xdfff) return end;
+	return end - 1 > offset ? end - 1 : end + 1;
+}
+
 /** Slices content from offset and appends the next-slice instructions, shrinking
  * the slice so the whole page, instructions included, stays within maxChars. */
 function sliceWithContinuation(content: string, offset: number, limit: number, maxChars: number, continuationAt: (endOffset: number) => string): { endOffset: number; text: string } {
-	let endOffset = offset + Math.min(limit, content.length - offset);
+	let endOffset = pageEnd(content, offset, offset + Math.min(limit, content.length - offset));
 	let continuation = "";
 	while (endOffset < content.length) {
 		continuation = continuationAt(endOffset);
 		const overflow = endOffset - offset + continuation.length - maxChars;
 		if (overflow <= 0) break;
-		endOffset -= overflow;
+		endOffset = pageEnd(content, offset, endOffset - overflow);
 	}
 	return { endOffset, text: content.slice(offset, endOffset) + (endOffset < content.length ? continuation : "") };
 }
@@ -1374,7 +1384,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				};
 			}
 
-			const endOffset = Math.min(offset + limit, urlData.content.length);
+			const endOffset = pageEnd(urlData.content, offset, Math.min(offset + limit, urlData.content.length));
 			const contentSlice = urlData.content.slice(offset, endOffset);
 			const hasMore = endOffset < urlData.content.length;
 			let text = `# ${urlData.title || urlData.url}\n\n${contentSlice}`;
