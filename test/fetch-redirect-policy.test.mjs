@@ -71,6 +71,7 @@ test("a recoverable HTTP failure under the policy tries no hosted or Jina provid
 		routes: { "https://a.example/down": [503] },
 	});
 	assert.match(result.error, /^HTTP 503/);
+	assert.doesNotMatch(result.error, /Fallback options/);
 	assert.deepEqual(fetched, ["https://a.example/down"]);
 });
 
@@ -113,4 +114,53 @@ test("without the policy a cross-origin redirect is still followed", async () =>
 	assert.equal(result.error, null);
 	assert.equal(result.content, "page body from https://b.example/x");
 	assert.deepEqual(fetched, ["https://a.example/start", "https://b.example/x"]);
+});
+
+test("fetch_content redirects parameter refuses one URL without affecting the others, storage, or the answer model", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-redirect-policy-tool-"));
+	const agentDir = join(root, "agent");
+	const cacheDir = join(root, "cache");
+	await mkdir(agentDir, { recursive: true });
+	await mkdir(cacheDir, { recursive: true });
+	await writeFile(join(agentDir, "web-search.json"), JSON.stringify({ workflow: "none", fetchRouting: { providers: ["http"] } }), "utf8");
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			const fetched = [];
+			globalThis.fetch = async input => {
+				const url = String(input instanceof Request ? input.url : input);
+				fetched.push(url);
+				if (url === "http://93.184.216.34/moved") return new Response("", { status: 302, headers: { location: "http://93.184.216.35/elsewhere" } });
+				return new Response("GOOD_SOURCE " + "g".repeat(200), { headers: { "content-type": "text/plain" } });
+			};
+			const { default: initialize } = await import(${JSON.stringify(new URL("../index.ts", import.meta.url).href)});
+			const { getResult } = await import(${JSON.stringify(new URL("../storage.ts", import.meta.url).href)});
+			const tools = [];
+			initialize({ registerTool(t) { tools.push(t); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
+			const pageTexts = [];
+			const ctx = { model: { provider: "fixture", id: "model", api: "fixture-api", input: ["text"], contextWindow: 32000 }, scopedModels: [], modelRegistry: {
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "fixture-key" }),
+				complete: async (_model, context) => {
+					pageTexts.push(context.messages[0].content[0].text);
+					return { stopReason: "stop", content: [{ type: "text", text: "FIXTURE_ANSWER" }] };
+				},
+			} };
+			const result = await tools.find(t => t.name === "fetch_content").execute("fetch", {
+				urls: ["http://93.184.216.34/moved", "http://93.184.216.34/good"], mode: "answer", prompt: "Q?", redirects: "same-origin",
+			}, undefined, undefined, ctx);
+			const stored = getResult(result.details.responseId);
+			console.log(JSON.stringify({ fetched, pageTexts, urls: result.structuredContent.urls, stored: stored.urls.map(u => ({ url: u.url, content: u.content, error: u.error })) }));
+		`,
+		encoding: "utf8",
+		timeout: 20_000,
+		env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, PI_WEB_ACCESS_CACHE_ROOT: cacheDir, HOME: join(root, "home"), USERPROFILE: join(root, "home") },
+	});
+	assert.equal(child.status, 0, child.stderr);
+	const { fetched, pageTexts, urls, stored } = JSON.parse(child.stdout.trim().split("\n").at(-1));
+	const refusal = "Refused cross-origin redirect by fetch_content redirect policy: http://93.184.216.34 -> http://93.184.216.35";
+	assert.deepEqual(fetched.sort(), ["http://93.184.216.34/good", "http://93.184.216.34/moved"]);
+	assert.equal(pageTexts.length, 1);
+	assert.match(pageTexts[0], /GOOD_SOURCE/);
+	assert.deepEqual(urls.map(u => [u.error ?? null, u.content]), [[refusal, ""], [null, "FIXTURE_ANSWER"]]);
+	assert.deepEqual(stored[0], { url: "http://93.184.216.34/moved", content: "", error: refusal });
+	assert.match(stored[1].content, /^GOOD_SOURCE/);
 });

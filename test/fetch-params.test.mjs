@@ -76,6 +76,14 @@ test("fetch_content params validate fetch and answer modes", () => {
 	assert.throws(() => normalizeFetchContentParams({ mode: "invalid" }), /mode must be/);
 });
 
+test("fetch_content params accept only the same-origin redirect policy", () => {
+	assert.equal(normalizeFetchContentParams({ redirects: "same-origin" }).options.redirects, "same-origin");
+	assert.equal("redirects" in normalizeFetchContentParams({ url: "https://example.com" }).options, false);
+	for (const redirects of ["follow", "", null, false, true]) {
+		assert.throws(() => normalizeFetchContentParams({ redirects }), /redirects must be "same-origin"/, JSON.stringify(redirects));
+	}
+});
+
 
 test("fetch_content params validate auth profile input", () => {
 	assert.equal(normalizeFetchContentParams({ auth: true }).options.auth, true);

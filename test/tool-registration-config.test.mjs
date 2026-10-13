@@ -77,7 +77,7 @@ test("default public execution tool definitions retain their compatibility hashe
 	const expected = {
 		web_search: "eb831762c218c50c43cedf765a984f6b1c46efb47ac9b7289dfbac4854112de4",
 		source_check: "48e69c75320f7a844a83bfe032c98b93ef11115e908831e6349915e708b16889",
-		fetch_content: "0082465bae0f184988fd37fe152cad9c7a236e410747ba6770013895a28978d4",
+		fetch_content: "cdf7a6b6e612edce16c3cf4b0fb5377c3b05c3855814363ffd8501e16775047c",
 		get_search_content: "e1c7597fc085a811c0c6fcde365a96571c275c70b93a48206a38be06a7a45a5f",
 	};
 	const tools = registered({}).tools.filter(tool => tool.name !== "web_enable");
@@ -124,6 +124,12 @@ test("fetch_content schema exposes auth profile opt-in", () => {
 	const schema = registeredTool({}, "fetch_content").parameters.properties.auth;
 	assert.ok(schema);
 	assert.deepEqual(schema.anyOf.map(option => option.type), ["string", "boolean"]);
+});
+
+test("fetch_content schema offers only the same-origin redirect policy", () => {
+	const schema = registeredTool({}, "fetch_content").parameters.properties.redirects;
+	assert.equal(Value.Check(schema, "same-origin"), true);
+	assert.equal(Value.Check(schema, "follow"), false);
 });
 
 test("registered tools do not advertise disabled get_search_content", () => {

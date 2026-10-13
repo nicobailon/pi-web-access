@@ -597,7 +597,8 @@ Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_D
     "domainPolicy": {
       "allow": ["example.com"],
       "deny": ["blocked.example.com"]
-    }
+    },
+    "redirects": "same-origin"
   },
   "shortcuts": {
     "curate": "ctrl+shift+s",
@@ -642,6 +643,8 @@ Set `braveBaseUrl`, `exaBaseUrl`, or `tavilyBaseUrl` to route those providers th
 `browserCookies` selects the Chromium browser preset and profile used for Gemini Web cookies, for example `{ "browserCookies": { "browser": "helium", "profile": "Profile 1" } }`. When `browser` is set, cookie discovery checks only that browser, which avoids unrelated password-store prompts. Supported preset names are `helium`, `chrome`, `brave`, `arc`, `chromium`, and `edge`, subject to platform availability. Omit `browser` to keep automatic browser discovery. `profile` must be a profile directory name. The old top-level `chromeProfile` field is rejected; move it to `browserCookies.profile`. Arbitrary profile paths and `profilePath` are intentionally not supported.
 
 `fetchContent.domainPolicy` is an optional hostname allow/deny policy for `fetch_content` target URLs. It is off when omitted. Each bare hostname matches itself and its subdomains; `deny` wins when a hostname matches both lists. The policy is checked before HTTP(S) target handling and before each redirect followed by this extension's own fetch path. Local file paths and non-HTTP sources are not subject to this policy. It is an additional restriction: the existing SSRF guard still blocks private and internal destinations. Remote extraction services can still perform their own DNS, redirects, and egress after this extension preflights the submitted target URL, so third-party hosted HTTP(S) fallbacks stay disabled unless `fetchRouting.allowRemoteHostedProviders` is enabled for separately isolated provider deployments.
+
+`fetchContent.redirects: "same-origin"` turns on a same-origin redirect policy, and the `fetch_content` parameter `redirects: "same-origin"` turns it on for one call. Under the policy every redirect target must match the requested URL's scheme, hostname and effective port. The check runs before the target is resolved or requested, so in an A → B → A chain B is never contacted. A refused redirect returns an error with no page content, and no other extraction provider or retry runs after it. Only this extension's own HTTP fetch is used: every other `fetch_content` provider (Jina Reader, Firecrawl, Crawl4AI, the hosted providers, and Gemini) is disabled, and GitHub issue/PR, GitHub repository and YouTube URLs are refused by name, even when those integrations are turned off, rather than fetched as plain HTML. `auth` profile fetches and `mode: "raw"` follow the same redirect rule. The config key applies to every page fetch, including `web_search` `includeContent` and `source_check`; the parameter applies only to the call that sets it and cannot turn a configured policy off. A trusted Pi extension can enforce the policy per call by setting `event.input.redirects = "same-origin"` in a `tool_call` handler for `fetch_content`. Local files and videos are not subject to the policy.
 
 `fetch.timeout` is an optional positive finite number of seconds for direct HTTP fetches and the Jina Reader fallback. When omitted, both use a 30-second budget. Fractional values are supported and rounded up to at least 1 millisecond; values that cannot be converted to a finite safe integer delay from 1 through Node's 2,147,483,647 ms timer maximum are rejected. An invalid declared value fails closed with an error naming `web-search.json`. An internal/per-call `timeoutMs` override takes precedence over this setting. Other remote extraction fallbacks keep their own documented budgets.
 
