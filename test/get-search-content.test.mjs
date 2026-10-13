@@ -145,6 +145,32 @@ test("get_search_content pages never split a surrogate pair", async () => {
 	}
 });
 
+test("get_search_content keeps surrogate pairs whole when a full page shrinks for its instructions", async () => {
+	const tool = getContentTool();
+	// One of the two prefix parities puts the shrunken page end inside a pair.
+	for (const prefix of ["", "a"]) {
+		const snippet = `${prefix}${"😀".repeat(20_000)}`;
+		storeResult("emoji-overflow", {
+			id: "emoji-overflow",
+			type: "search",
+			timestamp: Date.now(),
+			queries: [{ query: "emoji", answer: "", results: [{ title: "Emoji", url: "https://example.com/emoji", snippet }], error: null }],
+		});
+		const pages = [];
+		for (let offset = 0; offset !== null;) {
+			const result = await tool.execute("call", { responseId: "emoji-overflow", queryIndex: 0, offset, limit: 30_000 });
+			const text = result.content[0].text;
+			const slice = text.slice(0, result.details.returnedChars);
+			assert.ok(text.length <= 30_000, `page at offset ${offset} is ${text.length} chars`);
+			assert.ok(slice.isWellFormed(), `ill-formed page at offset ${offset} (prefix ${JSON.stringify(prefix)})`);
+			pages.push(slice);
+			offset = result.details.nextOffset;
+		}
+		assert.ok(pages.length > 1);
+		assert.ok(pages.join("").includes(snippet), "joined pages lose content");
+	}
+});
+
 test("get_search_content rejects unsafe fetched content ranges", async () => {
 	const tool = getContentTool();
 	storeFetchedContent("short content");
