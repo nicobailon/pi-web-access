@@ -8,6 +8,7 @@ import { redactCredential, CredentialResolutionError } from "./credential-source
 const CONFIG_PATH = getWebSearchConfigPath();
 const DEFAULT_ADC_PATH = join(homedir(), ".config", "gcloud", "application_default_credentials.json");
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
+const DEFAULT_METADATA_HOST = "metadata.google.internal";
 const VERTEX_HOST = "https://aiplatform.googleapis.com";
 const VERTEX_API_VERSION = "v1";
 const REFRESH_SKEW_MS = 60_000;
@@ -68,6 +69,24 @@ export function getAdcLocation(): string | null {
 
 function getAdcPath(): string {
 	return process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim() || DEFAULT_ADC_PATH;
+}
+
+function hasExplicitAdcPath(): boolean {
+	return !!process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim();
+}
+
+function getMetadataHost(): string {
+	return process.env.GCE_METADATA_HOST?.trim() || DEFAULT_METADATA_HOST;
+}
+
+function isOnGcp(): boolean {
+	if (process.env.METADATA_SERVER_DETECTION?.trim().toLowerCase() === "none") return false;
+	if (process.env.GCE_METADATA_HOST?.trim()) return true;
+	try {
+		return /Google/.test(readFileSync("/sys/class/dmi/id/bios_vendor", "utf8"));
+	} catch {
+		return false;
+	}
 }
 
 export function getVertexApiBase(project: string, location: string): string {
@@ -251,8 +270,35 @@ async function exchangeServiceAccountJwt(cfg: AdcFile, signal?: AbortSignal): Pr
 	return parseTokenExchangeResponse(text, "Gemini ADC service account token exchange");
 }
 
+async function fetchMetadataToken(signal?: AbortSignal): Promise<CachedToken> {
+	const url = `http://${getMetadataHost()}/computeMetadata/v1/instance/service-accounts/default/token`;
+	let res: Response;
+	try {
+		res = await fetch(url, {
+			headers: { "Metadata-Flavor": "Google" },
+			redirect: "error",
+			signal,
+		});
+	} catch (err) {
+		const message = err instanceof Error ? err.message : String(err);
+		throw new Error(`Gemini ADC metadata server token request failed: ${message}`);
+	}
+	const text = await res.text();
+	if (!res.ok) {
+		if (res.status === 401 || res.status === 403) {
+			throw new CredentialResolutionError("Gemini ADC", "oauth-credential-rejected");
+		}
+		throw new Error(`Gemini ADC metadata server token request failed (HTTP ${res.status}): ${text.slice(0, 300)}`);
+	}
+	return parseTokenExchangeResponse(text, "Gemini ADC metadata server token");
+}
+
 export async function getAdcAccessToken(signal?: AbortSignal): Promise<string> {
 	if (cachedToken && cachedToken.expiresAt > Date.now()) {
+		return cachedToken.token;
+	}
+	if (!hasExplicitAdcPath() && !existsSync(DEFAULT_ADC_PATH) && isOnGcp()) {
+		cachedToken = await fetchMetadataToken(signal);
 		return cachedToken.token;
 	}
 	const cfg = await loadAdcFile();
@@ -276,7 +322,8 @@ export function isGeminiAdcAvailable(): boolean {
 	// user deliberately routed Gemini somewhere, honor that routing.
 	if (hasExplicitApiBase()) return false;
 	if (!getAdcProject() || !getAdcLocation()) return false;
-	return existsSync(getAdcPath());
+	if (existsSync(getAdcPath())) return true;
+	return !hasExplicitAdcPath() && isOnGcp();
 }
 
 function hasGeminiApiKeySource(): boolean {

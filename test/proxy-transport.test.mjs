@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import initializeExtension from "../index.ts";
-import { getActiveProxy, installGlobalProxyFetch, runWithProxy } from "../utils.ts";
+import { getActiveProxy, installGlobalProxyFetch, isProxyBypassedUrl, runWithProxy } from "../utils.ts";
 
 const originalFetch = globalThis.fetch;
 const originalPath = process.env.PATH;
@@ -678,4 +678,21 @@ test("generic socks proxy is rejected before transport runs", async (t) => {
 		assert.equal(called, false);
 		await assert.rejects(readFile(logPath, "utf8"), /ENOENT/);
 	});
+});
+
+test("GCE metadata server hosts always bypass proxy transport", (t) => {
+	const previousNoProxy = process.env.NO_PROXY;
+	const previousNoProxyLower = process.env.no_proxy;
+	delete process.env.NO_PROXY;
+	delete process.env.no_proxy;
+	t.after(() => {
+		if (previousNoProxy === undefined) delete process.env.NO_PROXY;
+		else process.env.NO_PROXY = previousNoProxy;
+		if (previousNoProxyLower === undefined) delete process.env.no_proxy;
+		else process.env.no_proxy = previousNoProxyLower;
+	});
+
+	assert.equal(isProxyBypassedUrl(new URL("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")), true);
+	assert.equal(isProxyBypassedUrl(new URL("http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token")), true);
+	assert.equal(isProxyBypassedUrl(new URL("https://example.com/page")), false);
 });
