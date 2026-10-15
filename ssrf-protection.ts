@@ -93,8 +93,8 @@ const DEFAULT_FETCH_CONTENT_USER_AGENT = "OpenAI File Downloader, XaiImageApiFet
 export function loadFetchContentUserAgent(): string {
 	const userAgent = loadFetchContentConfig()?.userAgent;
 	if (userAgent === undefined || userAgent === null) return DEFAULT_FETCH_CONTENT_USER_AGENT;
-	if (typeof userAgent !== "string" || userAgent.trim().length === 0 || /[\r\n]/.test(userAgent)) {
-		throw new Error(`fetchContent.userAgent in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty single-line string`);
+	if (typeof userAgent !== "string" || userAgent.trim().length === 0 || !/^[\t\x20-\x7e]+$/.test(userAgent)) {
+		throw new Error(`fetchContent.userAgent in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty string of printable ASCII characters`);
 	}
 	return userAgent.trim();
 }

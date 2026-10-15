@@ -55,10 +55,10 @@ test("local HTTP fetch sends a configured fetchContent.userAgent", async () => {
 });
 
 test("an invalid fetchContent.userAgent fails the fetch before the direct fetch or any fallback provider", async () => {
-	for (const userAgent of ["", "  ", "agent\nInjected: 1", 42]) {
+	for (const userAgent of ["", "  ", "agent\nInjected: 1", "agent\u0000x", "agent 😀", 42]) {
 		const output = await fetchWithConfig({ fetchContent: { userAgent }, fetchRouting: { allowRemoteHostedProviders: true } }, "readable");
 		assert.deepEqual(output.userAgents, [], JSON.stringify(userAgent));
-		assert.match(output.error, /^fetchContent\.userAgent in .*web-search\.json must be a non-empty single-line string$/);
+		assert.match(output.error, /^fetchContent\.userAgent in .*web-search\.json must be a non-empty string of printable ASCII characters$/);
 	}
 });
 
