@@ -21,7 +21,7 @@ import { extractWithCrawl4ai, isCrawl4aiAvailable } from "./crawl4ai.ts";
 import { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } from "./brightdata-unlocker.ts";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./video-extract.ts";
 import { appendDeclaredWebLinks, discoverDeclaredWebLinks, type DeclaredWebLink } from "./declared-web-links.ts";
-import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadSsrfConfig, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
+import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadFetchContentUserAgent, loadSsrfConfig, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
 import { formatSeconds, getWebSearchConfigPath, type ProxiedRequestInit } from "./utils.ts";
 import { isImageEnabled } from "./feature-config.ts";
 import { assertAuthFetchUrl, authFetchRedirectGuard, type AuthFetchProfile } from "./auth-fetch.ts";
@@ -569,6 +569,8 @@ export async function extractContent(
 		try {
 			const ssrf = loadSsrfConfig();
 			const domainPolicy = loadFetchContentDomainPolicy();
+			// An invalid configured User-Agent fails here, before any provider fallback runs.
+			loadFetchContentUserAgent();
 			await validateRemoteUrl(remoteUrl, {
 				allowRanges: ssrf.allowRanges,
 				trustEnvProxy: ssrf.trustEnvProxy,
@@ -1251,7 +1253,7 @@ async function extractViaHttp(
 			signal: controller.signal,
 			__proxy: options?.proxy,
 			headers: {
-				"User-Agent": "OpenAI File Downloader, XaiImageApiFetch/1.0",
+				"User-Agent": loadFetchContentUserAgent(),
 				"Accept": preferMarkdown ? MARKDOWN_FIRST_ACCEPT : BROWSER_ACCEPT,
 				"Accept-Language": "en-US,en;q=0.9",
 				"Cache-Control": "no-cache",

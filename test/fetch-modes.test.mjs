@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { after, test } from "node:test";
 
 import { extractContent, fetchAllContent } from "../extract.ts";
@@ -17,6 +21,45 @@ test("local HTTP fetch sends the compatible User-Agent", async () => {
 
 	await extractContent("https://example.com/article", undefined, { mode: "raw", lookup });
 	assert.equal(userAgent, "OpenAI File Downloader, XaiImageApiFetch/1.0");
+});
+
+// The config path is captured at module load, so configured cases run in a child
+// process with PI_CODING_AGENT_DIR pointed at a fresh temp dir.
+async function fetchWithConfig(config, mode) {
+	const root = await mkdtemp(join(tmpdir(), "pi-fetch-user-agent-"));
+	const agentDir = join(root, "agent");
+	await mkdir(agentDir, { recursive: true });
+	await writeFile(join(agentDir, "web-search.json"), JSON.stringify(config), "utf8");
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			const userAgents = [];
+			globalThis.fetch = async (_url, init) => {
+				userAgents.push(new Headers(init.headers).get("user-agent"));
+				return new Response("body", { headers: { "content-type": "text/plain" } });
+			};
+			const { extractContent } = await import(${JSON.stringify(new URL("../extract.ts", import.meta.url).href)});
+			const result = await extractContent("https://example.com/article", undefined, { mode: ${JSON.stringify(mode)}, lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
+			console.log(JSON.stringify({ userAgents, error: result.error }));
+		`,
+		encoding: "utf8",
+		env: { ...process.env, PI_CODING_AGENT_DIR: agentDir, HOME: join(root, "home"), USERPROFILE: join(root, "home") },
+	});
+	assert.equal(child.status, 0, child.stderr);
+	return JSON.parse(child.stdout.trim().split("\n").at(-1));
+}
+
+test("local HTTP fetch sends a configured fetchContent.userAgent", async () => {
+	const browser = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36";
+	const output = await fetchWithConfig({ fetchContent: { userAgent: ` ${browser} ` } }, "raw");
+	assert.deepEqual(output, { userAgents: [browser], error: null });
+});
+
+test("an invalid fetchContent.userAgent fails the fetch before the direct fetch or any fallback provider", async () => {
+	for (const userAgent of ["", "  ", "agent\nInjected: 1", 42]) {
+		const output = await fetchWithConfig({ fetchContent: { userAgent }, fetchRouting: { allowRemoteHostedProviders: true } }, "readable");
+		assert.deepEqual(output.userAgents, [], JSON.stringify(userAgent));
+		assert.match(output.error, /^fetchContent\.userAgent in .*web-search\.json must be a non-empty single-line string$/);
+	}
 });
 
 test("readable fetch prefers server markdown while raw mode keeps the normal representation", async () => {
