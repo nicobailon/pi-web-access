@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `fetchContent.userAgent` in `web-search.json` sets the `User-Agent` of the extension's own page fetch, for sites that reject the default `OpenAI File Downloader, XaiImageApiFetch/1.0`, such as some Australian government sites. Leaving it unset keeps the default. Thanks to [@r1ckyIn](https://github.com/r1ckyIn) for [issue #568](https://github.com/nicobailon/pi-web-access/issues/568).
+
 ### Fixed
 
 - A SearXNG instance on the same machine (`searxngBaseUrl` on `localhost`, `127.0.0.0/8`, or `::1`) now works without adding loopback to `ssrf.allowRanges`, which also opened every local service to `fetch_content`. The exemption covers only the configured origin, so a redirect to another local service is still blocked. Thanks to [@mikeydiamonds](https://github.com/mikeydiamonds) for [PR #569](https://github.com/nicobailon/pi-web-access/pull/569).
