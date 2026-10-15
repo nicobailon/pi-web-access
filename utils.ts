@@ -306,8 +306,9 @@ function noProxyEntryMatches(hostname: string, entry: string): boolean {
 export function isProxyBypassedUrl(url: URL): boolean {
 	const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
 	if (hostname === "localhost" || hostname.endsWith(".localhost") || hostname === "127.0.0.1" || hostname === "::1") return true;
-	// GCE metadata server is link-local and must be reached directly, never via proxy.
-	if (hostname === "metadata.google.internal" || hostname === "169.254.169.254") return true;
+	// GCE metadata server (and any GCE_METADATA_HOST override) must be reached directly, never via proxy.
+	const gceHost = process.env.GCE_METADATA_HOST?.trim().replace(/^https?:\/\//i, "").replace(/\/+$/, "");
+	if (hostname === "metadata.google.internal" || hostname === "169.254.169.254" || (gceHost && noProxyEntryMatches(hostname, gceHost))) return true;
 	const noProxy = process.env.NO_PROXY || process.env.no_proxy;
 	if (noProxy && noProxy.split(",").some((entry) => noProxyEntryMatches(hostname, entry.trim()))) return true;
 	return false;

@@ -76,7 +76,7 @@ function hasExplicitAdcPath(): boolean {
 }
 
 function getMetadataHost(): string {
-	return process.env.GCE_METADATA_HOST?.trim() || DEFAULT_METADATA_HOST;
+	return (process.env.GCE_METADATA_HOST?.trim() || DEFAULT_METADATA_HOST).replace(/^https?:\/\//i, "").replace(/\/+$/, "");
 }
 
 function isOnGcp(): boolean {

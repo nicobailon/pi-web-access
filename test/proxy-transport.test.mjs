@@ -683,16 +683,28 @@ test("generic socks proxy is rejected before transport runs", async (t) => {
 test("GCE metadata server hosts always bypass proxy transport", (t) => {
 	const previousNoProxy = process.env.NO_PROXY;
 	const previousNoProxyLower = process.env.no_proxy;
+	const previousGceHost = process.env.GCE_METADATA_HOST;
 	delete process.env.NO_PROXY;
 	delete process.env.no_proxy;
+	delete process.env.GCE_METADATA_HOST;
 	t.after(() => {
 		if (previousNoProxy === undefined) delete process.env.NO_PROXY;
 		else process.env.NO_PROXY = previousNoProxy;
 		if (previousNoProxyLower === undefined) delete process.env.no_proxy;
 		else process.env.no_proxy = previousNoProxyLower;
+		if (previousGceHost === undefined) delete process.env.GCE_METADATA_HOST;
+		else process.env.GCE_METADATA_HOST = previousGceHost;
 	});
 
 	assert.equal(isProxyBypassedUrl(new URL("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token")), true);
 	assert.equal(isProxyBypassedUrl(new URL("http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token")), true);
+	assert.equal(isProxyBypassedUrl(new URL("https://example.com/page")), false);
+
+	process.env.GCE_METADATA_HOST = "metadata.test:8080";
+	assert.equal(isProxyBypassedUrl(new URL("http://metadata.test:8080/computeMetadata/v1/instance/service-accounts/default/token")), true);
+	assert.equal(isProxyBypassedUrl(new URL("https://example.com/page")), false);
+
+	process.env.GCE_METADATA_HOST = "http://metadata.test:8080";
+	assert.equal(isProxyBypassedUrl(new URL("http://metadata.test:8080/computeMetadata/v1/instance/service-accounts/default/token")), true);
 	assert.equal(isProxyBypassedUrl(new URL("https://example.com/page")), false);
 });
