@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- `geminiAuth: "adc"` now falls back to the Google Compute Engine metadata server when neither `GOOGLE_APPLICATION_CREDENTIALS` nor `~/.config/gcloud/application_default_credentials.json` is present and Pi runs on Google Compute Engine, using the attached service account token (`GCE_METADATA_HOST` overrides the host; `METADATA_SERVER_DETECTION=none` disables detection).
+- `geminiAuth: "adc"` now falls back to the Google Compute Engine metadata server when neither `GOOGLE_APPLICATION_CREDENTIALS` nor `~/.config/gcloud/application_default_credentials.json` is present and Pi runs on Google Compute Engine, using the attached service account token (`GCE_METADATA_HOST` overrides the host; `METADATA_SERVER_DETECTION=none` disables detection). Thanks to [@sergiopadure](https://github.com/sergiopadure) for #572.
 
 ## [0.41.0] - 2026-10-14
 
