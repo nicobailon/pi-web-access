@@ -6,6 +6,7 @@ import { test } from "node:test";
 
 import {
 	CredentialResolutionError,
+	findWindowsBash,
 	hasCredentialSource,
 	resolveCredential,
 } from "../credential-source.ts";
@@ -81,6 +82,30 @@ test("service-account tokens remain absent unless inherited by Pi", async () => 
 		environment: { HOME: "/synthetic/home" },
 	});
 	assert.equal(childEnvironment.OP_SERVICE_ACCOUNT_TOKEN, undefined);
+});
+
+test("command sources keep the Windows variables a bash child needs", async () => {
+	let childEnvironment;
+	await resolveCredential({
+		...options("!secret-get synthetic", undefined),
+		runCommand: async (_command, runOptions) => {
+			childEnvironment = runOptions.environment;
+			return { stdout: "value" };
+		},
+		environment: { USERPROFILE: "C:\\Users\\synthetic", SystemRoot: "C:\\Windows", "ProgramFiles(x86)": "C:\\PF86", UNRELATED_SECRET: "drop" },
+	});
+	assert.deepEqual(childEnvironment, { USERPROFILE: "C:\\Users\\synthetic", SystemRoot: "C:\\Windows", "ProgramFiles(x86)": "C:\\PF86" });
+});
+
+test("Windows bash resolves like Pi: Git Bash installs, then PATH, never the WSL launcher", async () => {
+	const env = { ProgramFiles: "C:\\PF", "ProgramFiles(x86)": "C:\\PF86" };
+	const onPath = path => async () => path;
+	const has = (...paths) => path => paths.includes(path);
+	assert.equal(await findWindowsBash(env, has("C:\\PF86\\Git\\bin\\bash.exe", "C:\\PF\\Git\\bin\\bash.exe"), onPath(null)), "C:\\PF\\Git\\bin\\bash.exe");
+	assert.equal(await findWindowsBash(env, has("C:\\PF86\\Git\\bin\\bash.exe"), onPath(null)), "C:\\PF86\\Git\\bin\\bash.exe");
+	assert.equal(await findWindowsBash(env, has("D:\\msys64\\usr\\bin\\bash.exe"), onPath("D:\\msys64\\usr\\bin\\bash.exe")), "D:\\msys64\\usr\\bin\\bash.exe");
+	assert.equal(await findWindowsBash(env, has("C:\\Windows\\System32\\bash.exe"), onPath("C:\\Windows\\System32\\bash.exe")), null);
+	assert.equal(await findWindowsBash({}, has(), onPath(null)), null);
 });
 
 test("a real resolver child can authenticate with an inherited service-account token", async () => {

@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - `geminiAuth: "adc"` now falls back to the Google Compute Engine metadata server when neither `GOOGLE_APPLICATION_CREDENTIALS` nor `~/.config/gcloud/application_default_credentials.json` is present and Pi runs on Google Compute Engine, using the attached service account token (`GCE_METADATA_HOST` overrides the host; `METADATA_SERVER_DETECTION=none` disables detection). Thanks to [@sergiopadure](https://github.com/sergiopadure) for #572.
 
+### Fixed
+
+- `!command` credential sources now run in Git Bash on Windows (Git for Windows install locations, then `bash.exe` on `PATH`), matching Pi's own `!command` config values, so POSIX syntax such as `$HOME` works. Without a bash they still run in `cmd.exe`. Standard Windows variables such as `USERPROFILE` and `SystemRoot` now reach the command. Thanks to [@estrizhok](https://github.com/estrizhok) for #571.
+
 ## [0.41.0] - 2026-10-14
 
 ### Highlights
