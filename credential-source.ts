@@ -136,9 +136,9 @@ function isMalformedExplicitSource(source: string): boolean {
 	return source.startsWith("$") && escapedSource(source) === null && explicitEnvironmentName(source) === null;
 }
 
-async function bashOnPath(): Promise<string | null> {
+async function bashOnPath(signal: AbortSignal | undefined, timeoutMs: number): Promise<string | null> {
 	try {
-		const { stdout } = await execFileAsync("where", ["bash.exe"], { encoding: "utf8", timeout: COMMAND_TIMEOUT_MS, windowsHide: true });
+		const { stdout } = await execFileAsync("where", ["bash.exe"], { encoding: "utf8", signal, timeout: timeoutMs, windowsHide: true });
 		return stdout.trim().split(/\r?\n/)[0] || null;
 	} catch {
 		return null;
@@ -148,8 +148,8 @@ async function bashOnPath(): Promise<string | null> {
 /** Resolves bash on Windows in Pi's own `!command` order: Git Bash install locations, then bash.exe on PATH. */
 export async function findWindowsBash(
 	environment: Record<string, string | undefined>,
-	exists: (path: string) => boolean = existsSync,
-	findOnPath: () => Promise<string | null> = bashOnPath,
+	exists: (path: string) => boolean,
+	findOnPath: () => Promise<string | null>,
 ): Promise<string | null> {
 	for (const root of [environment.ProgramFiles, environment["ProgramFiles(x86)"]]) {
 		const candidate = root ? `${root}\\Git\\bin\\bash.exe` : null;
@@ -163,15 +163,19 @@ async function defaultRunCommand(
 	command: string,
 	options: CredentialCommandOptions,
 ): Promise<CredentialCommandResult> {
+	// The bash lookup and the command share one timeout budget and the caller's abort signal.
+	const deadline = Date.now() + options.timeoutMs;
+	const bash = process.platform === "win32"
+		? await findWindowsBash(process.env, existsSync, () => bashOnPath(options.signal, options.timeoutMs))
+		: null;
 	const execOptions = {
 		encoding: "utf8",
 		env: options.environment,
 		maxBuffer: options.maxOutputBytes + 1,
 		signal: options.signal,
-		timeout: options.timeoutMs,
+		timeout: Math.max(1, deadline - Date.now()),
 		windowsHide: true,
 	} as const;
-	const bash = process.platform === "win32" ? await findWindowsBash(process.env) : null;
 	const result = bash
 		? await execFileAsync(bash, ["-c", command], execOptions)
 		: await execAsync(command, execOptions);
