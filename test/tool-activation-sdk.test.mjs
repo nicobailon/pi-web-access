@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall, getCurrentTools, getSystemMessageText } from "@earendil-works/pi-ai";
-import { createAgentSession, DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, createToolSearchExtension, DefaultResourceLoader, SessionManager } from "@earendil-works/pi-coding-agent";
 
 const extensionPath = new URL("../index.ts", import.meta.url).pathname;
 const root = mkdtempSync(join(tmpdir(), "pi-web-access-sdk-"));
@@ -43,8 +43,8 @@ function nativeHarness({ api, compat } = {}) {
 		tools: getCurrentTools(context.messages),
 		systemText: context.messages.filter(message => message.role === "system").map(getSystemMessageText).join("\n\n"),
 	});
-	async function start({ extensions, sessionManager, reason, noTools }) {
-		const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, additionalExtensionPaths: extensions ? [extensionPath] : [], noExtensions: !extensions });
+	async function start({ extensions, sessionManager, reason, noTools, extensionFactories }) {
+		const loader = new DefaultResourceLoader({ cwd: root, agentDir: root, additionalExtensionPaths: extensions ? [extensionPath] : [], noExtensions: !extensions, extensionFactories });
 		await loader.reload();
 		const { session, extensionsResult } = await createAgentSession({
 			cwd: root,
@@ -154,4 +154,51 @@ test("native Pi resumes a session recorded without pi-web-access with its record
 	const recorded = requests[0].tools.map(tool => tool.name);
 	assert.ok(recorded.length > 0);
 	assert.deepEqual(requests[1].tools.map(tool => tool.name), recorded);
+});
+
+const deferredWebTools = ["web_search", "source_check", "fetch_content", "get_search_content"];
+
+test("deferred exposure keeps web_enable as the route to web tools on a model without native tool additions", async () => {
+	const requests = await withNativeEnv({ toolExposure: "deferred" }, async () => {
+		const { faux, requests, captureRequest, start } = nativeHarness();
+		faux.setResponses([
+			(context) => {
+				captureRequest(context);
+				return fauxAssistantMessage(fauxToolCall("web_enable", {}), { stopReason: "toolUse" });
+			},
+			(context) => {
+				captureRequest(context);
+				return fauxAssistantMessage("done");
+			},
+		]);
+		const session = await start({ extensions: true, sessionManager: SessionManager.inMemory(root), reason: "startup", noTools: "builtin" });
+		await session.prompt("Research this");
+		session.dispose();
+		return requests;
+	});
+	assert.deepEqual(requests[0].tools.map(tool => tool.name), ["web_enable"]);
+	assert.deepEqual(requests[1].tools.map(tool => tool.name), ["web_enable", ...deferredWebTools]);
+});
+
+test("Pi's tool_search finds and loads a deferred web tool", async () => {
+	const requests = await withNativeEnv({ toolExposure: "deferred" }, async () => {
+		const { faux, requests, captureRequest, start } = nativeHarness();
+		faux.setResponses([
+			(context) => {
+				captureRequest(context);
+				return fauxAssistantMessage(fauxToolCall("tool_search", { query: "fetch content from a URL" }), { stopReason: "toolUse" });
+			},
+			(context) => {
+				captureRequest(context);
+				return fauxAssistantMessage("done");
+			},
+		]);
+		const session = await start({ extensions: true, sessionManager: SessionManager.inMemory(root), reason: "startup", noTools: "builtin", extensionFactories: [createToolSearchExtension()] });
+		session.setActiveToolsByName([...session.getActiveToolNames(), "tool_search"]);
+		await session.prompt("Read https://example.com");
+		session.dispose();
+		return requests;
+	});
+	assert.ok(!requests[0].tools.some(tool => deferredWebTools.includes(tool.name)));
+	assert.ok(requests[1].tools.some(tool => tool.name === "fetch_content"));
 });

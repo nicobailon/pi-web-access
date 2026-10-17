@@ -1069,6 +1069,16 @@ Enabling the tools mid-conversation can cost a prompt-cache miss. Some models ac
 
 Restart Pi after changing it. Dynamic activation needs Pi 0.86.0 or newer; older Pi logs a warning and keeps every enabled web tool available.
 
+`"toolExposure": "deferred"` goes further: `web_search`, `source_check`, `fetch_content`, and `get_search_content` stay off every request until `web_enable` or Pi's `tool_search` loads them. `tool_search` only does this when it is enabled in Pi's settings, for example `"defaultTools": ["+tool_search"]`.
+
+```json
+{
+  "toolExposure": "deferred"
+}
+```
+
+Deferred exposure always uses dynamic activation, so it can't be combined with `"toolActivation": "eager"`. The default is `"direct"`. Restart Pi after changing it. It is not a guaranteed saving: loading the tools later can cost the cache miss described above, and finding them through `tool_search` takes an extra model turn.
+
 ### Shortcuts
 
 Both shortcuts are configurable via `~/.pi/agent/web-search.json`:

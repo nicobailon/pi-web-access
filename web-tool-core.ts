@@ -90,6 +90,7 @@ export interface WebSearchConfig {
 	};
 	tools?: Partial<Record<keyof ToolNames, { enabled?: boolean }>>;
 	toolActivation?: unknown;
+	toolExposure?: unknown;
 	commands?: Partial<Record<"websearch" | "curator" | "search" | "google-account", { enabled?: boolean }>>;
 	toolNames?: Partial<ToolNames>;
 	shortcuts?: {
