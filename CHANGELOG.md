@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - `!command` credential sources now run in Git Bash on Windows (Git for Windows install locations, then `bash.exe` on `PATH`), matching Pi's own `!command` config values, so POSIX syntax such as `$HOME` works. Without a bash they still run in `cmd.exe`. Standard Windows variables such as `USERPROFILE` and `SystemRoot` now reach the command. Thanks to [@estrizhok](https://github.com/estrizhok) for #571.
+- `fetch_content` answer mode and search summaries now work with Pi virtual models (`pi.registerVirtualModel()`). They call Pi's provider-neutral `streamSimple`, which routes a virtual model to its physical model; before, answer mode failed with `Virtual model … must be routed before streaming` and summaries silently fell back to the deterministic text. Thanks to [@yansongda](https://github.com/yansongda) for #574.
 
 ## [0.41.0] - 2026-10-14
 

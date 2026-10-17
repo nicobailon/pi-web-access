@@ -315,7 +315,9 @@ export async function generateSummaryDraft(
 
 	const registry = ctx.modelRegistry as SummaryModelRegistry;
 	const customCompleteFn = completeFn !== undefined;
-	const usesRegistryComplete = !customCompleteFn && typeof registry.complete === "function";
+	// streamSimple is Pi's provider-neutral path and routes virtual models; complete() does not (#574).
+	const usesRegistryStreamSimple = !customCompleteFn && typeof registry.streamSimple === "function";
+	const usesRegistryComplete = !customCompleteFn && !usesRegistryStreamSimple && typeof registry.complete === "function";
 	let piAiCompat: typeof import("@earendil-works/pi-ai/compat") | undefined;
 
 	const generationStartedAt = Date.now();
@@ -368,10 +370,10 @@ export async function generateSummaryDraft(
 		let resolved: Awaited<ReturnType<typeof resolveSummaryModelCandidates>>;
 		try {
 			checkSummaryDeadline();
-			if (!customCompleteFn && !usesRegistryComplete) {
+			if (!customCompleteFn && !usesRegistryStreamSimple && !usesRegistryComplete) {
 				piAiCompat = await raceSummaryOperation(import("@earendil-works/pi-ai/compat"));
 			}
-			completeFn ??= usesRegistryComplete ? registry.complete!.bind(registry) as CompleteFunction : piAiCompat!.complete;
+			if (!usesRegistryStreamSimple) completeFn ??= usesRegistryComplete ? registry.complete!.bind(registry) as CompleteFunction : piAiCompat!.complete;
 			resolved = await raceSummaryOperation(resolveSummaryModelCandidates(ctx, modelOverride));
 		} catch (err) {
 			checkSummaryDeadline();
@@ -395,6 +397,12 @@ export async function generateSummaryDraft(
 				const enabledThinkingLevel = requestedThinkingLevel && requestedThinkingLevel !== "off"
 					? requestedThinkingLevel as ThinkingLevel
 					: undefined;
+				const simpleOptions = {
+					sessionId,
+					cacheRetention: "none" as const,
+					signal: completionSignal,
+					...(enabledThinkingLevel ? { reasoning: enabledThinkingLevel } : {}),
+				};
 				const completionOptions = {
 					...(usesRegistryComplete ? {} : { apiKey, headers }),
 					sessionId,
@@ -404,9 +412,11 @@ export async function generateSummaryDraft(
 					...(enabledThinkingLevel ? { reasoningEffort: enabledThinkingLevel } : {}),
 				};
 				checkSummaryDeadline();
-				const completion = thinkingLevel !== undefined && !customCompleteFn && !usesRegistryComplete
-					? piAiCompat!.completeSimple(model, { messages: [userMessage] }, { apiKey, headers, sessionId, cacheRetention: "none", signal: completionSignal, ...(enabledThinkingLevel ? { reasoning: enabledThinkingLevel } : {}) })
-					: completeFn(model, { messages: [userMessage] }, completionOptions);
+				const completion = usesRegistryStreamSimple
+					? registry.streamSimple(model, { messages: [userMessage] }, simpleOptions).result()
+					: thinkingLevel !== undefined && !customCompleteFn && !usesRegistryComplete
+						? piAiCompat!.completeSimple(model, { messages: [userMessage] }, { apiKey, headers, ...simpleOptions })
+						: completeFn!(model, { messages: [userMessage] }, completionOptions);
 
 				const response = await raceSummaryOperation(Promise.resolve(completion));
 				if (response.stopReason === "aborted") {

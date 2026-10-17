@@ -27,21 +27,24 @@ export async function rewriteSearchQuery(
 		{ provider: "openai", id: "gpt-5-mini" },
 	]);
 	const registry = ctx.modelRegistry as typeof ctx.modelRegistry & { complete?: typeof complete };
-	const usesRegistryComplete = typeof registry.complete === "function";
+	// streamSimple is Pi's provider-neutral path and routes virtual models; complete() does not (#574).
+	const usesRegistryStreamSimple = typeof registry.streamSimple === "function";
+	const usesRegistryComplete = !usesRegistryStreamSimple && typeof registry.complete === "function";
 	if (signal.aborted) throw new Error("Aborted");
-	const completeFn = usesRegistryComplete ? registry.complete!.bind(registry) : (await awaitWithAbort(import("@earendil-works/pi-ai/compat"), signal)).complete;
+	const completeFn = usesRegistryStreamSimple
+		? undefined
+		: usesRegistryComplete ? registry.complete!.bind(registry) : (await awaitWithAbort(import("@earendil-works/pi-ai/compat"), signal)).complete;
 	if (signal.aborted) throw new Error("Aborted");
-	const response = await completeFn(
-		model,
-		{
-			messages: [{
-				role: "user",
-				content: [{ type: "text", text: `Rewrite this web search query to get better, more specific results. Add relevant year qualifiers, precise technical terms, and specificity. Return ONLY the improved query text, nothing else.\n\nQuery: ${query}` }],
-				timestamp: Date.now(),
-			}],
-		},
-		usesRegistryComplete ? { signal } : { apiKey, headers, signal },
-	);
+	const context = {
+		messages: [{
+			role: "user" as const,
+			content: [{ type: "text" as const, text: `Rewrite this web search query to get better, more specific results. Add relevant year qualifiers, precise technical terms, and specificity. Return ONLY the improved query text, nothing else.\n\nQuery: ${query}` }],
+			timestamp: Date.now(),
+		}],
+	};
+	const response = completeFn
+		? await completeFn(model, context, usesRegistryComplete ? { signal } : { apiKey, headers, signal })
+		: await registry.streamSimple(model, context, { signal }).result();
 	if (response.stopReason === "aborted") throw new Error("Aborted");
 	const contentParts = Array.isArray(response.content) ? response.content : [];
 	const text = contentParts
