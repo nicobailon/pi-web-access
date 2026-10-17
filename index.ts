@@ -71,6 +71,7 @@ import { isSerperAvailable } from "./serper.ts";
 import { isSerplyAvailable } from "./serply.ts";
 import { isKeenableAvailable } from "./keenable.ts";
 import { isCeramicAvailable } from "./ceramic.ts";
+import { isDeepSeekAvailable } from "./deepseek.ts";
 import { isBaizhiAvailable } from "./baizhi.ts";
 import { isZaiAvailable } from "./zai.ts";
 import { isValyuAvailable } from "./valyu.ts";
@@ -345,6 +346,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		valyu: allowedProviders.has("valyu") && isValyuAvailable(),
 		keenable: allowedProviders.has("keenable") && isKeenableAvailable(),
 		ceramic: allowedProviders.has("ceramic") && isCeramicAvailable(),
+		deepseek: allowedProviders.has("deepseek") && isDeepSeekAvailable(),
 	};
 	return {
 		all: ALL_SEARCH_PROVIDERS.some(provider => provider === "gemini" ? geminiApiAvail : providers[provider]),

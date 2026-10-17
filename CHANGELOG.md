@@ -7,6 +7,7 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - `geminiAuth: "adc"` now falls back to the Google Compute Engine metadata server when neither `GOOGLE_APPLICATION_CREDENTIALS` nor `~/.config/gcloud/application_default_credentials.json` is present and Pi runs on Google Compute Engine, using the attached service account token (`GCE_METADATA_HOST` overrides the host; `METADATA_SERVER_DETECTION=none` disables detection). Thanks to [@sergiopadure](https://github.com/sergiopadure) for #572.
+- New DeepSeek search provider for DeepSeek's [Search API](https://api-docs.deepseek.com/guides/search), used only when you select it. Set `deepseekApiKey` or `DEEPSEEK_API_KEY` to your DeepSeek API key. The API is billed per successful request, so it is never picked by `auto` or `all`. Allowed and excluded domains become `site:` and `-site:` filters in the query, and `recencyFilter` becomes an `after:` date. DeepSeek limits a query to 128 characters including those filters, so a longer one fails before any request is sent. Thanks to [@syxb2](https://github.com/syxb2) for #577 and [@Lang646](https://github.com/Lang646) for the API details on #119.
 
 ### Fixed
 

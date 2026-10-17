@@ -64,6 +64,7 @@ export interface WebSearchConfig {
 	valyuApiKey?: unknown;
 	keenableApiKey?: unknown;
 	ceramicApiKey?: unknown;
+	deepseekApiKey?: unknown;
 	degoogBaseUrl?: unknown;
 	degoogApiKey?: unknown;
 	degoogEngines?: unknown;
