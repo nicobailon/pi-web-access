@@ -198,5 +198,7 @@ export async function searchWithDeepSeek(query: string, options: SearchOptions =
 		});
 		if (results.length >= numResults) break;
 	}
+	// A non-empty page with no usable entry is a broken response, not "no results", so routing can fall back.
+	if (entries.length > 0 && results.length === 0) throw new Error("DeepSeek returned invalid response: no result had an http(s) URL");
 	return { answer: formatSearchResultsAsAnswer(results), results };
 }

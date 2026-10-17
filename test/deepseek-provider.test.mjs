@@ -140,20 +140,22 @@ test("DeepSeek reports API errors redacted and rejects malformed responses", () 
 		const responses = [
 			new Response(JSON.stringify({ error: { message: "Insufficient Balance for ds-secret", type: "invalid_request_error", param: null, code: "invalid_request_error" } }), { status: 402 }),
 			new Response(JSON.stringify({ data: [] })),
+			new Response(JSON.stringify({ results: [{ url: null }, { url: "file:///tmp/x" }] })),
 			new Response("not json"),
 		];
 		globalThis.fetch = async () => responses.shift();
 		const { searchWithDeepSeek } = await import(${JSON.stringify(deepseekModuleUrl)});
 		const errors = [];
-		for (let i = 0; i < 3; i++) {
+		for (let i = 0; i < 4; i++) {
 			try { await searchWithDeepSeek("broken"); } catch (error) { errors.push(String(error)); }
 		}
 		console.log(JSON.stringify(errors));
 	`, { PI_CODING_AGENT_DIR: home });
-	const [balance, malformed, json] = errors;
+	const [balance, malformed, unusable, json] = errors;
 	assert.match(balance, /DeepSeek error 402: Insufficient Balance for \[redacted\]/);
 	assert.doesNotMatch(balance, /ds-secret/);
 	assert.match(malformed, /DeepSeek returned invalid response: expected a results array/);
+	assert.match(unusable, /DeepSeek returned invalid response: no result had an http\(s\) URL/);
 	assert.match(json, /DeepSeek returned invalid JSON/);
 }));
 
