@@ -848,6 +848,8 @@ The value must be a non-empty array containing each of `web_search` and `x_searc
 
 xAI's older Live Search (`search_parameters` on `/v1/chat/completions`) is deprecated and now answers HTTP 410.
 
+`xaiResponsesUrl` points xAI search at another full Responses endpoint, such as a gateway that relays to a Grok subscription; it must be an absolute http(s) URL and defaults to `https://api.x.ai/v1/responses`. When it is set, Pi's xAI sign-in is never used or sent there: only `xaiApiKey` / `XAI_API_KEY` apply, and without one xAI is unavailable. `xaiSearchTimeoutMs` sets the xAI request timeout (default `60000`, a positive integer capped at `600000`); `x_search` questions that run many X tool calls can take longer than a minute.
+
 ### Mistral Conversations
 
 Mistral is an explicit-only provider. Set `mistralApiKey` or `MISTRAL_API_KEY`, then select `provider: "mistral"` or place `"mistral"` in `searchRouting.providers`; it is never chosen by `auto` and never participates in `provider: "all"`. Requests use direct HTTP `POST https://api.mistral.ai/v1/conversations` with bearer authentication and do not require the Mistral SDK.

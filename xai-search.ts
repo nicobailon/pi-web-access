@@ -25,7 +25,8 @@ import { getWebSearchConfigPath } from "./utils.ts";
 
 const XAI_RESPONSES_URL = "https://api.x.ai/v1/responses";
 const CONFIG_PATH = getWebSearchConfigPath();
-const SEARCH_TIMEOUT_MS = 60_000;
+const DEFAULT_SEARCH_TIMEOUT_MS = 60_000;
+const MAX_SEARCH_TIMEOUT_MS = 600_000;
 
 // Ordered best-first. pi's builtin xai catalog is small and xAI retires models
 // briskly, so this is a preference list, not an assumption: the first one the
@@ -40,7 +41,9 @@ const DEFAULT_XAI_SEARCH_TOOLS = ["web_search"] as const satisfies readonly XaiS
 
 interface WebSearchConfig {
 	xaiApiKey?: unknown;
+	xaiResponsesUrl?: unknown;
 	xaiSearchModel?: unknown;
+	xaiSearchTimeoutMs?: unknown;
 	xaiSearchTools?: unknown;
 }
 
@@ -77,6 +80,33 @@ function resolveConfiguredSearchModel(value: unknown): string | undefined {
 		throw new Error(`xaiSearchModel in ${CONFIG_PATH} must be a non-empty string`);
 	}
 	return value.trim();
+}
+
+// A custom endpoint (for example a gateway relaying to a Grok subscription)
+// only ever receives the configured xAI API key, never Pi's xAI sign-in.
+function resolveConfiguredResponsesUrl(value: unknown): string | undefined {
+	if (value === undefined) return undefined;
+	if (typeof value !== "string" || value.trim().length === 0) {
+		throw new Error(`xaiResponsesUrl in ${CONFIG_PATH} must be an absolute http(s) URL`);
+	}
+	let url: URL;
+	try {
+		url = new URL(value.trim());
+	} catch {
+		throw new Error(`xaiResponsesUrl in ${CONFIG_PATH} must be an absolute http(s) URL`);
+	}
+	if (url.protocol !== "https:" && url.protocol !== "http:") {
+		throw new Error(`xaiResponsesUrl in ${CONFIG_PATH} must use http or https`);
+	}
+	return url.toString();
+}
+
+function resolveConfiguredSearchTimeoutMs(value: unknown): number {
+	if (value === undefined) return DEFAULT_SEARCH_TIMEOUT_MS;
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new Error(`xaiSearchTimeoutMs in ${CONFIG_PATH} must be a positive integer`);
+	}
+	return Math.min(value, MAX_SEARCH_TIMEOUT_MS);
 }
 
 function resolveConfiguredSearchTools(value: unknown): XaiSearchTool[] {
@@ -138,7 +168,7 @@ export async function resolveXaiAuth(ctx?: ExtensionContext, signal?: AbortSigna
 	const config = loadConfig();
 	const modelOverride = resolveConfiguredSearchModel(config.xaiSearchModel);
 	const tools = resolveConfiguredSearchTools(config.xaiSearchTools);
-	if (ctx) {
+	if (ctx && resolveConfiguredResponsesUrl(config.xaiResponsesUrl) === undefined) {
 		const auth = await resolvePiAuth(ctx, modelOverride, tools);
 		if (auth) return auth;
 	}
@@ -161,13 +191,16 @@ export async function resolveXaiAuth(ctx?: ExtensionContext, signal?: AbortSigna
 export async function isXaiSearchAvailable(ctx?: ExtensionContext): Promise<boolean> {
 	let config: WebSearchConfig;
 	let tools: XaiSearchTool[];
+	let customUrl: string | undefined;
 	try {
 		config = loadConfig();
 		tools = resolveConfiguredSearchTools(config.xaiSearchTools);
+		customUrl = resolveConfiguredResponsesUrl(config.xaiResponsesUrl);
+		resolveConfiguredSearchTimeoutMs(config.xaiSearchTimeoutMs);
 	} catch {
 		return false;
 	}
-	if (ctx && await resolvePiAuth(ctx, undefined, tools)) return true;
+	if (ctx && customUrl === undefined && await resolvePiAuth(ctx, undefined, tools)) return true;
 	return hasCredentialSource({
 		provider: "xAI",
 		configuredValue: config.xaiApiKey,
@@ -330,9 +363,18 @@ export async function searchWithXai(
 	options: SearchOptions = {},
 	ctx?: ExtensionContext,
 ): Promise<SearchResponse> {
-	const tools = resolveConfiguredSearchTools(loadConfig().xaiSearchTools);
+	const config = loadConfig();
+	const tools = resolveConfiguredSearchTools(config.xaiSearchTools);
+	const customUrl = resolveConfiguredResponsesUrl(config.xaiResponsesUrl);
+	const timeoutMs = resolveConfiguredSearchTimeoutMs(config.xaiSearchTimeoutMs);
 	const auth = await resolveXaiAuth(ctx, options.signal);
 	if (!auth) {
+		if (customUrl) {
+			throw new Error(
+				`xAI search unavailable: xaiResponsesUrl is set, so Pi's xAI sign-in is not used. ` +
+				`Set xaiApiKey in ${CONFIG_PATH} or the XAI_API_KEY environment variable to the key for that endpoint.`,
+			);
+		}
 		throw new Error(
 			"xAI search unavailable. Either:\n" +
 			"  1. Use /login to sign in with a SuperGrok or X Premium subscription\n" +
@@ -343,7 +385,7 @@ export async function searchWithXai(
 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
-		const response = await fetch(XAI_RESPONSES_URL, {
+		const response = await fetch(customUrl ?? XAI_RESPONSES_URL, {
 			method: "POST",
 			headers: {
 				...toRequestHeaders(auth.headers),
@@ -356,8 +398,8 @@ export async function searchWithXai(
 				tools: tools.map((type) => ({ type })),
 			}),
 			signal: options.signal
-				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
-				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+				? AbortSignal.any([AbortSignal.timeout(timeoutMs), options.signal])
+				: AbortSignal.timeout(timeoutMs),
 		});
 
 		if (!response.ok) {
