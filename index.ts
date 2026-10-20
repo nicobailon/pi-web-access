@@ -1489,6 +1489,7 @@ export default function (pi: ExtensionAPI) {
 				let cancelled = false;
 
 				const requestedProvider = resolveRequestedProvider(params.provider);
+				const providerFromConfig = (normalizeProviderInput(params.provider) ?? "auto") === "auto";
 				const bootstrap = await loadCuratorBootstrap(requestedProvider, ctx, {
 					numResults: params.numResults,
 					recencyFilter,
@@ -1577,6 +1578,8 @@ export default function (pi: ExtensionAPI) {
 					try {
 						const response = await search(query, {
 							provider: requestedProvider,
+							// A provider picked in the curator UI replaces this value and stays strict.
+							providerFromConfig: providerFromConfig && requestedProvider === searchProvider,
 							numResults: params.numResults,
 							recencyFilter,
 							domainFilter: params.domainFilter,

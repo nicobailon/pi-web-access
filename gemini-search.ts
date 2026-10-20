@@ -266,6 +266,8 @@ export function normalizeSearchProviderSelection(value: unknown, label = "provid
 
 export interface FullSearchOptions extends SearchOptions {
 	provider?: SearchProviderSelection;
+	/** The caller already substituted the configured default for an omitted or "auto" provider. */
+	providerFromConfig?: boolean;
 	includeContent?: boolean;
 	extensionContext?: ExtensionContext;
 	/** Forwarded to providers that understand it (currently Exa); ignored elsewhere. */
@@ -554,6 +556,7 @@ async function searchWithProviders(
 	query: string,
 	options: FullSearchOptions,
 	selectedProviders?: ResolvedSearchProvider[],
+	routing?: SearchRoutingConfig,
 ): Promise<AttributedSearchResponse> {
 	const allowed = getAllowedSearchProviders();
 	const providers = selectedProviders ?? (await Promise.all(ALL_SEARCH_PROVIDERS.filter(provider => allowed.includes(provider)).map(async (provider) => ({
@@ -585,7 +588,20 @@ async function searchWithProviders(
 	}
 	if (successes.length === 0) {
 		const label = selectedProviders ? "Selected-provider" : "All-provider";
-		throw new Error(`${label} search failed:\n  - ${failures.map(({ provider, error }) => `${providerLabel(provider)}: ${error}`).join("\n  - ")}`);
+		const failureMessage = `${label} search failed:\n  - ${failures.map(({ provider, error }) => `${providerLabel(provider)}: ${error}`).join("\n  - ")}`;
+		// Routing continues only when every array failure is a kind it would itself fall back on.
+		if (!routing || !settled.every((outcome, index) => outcome.status === "rejected" &&
+			routing.fallbackOn.includes(classifyProviderError(providers[index], outcome.reason).kind as SearchRoutingConfig["fallbackOn"][number]))) {
+			throw new Error(failureMessage);
+		}
+		const untried = routing.providers.filter((provider) => !providers.includes(provider));
+		try {
+			if (untried.length === 0) throw new Error("Configured search routing has no untried providers");
+			return await searchWithConfiguredRouting(query, options, { ...routing, providers: untried });
+		} catch (err) {
+			if (isAbortError(err)) throw err;
+			throw new Error(`${failureMessage}\n${errorMessage(err)}`);
+		}
 	}
 
 	const results: SearchResult[] = [];
@@ -656,7 +672,10 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		: options.provider;
 	assertSearchProviderSelectionAllowed(provider, "Requested provider");
 	if (Array.isArray(provider)) {
-		return searchWithProviders(query, options, normalizeResolvedProviderList(provider, "provider"));
+		// Only a config-default array falls back to searchRouting; a per-call array stays strict.
+		const fromConfig = options.providerFromConfig === true || options.provider === undefined || options.provider === "auto";
+		const routing = fromConfig ? config.searchRouting : undefined;
+		return searchWithProviders(query, options, normalizeResolvedProviderList(provider, "provider"), routing);
 	}
 	if (provider === "all") return searchWithProviders(query, options);
 	if (provider !== "auto") return searchWithResolvedProvider(provider, query, options);

@@ -771,6 +771,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			const allUrls: string[] = [];
 			const allInlineContent: ExtractedContent[] = [];
 			const resolvedProvider = resolveRequestedProvider(params.provider);
+			const providerFromConfig = (normalizeProviderInput(params.provider) ?? "auto") === "auto";
 
 			const queryResponses = await runSearchQueries(queryList, async (query) => {
 				signal?.throwIfAborted();
@@ -782,6 +783,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				try {
 					const { answer, results, inlineContent, provider, providerResponses } = await search(query, {
 						provider: resolvedProvider,
+						providerFromConfig,
 						numResults: params.numResults,
 						recencyFilter,
 						domainFilter: params.domainFilter,
@@ -880,6 +882,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				try {
 					const response = await search(query, {
 						provider: resolveRequestedProvider(params.provider),
+						providerFromConfig: (normalizeProviderInput(params.provider) ?? "auto") === "auto",
 						numResults,
 						recencyFilter,
 						domainFilter,
