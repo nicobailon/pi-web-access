@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Optional Linkup search provider. Set `linkupApiKey` or `LINKUP_API_KEY` and select `provider: "linkup"`. Configure `linkupDepth` as `flash`, `fast` (default), `standard`, or `deep`. Supports result limits, domain filters, recency filters, and inline text content. Linkup is excluded from the built-in `auto` chain and `all` because searches consume account credits. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #584](https://github.com/nicobailon/pi-web-access/pull/584).
 - DeepSeek search now exposes native page content through `includeContent` by sending `need_content: true`, and DeepSeek Fetch is available as an opt-in `fetch_content` provider. Add `deepseek` to `fetchRouting.providers` and set `fetchRouting.allowRemoteHostedProviders` to `true`; it calls `POST https://api.deepseek.com/v1/tools/fetch` and returns Markdown, sharing `deepseekApiKey`/`DEEPSEEK_API_KEY` with search. Thanks to [@Jerry2003sky](https://github.com/Jerry2003sky) for [issue #582](https://github.com/nicobailon/pi-web-access/issues/582) and [@Ebotian](https://github.com/Ebotian) for [PR #585](https://github.com/nicobailon/pi-web-access/pull/585).
 - `xaiResponsesUrl` sends xAI search to another Responses endpoint, such as a gateway that relays `x_search` to a Grok subscription. Only `xaiApiKey` or `XAI_API_KEY` goes to that endpoint; Pi's xAI sign-in is never sent there. `xaiSearchTimeoutMs` raises the 60-second xAI request timeout, up to 10 minutes, for `x_search` questions that take longer. Thanks to [@zane668](https://github.com/zane668) for [issue #583](https://github.com/nicobailon/pi-web-access/issues/583).
 
@@ -65,6 +66,7 @@ All notable changes to this project will be documented in this file.
 - `fetch_content` answer mode now answers from a YouTube or local-video transcript that comes with a thumbnail, instead of failing with "Page answer requires textual fetched content". Requests for several video frames are refused in answer mode instead of being answered from a placeholder line. Thanks to [@goodman-b](https://github.com/goodman-b) for [PR #562](https://github.com/nicobailon/pi-web-access/pull/562).
 - `get_search_content` `findText` excerpts no longer end in half an emoji. A character split at the excerpt edge shows as `�`, so the text stays valid. Thanks to [@yazanabuashour](https://github.com/yazanabuashour) for [PR #563](https://github.com/nicobailon/pi-web-access/pull/563).
 - Reading stored content page by page with `fetch_content` and `get_search_content` no longer splits an emoji across two pages. The whole character starts the next page, and the next-page offset points to it ([#564](https://github.com/nicobailon/pi-web-access/issues/564)).
+
 ## [0.39.0] - 2026-10-11
 
 ### Highlights
