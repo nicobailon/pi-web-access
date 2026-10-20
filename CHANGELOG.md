@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - A default `provider` array now falls back to `searchRouting` when every provider in it fails. Before, setting `provider` turned routing off, so `["exa", "brave"]` with both down returned an error without trying the routing list. The fallback starts only when each array failure is a `fallbackOn` type, and skips providers the array already tried. An array passed in a tool call stays strict. Thanks to [@isjiajia01](https://github.com/isjiajia01) for #580.
+- `fetch_content` in readable mode returns a complete short page instead of reporting it as incomplete. A static page whose whole visible text is under 500 characters is accepted once something is extracted from it; pages that run scripts still fall through to other providers, since their short text may be a loading placeholder. When content still looks incomplete, the error now says how many characters were extracted from how much visible text on the page. Thanks to [@donnielrt](https://github.com/donnielrt) for #581.
 
 ## [0.42.0] - 2026-10-17
 

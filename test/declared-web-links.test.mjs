@@ -208,5 +208,5 @@ test("HTML extraction surfaces declared documentation links without broad URL he
 		output.generic.content,
 		/https:\/\/example\.com\/developers/,
 	);
-	assert.ok(output.generic.error);
+	assert.equal(output.generic.error, null);
 });

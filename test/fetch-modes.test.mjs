@@ -206,3 +206,25 @@ test("readable mode returns supported image content", async () => {
 	assert.equal(result.thumbnail?.mimeType, "image/png");
 	assert.match(result.content, /Image fetched \(1×1, image\/png\)/);
 });
+
+test("readable mode accepts a complete short page and reports a partial extraction with counts", async () => {
+	const fetchHtml = async (html) => {
+		globalThis.fetch = async () => new Response(html, { headers: { "content-type": "text/html" } });
+		return extractContent("https://example.com/page", undefined, { lookup });
+	};
+
+	const dataBlocks = '<script type="application/ld+json">{"@type":"Article"}</script>'.repeat(4) + '<script type="text/template"><p>row</p></script>';
+	const short = await fetchHtml(`<html><head><title>Short Note</title>${dataBlocks}</head><body><h1>Short Note</h1><p>This page is intentionally short and complete.</p></body></html>`);
+	assert.equal(short.error, null);
+	assert.equal(short.title, "Short Note");
+	assert.match(short.content, /intentionally short and complete/);
+
+	const scripted = await fetchHtml('<html><head><title>Short Note</title><script src="/app.js"></script></head><body><h1>Short Note</h1><p>This page is intentionally short and complete.</p></body></html>');
+	assert.match(scripted.error, /^Extracted content appears incomplete: the page has only \d+ characters of visible text and runs scripts/);
+	const legacyType = await fetchHtml('<html><head><title>Short Note</title><script type="text/jscript" src="/app.js"></script></head><body><h1>Short Note</h1><p>This page is intentionally short and complete.</p></body></html>');
+	assert.match(legacyType.error, /runs scripts/);
+
+	const links = Array.from({ length: 40 }, (_, i) => `<li><a href="/section-${i}">Navigation section number ${i}</a></li>`).join("");
+	const teaser = await fetchHtml(`<html><head><title>Teaser</title></head><body><nav><ul>${links}</ul></nav><article><h1>Teaser</h1><p>Only the first paragraph of this story is shown here.</p></article><footer><ul>${links}</ul></footer></body></html>`);
+	assert.match(teaser.error, /^Extracted content appears incomplete: extracted 53 characters from a page with \d{4} characters of visible text/);
+});
