@@ -373,3 +373,119 @@ test("xAI answers with no answer text and no sources fail loudly", async () => {
 	assert.equal(output.ok, false);
 	assert.match(output.error, /returned no answer or sources/);
 });
+
+// A fake Pi registry that would hand out a Grok subscription token. With a
+// custom endpoint that token must never be read or sent.
+const piRegistryCtx = `
+	const registryCalls = [];
+	const ctx = { modelRegistry: {
+		find: (provider, id) => ({ provider, id }),
+		getApiKeyAndHeaders: async (model) => { registryCalls.push(model.id); return { ok: true, apiKey: "pi-oauth-token", headers: { "x-pi": "1" } }; },
+	} };
+`;
+
+test("xaiResponsesUrl sends the configured key and unchanged body to the custom endpoint, never Pi credentials", async () => {
+	const home = await createHome({ xaiApiKey: "gateway-key", xaiResponsesUrl: "http://127.0.0.1:8317/v1/responses", xaiSearchModel: "grok/grok-4.7" });
+	const child = runChild(`
+		${piRegistryCtx}
+		let captured;
+		globalThis.fetch = async (url, init) => {
+			captured = { url: String(url), headers: Object.fromEntries(new Headers(init.headers)), body: JSON.parse(init.body) };
+			return new Response(${JSON.stringify(successBody())}, { status: 200 });
+		};
+		const { searchWithXai, isXaiSearchAvailable } = await import(${JSON.stringify(xaiModuleUrl)});
+		const available = await isXaiSearchAvailable(ctx);
+		await searchWithXai("gateway", {}, ctx);
+		console.log(JSON.stringify({ available, captured, registryCalls }));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	const { available, captured, registryCalls } = JSON.parse(child.stdout.trim());
+	assert.equal(available, true);
+	assert.equal(captured.url, "http://127.0.0.1:8317/v1/responses");
+	assert.equal(captured.headers.authorization, "Bearer gateway-key");
+	assert.equal(captured.headers["x-pi"], undefined);
+	assert.deepEqual(Object.keys(captured.body).sort(), ["input", "model", "tools"]);
+	assert.equal(captured.body.model, "grok/grok-4.7");
+	assert.deepEqual(registryCalls, []);
+});
+
+test("xaiResponsesUrl without an xAI key leaves xAI unavailable even when Pi is signed in", async () => {
+	const home = await createHome({ xaiResponsesUrl: "https://gateway.example.com/v1/responses" });
+	const child = runChild(`
+		${piRegistryCtx}
+		const calls = [];
+		globalThis.fetch = async (url) => { calls.push(String(url)); throw new Error("must not reach the network"); };
+		const { searchWithXai, isXaiSearchAvailable } = await import(${JSON.stringify(xaiModuleUrl)});
+		const available = await isXaiSearchAvailable(ctx);
+		let error;
+		try { await searchWithXai("no key", {}, ctx); } catch (err) { error = String(err); }
+		console.log(JSON.stringify({ available, error, calls, registryCalls }));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.available, false);
+	assert.match(output.error, /xaiResponsesUrl is set/);
+	assert.match(output.error, /xaiApiKey/);
+	assert.deepEqual(output.calls, []);
+	assert.deepEqual(output.registryCalls, []);
+});
+
+test("without xaiResponsesUrl, Pi's xAI sign-in still wins on api.x.ai", async () => {
+	const home = await createHome({ xaiApiKey: "xai-key" });
+	const child = runChild(`
+		${piRegistryCtx}
+		let captured;
+		globalThis.fetch = async (url, init) => { captured = { url: String(url), headers: Object.fromEntries(new Headers(init.headers)) }; return new Response(${JSON.stringify(successBody())}, { status: 200 }); };
+		const { searchWithXai } = await import(${JSON.stringify(xaiModuleUrl)});
+		await searchWithXai("default", {}, ctx);
+		console.log(JSON.stringify(captured));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	const captured = JSON.parse(child.stdout.trim());
+	assert.equal(captured.url, "https://api.x.ai/v1/responses");
+	assert.equal(captured.headers.authorization, "Bearer pi-oauth-token");
+});
+
+test("invalid xaiResponsesUrl or xaiSearchTimeoutMs is a config error", async () => {
+	const cases = [
+		[{ xaiResponsesUrl: "gateway.example.com/v1/responses" }, /xaiResponsesUrl .* absolute http\(s\) URL/],
+		[{ xaiResponsesUrl: "ftp://gateway.example.com/v1/responses" }, /xaiResponsesUrl .* must use http or https/],
+		[{ xaiSearchTimeoutMs: 0 }, /xaiSearchTimeoutMs .* positive integer/],
+		[{ xaiSearchTimeoutMs: "120000" }, /xaiSearchTimeoutMs .* positive integer/],
+		[{ xaiSearchTimeoutMs: 1.5 }, /xaiSearchTimeoutMs .* positive integer/],
+	];
+	for (const [config, pattern] of cases) {
+		const home = await createHome({ xaiApiKey: "xai-key", ...config });
+		const child = runChild(`
+			globalThis.fetch = async () => { throw new Error("must not reach the network"); };
+			const { searchWithXai, isXaiSearchAvailable } = await import(${JSON.stringify(xaiModuleUrl)});
+			const available = await isXaiSearchAvailable();
+			let error;
+			try { await searchWithXai("bad config"); } catch (err) { error = err.message; }
+			console.log(JSON.stringify({ available, error }));
+		`, { PI_CODING_AGENT_DIR: home });
+		assert.equal(child.status, 0, child.stderr);
+		const { available, error } = JSON.parse(child.stdout.trim());
+		assert.equal(available, false, JSON.stringify(config));
+		assert.match(error ?? "", pattern, JSON.stringify(config));
+	}
+});
+
+test("xaiSearchTimeoutMs bounds the xAI request", async () => {
+	const home = await createHome({ xaiApiKey: "xai-key", xaiSearchTimeoutMs: 50 });
+	const child = runChild(`
+		globalThis.fetch = (_url, init) => new Promise((_resolve, reject) => {
+			init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true });
+		});
+		const { searchWithXai } = await import(${JSON.stringify(xaiModuleUrl)});
+		let timer;
+		const outcome = await Promise.race([
+			searchWithXai("slow").then(() => "resolved", (err) => err.name),
+			new Promise((resolve) => { timer = setTimeout(() => resolve("still-waiting"), 2000); }),
+		]);
+		clearTimeout(timer);
+		console.log(JSON.stringify({ outcome }));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	assert.equal(JSON.parse(child.stdout.trim()).outcome, "TimeoutError");
+});
