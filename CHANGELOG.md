@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Optional Linkup search provider. Set `linkupApiKey` or `LINKUP_API_KEY` and select `provider: "linkup"`. Configure `linkupDepth` as `flash`, `fast` (default), `standard`, or `deep`. Supports result limits, domain filters, recency filters, and inline text content. Linkup is excluded from the built-in `auto` chain and `all` because searches consume account credits. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #584](https://github.com/nicobailon/pi-web-access/pull/584).
 - DeepSeek search now exposes native page content through `includeContent` by sending `need_content: true`, and DeepSeek Fetch is available as an opt-in `fetch_content` provider. Add `deepseek` to `fetchRouting.providers` and set `fetchRouting.allowRemoteHostedProviders` to `true`; it calls `POST https://api.deepseek.com/v1/tools/fetch` and returns Markdown, sharing `deepseekApiKey`/`DEEPSEEK_API_KEY` with search. Thanks to [@Jerry2003sky](https://github.com/Jerry2003sky) for [issue #582](https://github.com/nicobailon/pi-web-access/issues/582) and [@Ebotian](https://github.com/Ebotian) for [PR #585](https://github.com/nicobailon/pi-web-access/pull/585).
 
 ### Fixed
