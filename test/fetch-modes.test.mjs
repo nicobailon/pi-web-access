@@ -221,6 +221,8 @@ test("readable mode accepts a complete short page and reports a partial extracti
 
 	const scripted = await fetchHtml('<html><head><title>Short Note</title><script src="/app.js"></script></head><body><h1>Short Note</h1><p>This page is intentionally short and complete.</p></body></html>');
 	assert.match(scripted.error, /^Extracted content appears incomplete: the page has only \d+ characters of visible text and runs scripts/);
+	const legacyType = await fetchHtml('<html><head><title>Short Note</title><script type="text/jscript" src="/app.js"></script></head><body><h1>Short Note</h1><p>This page is intentionally short and complete.</p></body></html>');
+	assert.match(legacyType.error, /runs scripts/);
 
 	const links = Array.from({ length: 40 }, (_, i) => `<li><a href="/section-${i}">Navigation section number ${i}</a></li>`).join("");
 	const teaser = await fetchHtml(`<html><head><title>Teaser</title></head><body><nav><ul>${links}</ul></nav><article><h1>Teaser</h1><p>Only the first paragraph of this story is shown here.</p></article><footer><ul>${links}</ul></footer></body></html>`);

@@ -1149,10 +1149,18 @@ function isCloudflareChallenge(response: Response, text: string, isHTML: boolean
 		text.includes("/cdn-cgi/challenge-platform/");
 }
 
-// Data blocks (JSON-LD, text/template, ...) never run, so only these types count as code.
+// The HTML spec's JavaScript MIME type essences; any other type (JSON-LD,
+// text/template, ...) is a data block that never runs.
+const JAVASCRIPT_MIME_TYPES = new Set([
+	"application/ecmascript", "application/javascript", "application/x-ecmascript", "application/x-javascript",
+	"text/ecmascript", "text/javascript", "text/javascript1.0", "text/javascript1.1", "text/javascript1.2",
+	"text/javascript1.3", "text/javascript1.4", "text/javascript1.5", "text/jscript", "text/livescript",
+	"text/x-ecmascript", "text/x-javascript",
+]);
+
 function isExecutableScriptType(type: string | null): boolean {
 	const mime = (type ?? "").split(";")[0].trim().toLowerCase();
-	return mime === "" || mime === "module" || /^(text|application)\/(x-)?(javascript|ecmascript)$/.test(mime);
+	return mime === "" || mime === "module" || JAVASCRIPT_MIME_TYPES.has(mime);
 }
 
 function isLikelyJSRendered(html: string): boolean {
