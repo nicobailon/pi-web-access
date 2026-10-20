@@ -1149,6 +1149,12 @@ function isCloudflareChallenge(response: Response, text: string, isHTML: boolean
 		text.includes("/cdn-cgi/challenge-platform/");
 }
 
+// Data blocks (JSON-LD, text/template, ...) never run, so only these types count as code.
+function isExecutableScriptType(type: string | null): boolean {
+	const mime = (type ?? "").split(";")[0].trim().toLowerCase();
+	return mime === "" || mime === "module" || /^(text|application)\/(x-)?(javascript|ecmascript)$/.test(mime);
+}
+
 function isLikelyJSRendered(html: string): boolean {
 	const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
 	if (!bodyMatch) return false;
@@ -1162,7 +1168,9 @@ function isLikelyJSRendered(html: string): boolean {
 		.replace(/\s+/g, " ")
 		.trim();
 
-	const scriptCount = (html.match(/<script/gi) || []).length;
+	const scriptCount = [...html.matchAll(/<script\b([^>]*)>/gi)]
+		.filter(([, attrs]) => isExecutableScriptType(attrs.match(/\btype\s*=\s*["']?([^"'\s>]+)/i)?.[1] ?? null))
+		.length;
 
 	return textContent.length < 500 && scriptCount > 3;
 }
@@ -1542,7 +1550,7 @@ async function extractViaHttp(
 				// script means the text may be a placeholder for client rendering.
 				const { document: original } = parseHTML(text);
 				const hasExecutableScript = [...original.querySelectorAll("script")]
-					.some((script) => !/json/i.test(script.getAttribute("type") ?? ""));
+					.some((script) => isExecutableScriptType(script.getAttribute("type")));
 				for (const node of original.querySelectorAll("script, style, noscript, template")) node.remove();
 				const visibleChars = (original.body?.textContent ?? "").replace(/\s+/g, " ").trim().length;
 				const extractedChars = markdown.trim().length;

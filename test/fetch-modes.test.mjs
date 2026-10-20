@@ -213,7 +213,8 @@ test("readable mode accepts a complete short page and reports a partial extracti
 		return extractContent("https://example.com/page", undefined, { lookup });
 	};
 
-	const short = await fetchHtml('<html><head><title>Short Note</title><script type="application/ld+json">{"@type":"Article"}</script></head><body><h1>Short Note</h1><p>This page is intentionally short and complete.</p></body></html>');
+	const dataBlocks = '<script type="application/ld+json">{"@type":"Article"}</script>'.repeat(4) + '<script type="text/template"><p>row</p></script>';
+	const short = await fetchHtml(`<html><head><title>Short Note</title>${dataBlocks}</head><body><h1>Short Note</h1><p>This page is intentionally short and complete.</p></body></html>`);
 	assert.equal(short.error, null);
 	assert.equal(short.title, "Short Note");
 	assert.match(short.content, /intentionally short and complete/);
