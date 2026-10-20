@@ -112,10 +112,10 @@ test("Defuddle processing failures stay contained and do not return the fallback
 	assert.doesNotMatch(result.content, /Copyright 2026/);
 });
 
-test("short non-RSC pages remain incomplete", async (t) => {
+test("short non-RSC placeholder pages with a client bundle remain incomplete", async (t) => {
 	t.after(() => { globalThis.fetch = originalFetch; });
 	globalThis.fetch = async () => new Response(
-		"<!doctype html><html><head><title>Short</title></head><body><article>Loading...</article></body></html>",
+		"<!doctype html><html><head><title>Short</title></head><body><article>Loading...</article><script src=\"/app.js\"></script></body></html>",
 		{ status: 200, headers: { "content-type": "text/html" } },
 	);
 

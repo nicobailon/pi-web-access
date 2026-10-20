@@ -7,6 +7,9 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - DeepSeek search now exposes native page content through `includeContent` by sending `need_content: true`, and DeepSeek Fetch is available as an opt-in `fetch_content` provider. Add `deepseek` to `fetchRouting.providers` and set `fetchRouting.allowRemoteHostedProviders` to `true`; it calls `POST https://api.deepseek.com/v1/tools/fetch` and returns Markdown, sharing `deepseekApiKey`/`DEEPSEEK_API_KEY` with search. Thanks to [@Jerry2003sky](https://github.com/Jerry2003sky) for [issue #582](https://github.com/nicobailon/pi-web-access/issues/582) and [@Ebotian](https://github.com/Ebotian) for [PR #585](https://github.com/nicobailon/pi-web-access/pull/585).
+### Fixed
+
+- `fetch_content` in readable mode returns a complete short page instead of reporting it as incomplete. A static page whose whole visible text is under 500 characters is accepted once something is extracted from it; pages that run scripts still fall through to other providers, since their short text may be a loading placeholder. When content still looks incomplete, the error now says how many characters were extracted from how much visible text on the page. Thanks to [@donnielrt](https://github.com/donnielrt) for #581.
 
 ## [0.42.0] - 2026-10-17
 

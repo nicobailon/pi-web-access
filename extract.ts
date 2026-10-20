@@ -1534,13 +1534,27 @@ async function extractViaHttp(
 					declaredLinks,
 				};
 			}
+			let error: string | null = "Page appears to be JavaScript-rendered (content loads dynamically)";
+			if (!isLikelyJSRendered(text)) {
+				// Readability mutated `document`, so measure the page's own visible text
+				// from a fresh parse. A static page whose whole body is under the floor
+				// is complete once something was extracted from it; any executable
+				// script means the text may be a placeholder for client rendering.
+				const { document: original } = parseHTML(text);
+				const hasExecutableScript = [...original.querySelectorAll("script")]
+					.some((script) => !/json/i.test(script.getAttribute("type") ?? ""));
+				for (const node of original.querySelectorAll("script, style, noscript, template")) node.remove();
+				const visibleChars = (original.body?.textContent ?? "").replace(/\s+/g, " ").trim().length;
+				const extractedChars = markdown.trim().length;
+				error = !hasExecutableScript && visibleChars < MIN_USEFUL_CONTENT && extractedChars > 0
+					? null
+					: `Extracted content appears incomplete: extracted ${extractedChars} characters from a page with ${visibleChars} characters of visible text`;
+			}
 			return {
 				url,
 				title: article.title || documentTitle,
 				content: appendDeclaredWebLinks(markdown, declaredLinks),
-				error: isLikelyJSRendered(text)
-					? "Page appears to be JavaScript-rendered (content loads dynamically)"
-					: "Extracted content appears incomplete",
+				error,
 				declaredLinks,
 			};
 		}
