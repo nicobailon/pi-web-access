@@ -1546,9 +1546,10 @@ async function extractViaHttp(
 				for (const node of original.querySelectorAll("script, style, noscript, template")) node.remove();
 				const visibleChars = (original.body?.textContent ?? "").replace(/\s+/g, " ").trim().length;
 				const extractedChars = markdown.trim().length;
-				error = !hasExecutableScript && visibleChars < MIN_USEFUL_CONTENT && extractedChars > 0
-					? null
-					: `Extracted content appears incomplete: extracted ${extractedChars} characters from a page with ${visibleChars} characters of visible text`;
+				const counts = `Extracted content appears incomplete: extracted ${extractedChars} characters from a page with ${visibleChars} characters of visible text`;
+				if (visibleChars >= MIN_USEFUL_CONTENT) error = counts;
+				else if (hasExecutableScript) error = `Extracted content appears incomplete: the page has only ${visibleChars} characters of visible text and runs scripts, so content may load dynamically`;
+				else error = extractedChars > 0 ? null : counts;
 			}
 			return {
 				url,
