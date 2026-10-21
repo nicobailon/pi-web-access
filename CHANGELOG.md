@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `searchRouting.fallbackOn` accepts `"empty"` and `"domain-miss"`, so a configured route can move past a successful response that has no results or none on a requested include domain. If every candidate is weak, the first weak response is returned. Off unless listed.
+- `searchRouting.timeoutMs` caps one routed search across all candidates (1 to 600000 ms).
+
 ## [0.44.0] - 2026-10-20
 
 ### Highlights
