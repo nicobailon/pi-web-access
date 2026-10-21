@@ -32,6 +32,14 @@ export interface NormalizedFetchContentParams {
 	};
 }
 
+/** Lists the parameter names that actually arrived, for error diagnostics:
+ * dropped tool-call arguments (provider issue) show up as missing keys here,
+ * malformed ones as present keys with unusable values. */
+export function describeReceivedParams(params: FetchContentParams): string {
+	const keys = Object.keys(params);
+	return keys.length > 0 ? keys.join(", ") : "none";
+}
+
 export function normalizeFetchContentParams(params: FetchContentParams): NormalizedFetchContentParams {
 	const normalizedUrls = uniqueUrls(normalizeUrlArray(params.urls));
 	const urlList = normalizedUrls.length > 0 ? normalizedUrls : normalizeSingleUrl(params.url);
