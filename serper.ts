@@ -20,6 +20,7 @@ const RECENCY_TBS: Record<NonNullable<SearchOptions["recencyFilter"]>, string> =
 interface WebSearchConfig {
 	serperApiKey?: unknown;
 	serperBaseUrl?: unknown;
+	serperAllowHttp?: unknown;
 }
 
 interface SerperResult {
@@ -130,7 +131,7 @@ export function isSerperAvailable(): boolean {
 }
 
 export async function searchWithSerper(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
-	const apiUrl = resolveProviderApiUrl("serper", `${SERPER_API_BASE_URL}/search`, loadConfig().serperBaseUrl);
+	const apiUrl = resolveProviderApiUrl("serper", `${SERPER_API_BASE_URL}/search`, loadConfig().serperBaseUrl, loadConfig().serperAllowHttp);
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);

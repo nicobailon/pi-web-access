@@ -38,6 +38,7 @@ export interface SearchOptions {
 
 interface WebSearchConfig {
 	perplexityBaseUrl?: unknown;
+	perplexityAllowHttp?: unknown;
 	perplexityApiKey?: unknown;
 }
 
@@ -119,7 +120,7 @@ async function postPerplexity(
 	body: Record<string, unknown>,
 	options: PerplexityRequestOptions,
 ): Promise<Record<string, unknown>> {
-	const apiUrl = resolveProviderApiUrl("perplexity", url, loadConfig().perplexityBaseUrl);
+	const apiUrl = resolveProviderApiUrl("perplexity", url, loadConfig().perplexityBaseUrl, loadConfig().perplexityAllowHttp);
 	checkRateLimit();
 
 	const activityId = activityMonitor.logStart({ type: "api", query: options.activityQuery });

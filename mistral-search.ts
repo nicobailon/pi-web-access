@@ -16,6 +16,7 @@ type MistralSearchTool = "web_search" | "web_search_premium";
 
 interface WebSearchConfig {
 	mistralSearchBaseUrl?: unknown;
+	mistralSearchAllowHttp?: unknown;
 	mistralApiKey?: unknown;
 	mistralSearchModel?: unknown;
 	mistralSearchTool?: unknown;
@@ -223,7 +224,7 @@ export async function searchWithMistral(query: string, options: SearchOptions = 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
-		const response = await fetchWithCredentialRedirects(resolveProviderApiUrl("mistralSearch", MISTRAL_CONVERSATIONS_URL, loadConfig().mistralSearchBaseUrl), {
+		const response = await fetchWithCredentialRedirects(resolveProviderApiUrl("mistralSearch", MISTRAL_CONVERSATIONS_URL, loadConfig().mistralSearchBaseUrl, loadConfig().mistralSearchAllowHttp), {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,

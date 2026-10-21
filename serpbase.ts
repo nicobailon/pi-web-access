@@ -18,6 +18,7 @@ const RECENCY_TBS: Record<string, string> = {
 
 interface WebSearchConfig {
 	serpbaseBaseUrl?: unknown;
+	serpbaseAllowHttp?: unknown;
 	serpbaseApiKey?: unknown;
 }
 
@@ -158,7 +159,7 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
-	const url = new URL(resolveProviderApiUrl("serpbase", SERPBASE_API_URL, loadConfig().serpbaseBaseUrl));
+	const url = new URL(resolveProviderApiUrl("serpbase", SERPBASE_API_URL, loadConfig().serpbaseBaseUrl, loadConfig().serpbaseAllowHttp));
 	url.searchParams.set("q", buildQuery(query, filters));
 	// SerpBase's Google Search endpoint authenticates with an `api_key` query parameter.
 	url.searchParams.set("api_key", apiKey);

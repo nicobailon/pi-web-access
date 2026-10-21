@@ -31,6 +31,7 @@ const RECENCY_TBS: Record<string, string> = {
 
 interface WebSearchConfig {
 	brightdataBaseUrl?: unknown;
+	brightdataAllowHttp?: unknown;
 	brightdataApiKey?: unknown;
 	brightdataSerpZone?: unknown;
 }
@@ -467,7 +468,7 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 	const activityId = activityMonitor.logStart({ type: "api", query: searchQuery });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("brightdata", BRIGHTDATA_API_URL, loadConfig().brightdataBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("brightdata", BRIGHTDATA_API_URL, loadConfig().brightdataBaseUrl, loadConfig().brightdataAllowHttp), {
 			method: "POST",
 			headers: {
 				"Authorization": `Bearer ${apiKey}`,

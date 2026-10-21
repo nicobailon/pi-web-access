@@ -16,6 +16,7 @@ const CRAWL_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	search1apiBaseUrl?: unknown;
+	search1apiAllowHttp?: unknown;
 	search1apiApiKey?: unknown;
 }
 
@@ -141,7 +142,7 @@ async function search1APIJsonRequest<T>(
 ): Promise<T> {
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("search1api", url, loadConfig().search1apiBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("search1api", url, loadConfig().search1apiBaseUrl, loadConfig().search1apiAllowHttp), {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,

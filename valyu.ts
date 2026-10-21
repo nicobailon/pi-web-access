@@ -16,6 +16,7 @@ const MAX_CONTENT_CHARS = 4_000;
 
 interface WebSearchConfig {
 	valyuBaseUrl?: unknown;
+	valyuAllowHttp?: unknown;
 	valyuApiKey?: unknown;
 }
 
@@ -124,7 +125,7 @@ export async function searchWithValyu(query: string, options: SearchOptions & { 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("valyu", VALYU_SEARCH_URL, loadConfig().valyuBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("valyu", VALYU_SEARCH_URL, loadConfig().valyuBaseUrl, loadConfig().valyuAllowHttp), {
 			method: "POST",
 			headers: { "x-api-key": apiKey, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ query, max_num_results: numResults, ...mapDomainFilter(options.domainFilter), ...(startDate ? { start_date: startDate } : {}) }),

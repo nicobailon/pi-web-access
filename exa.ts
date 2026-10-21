@@ -14,6 +14,7 @@ const EXA_MCP_BASIC_TOOL = "web_search_exa";
 interface WebSearchConfig {
 	exaApiKey?: unknown;
 	exaBaseUrl?: unknown;
+	exaAllowHttp?: unknown;
 }
 
 interface ExaSearchResponse {
@@ -81,6 +82,8 @@ function getApiBaseUrl(): string {
 	return resolveApiBaseUrl({
 		configKey: "exaBaseUrl",
 		configuredValue: loadConfig().exaBaseUrl,
+		allowHttp: loadConfig().exaAllowHttp,
+		allowHttpEnvironmentValue: process.env.EXA_ALLOW_HTTP,
 		defaultValue: EXA_API_BASE_URL,
 		environmentKey: "EXA_BASE_URL",
 		environmentValue: process.env.EXA_BASE_URL,

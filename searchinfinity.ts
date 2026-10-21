@@ -14,6 +14,7 @@ const SEARCH_TIMEOUT_MS = 30_000;
 
 interface WebSearchConfig {
 	searchinfinityBaseUrl?: unknown;
+	searchinfinityAllowHttp?: unknown;
 	searchinfinityApiKey?: unknown;
 }
 
@@ -163,7 +164,7 @@ async function searchinfinityJsonRequest(
 ): Promise<SearchinfinitySearchResponse> {
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("searchinfinity", SEARCHINFINITY_SEARCH_URL, loadConfig().searchinfinityBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("searchinfinity", SEARCHINFINITY_SEARCH_URL, loadConfig().searchinfinityBaseUrl, loadConfig().searchinfinityAllowHttp), {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,

@@ -27,6 +27,7 @@ const RECENCY_DAYS: Record<NonNullable<SearchOptions["recencyFilter"]>, number> 
 
 interface WebSearchConfig {
 	deepseekBaseUrl?: unknown;
+	deepseekAllowHttp?: unknown;
 	deepseekApiKey?: unknown;
 }
 
@@ -222,7 +223,7 @@ export async function searchWithDeepSeek(query: string, options: DeepSeekSearchO
 	let response: Response;
 	let entries: DeepSeekResult[];
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("deepseek", DEEPSEEK_SEARCH_URL, loadConfig().deepseekBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("deepseek", DEEPSEEK_SEARCH_URL, loadConfig().deepseekBaseUrl, loadConfig().deepseekAllowHttp), {
 			method: "POST",
 			headers: {
 				Accept: "application/json",
@@ -320,7 +321,7 @@ export async function extractWithDeepSeek(
 			domainPolicy: loadFetchContentDomainPolicy(),
 			...(options.lookup ? { lookup: options.lookup } : {}),
 		});
-		const response = await fetchWithCredentialRedirects(resolveProviderApiUrl("deepseek", DEEPSEEK_FETCH_URL, loadConfig().deepseekBaseUrl), {
+		const response = await fetchWithCredentialRedirects(resolveProviderApiUrl("deepseek", DEEPSEEK_FETCH_URL, loadConfig().deepseekBaseUrl, loadConfig().deepseekAllowHttp), {
 			method: "POST",
 			headers: {
 				Accept: "application/json",

@@ -14,6 +14,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 interface WebSearchConfig {
 	tavilyApiKey?: unknown;
 	tavilyBaseUrl?: unknown;
+	tavilyAllowHttp?: unknown;
 }
 
 interface TavilyResult {
@@ -77,6 +78,8 @@ function getApiUrl(): string {
 	return `${resolveApiBaseUrl({
 		configKey: "tavilyBaseUrl",
 		configuredValue: loadConfig().tavilyBaseUrl,
+		allowHttp: loadConfig().tavilyAllowHttp,
+		allowHttpEnvironmentValue: process.env.TAVILY_ALLOW_HTTP,
 		defaultValue: TAVILY_API_BASE_URL,
 		environmentKey: "TAVILY_BASE_URL",
 		environmentValue: process.env.TAVILY_BASE_URL,

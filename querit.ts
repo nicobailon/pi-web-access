@@ -17,6 +17,7 @@ const MAX_CONTENT_URLS = 10;
 
 interface WebSearchConfig {
 	queritBaseUrl?: unknown;
+	queritAllowHttp?: unknown;
 	queritApiKey?: unknown;
 }
 
@@ -194,7 +195,7 @@ async function queritJsonRequest<T>(
 ): Promise<T> {
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("querit", url, loadConfig().queritBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("querit", url, loadConfig().queritBaseUrl, loadConfig().queritAllowHttp), {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,

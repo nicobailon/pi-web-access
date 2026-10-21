@@ -24,6 +24,7 @@ const DEFAULT_MODEL: SerpdiveModel = "krill";
 
 interface WebSearchConfig {
 	serpdiveBaseUrl?: unknown;
+	serpdiveAllowHttp?: unknown;
 	serpdiveApiKey?: unknown;
 	serpdiveModel?: unknown;
 }
@@ -232,7 +233,7 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("serpdive", SERPDIVE_API_URL, loadConfig().serpdiveBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("serpdive", SERPDIVE_API_URL, loadConfig().serpdiveBaseUrl, loadConfig().serpdiveAllowHttp), {
 			method: "POST",
 			headers: {
 				"Authorization": `Bearer ${apiKey}`,

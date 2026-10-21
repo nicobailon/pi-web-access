@@ -15,6 +15,7 @@ const braveRateLimit = new BraveRateLimitCoordinator();
 interface WebSearchConfig {
 	braveApiKey?: unknown;
 	braveBaseUrl?: unknown;
+	braveAllowHttp?: unknown;
 }
 
 interface NormalizedDomainFilters {
@@ -54,6 +55,8 @@ function getApiUrl(): string {
 	return `${resolveApiBaseUrl({
 		configKey: "braveBaseUrl",
 		configuredValue: loadConfig().braveBaseUrl,
+		allowHttp: loadConfig().braveAllowHttp,
+		allowHttpEnvironmentValue: process.env.BRAVE_ALLOW_HTTP,
 		defaultValue: BRAVE_API_BASE_URL,
 		environmentKey: "BRAVE_BASE_URL",
 		environmentValue: process.env.BRAVE_BASE_URL,

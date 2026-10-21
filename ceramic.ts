@@ -18,6 +18,7 @@ const MAX_SNIPPET_CHARS = 500;
 
 interface WebSearchConfig {
 	ceramicBaseUrl?: unknown;
+	ceramicAllowHttp?: unknown;
 	ceramicApiKey?: unknown;
 }
 
@@ -152,7 +153,7 @@ export async function searchWithCeramic(query: string, options: SearchOptions = 
 	let response: Response;
 	let entries: CeramicResult[];
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("ceramic", CERAMIC_SEARCH_URL, loadConfig().ceramicBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("ceramic", CERAMIC_SEARCH_URL, loadConfig().ceramicBaseUrl, loadConfig().ceramicAllowHttp), {
 			method: "POST",
 			headers: {
 				Accept: "application/json",

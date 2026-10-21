@@ -42,6 +42,8 @@ interface ApiBaseUrlOptions {
 	defaultValue: string;
 	environmentKey: string;
 	environmentValue: string | undefined;
+	allowHttp?: unknown;
+	allowHttpEnvironmentValue?: string;
 }
 
 export function isLoopbackHostname(hostnameValue: string): boolean {
@@ -52,6 +54,19 @@ export function isLoopbackHostname(hostnameValue: string): boolean {
 }
 
 export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
+	let allowHttp = options.allowHttp;
+	if (options.allowHttpEnvironmentValue !== undefined) {
+		const value = options.allowHttpEnvironmentValue.trim().toLowerCase();
+		if (!["true", "false", "1", "0"].includes(value)) {
+			const environmentKey = options.environmentKey.replace(/_BASE_URL$/, "_ALLOW_HTTP");
+			throw new Error(`${environmentKey} must be true, false, 1, or 0`);
+		}
+		allowHttp = value === "true" || value === "1";
+	} else if (allowHttp !== undefined && typeof allowHttp !== "boolean") {
+		const configKey = options.configKey.replace(/BaseUrl$/, "AllowHttp");
+		throw new Error(`${configKey} in ${getWebSearchConfigPath()} must be a boolean`);
+	}
+
 	const fromEnvironment = options.environmentValue !== undefined;
 	const value = fromEnvironment ? options.environmentValue : options.configuredValue;
 	if (value === undefined) return options.defaultValue;
@@ -69,8 +84,9 @@ export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
 	} catch {
 		throw new Error(`${source} must be an absolute HTTP(S) URL`);
 	}
-	if (url.protocol !== "https:" && (url.protocol !== "http:" || !isLoopbackHostname(url.hostname))) {
-		throw new Error(`${source} must be an absolute HTTPS URL`);
+	const isAllowedHttp = url.protocol === "http:" && (allowHttp === true || isLoopbackHostname(url.hostname));
+	if (url.protocol !== "https:" && !isAllowedHttp) {
+		throw new Error(`${source} must be an absolute ${allowHttp === true ? "HTTP(S)" : "HTTPS"} URL`);
 	}
 	if (url.username || url.password) {
 		throw new Error(`${source} must not include credentials`);
@@ -90,13 +106,15 @@ export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
 const PI_PREFIXED_ENVIRONMENT_STEMS = new Set(["ollama", "deepseek"]);
 
 /** Resolve a provider's API root without dropping its endpoint path or a gateway prefix. */
-export function resolveProviderApiUrl(configStem: string, defaultUrl: string, configuredValue: unknown): string {
+export function resolveProviderApiUrl(configStem: string, defaultUrl: string, configuredValue: unknown, allowHttp?: unknown): string {
 	const official = new URL(defaultUrl);
 	const environmentKey = (PI_PREFIXED_ENVIRONMENT_STEMS.has(configStem) ? "PI_" : "")
 		+ configStem.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase() + "_BASE_URL";
 	const baseUrl = resolveApiBaseUrl({
 		configKey: configStem + "BaseUrl",
 		configuredValue,
+		allowHttp,
+		allowHttpEnvironmentValue: process.env[environmentKey.replace(/_BASE_URL$/, "_ALLOW_HTTP")],
 		defaultValue: official.origin,
 		environmentKey,
 		environmentValue: process.env[environmentKey],

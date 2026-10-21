@@ -23,6 +23,7 @@ export interface BrightDataExtractOptions extends Pick<ExtractOptions, "timeoutM
 
 interface BrightDataConfig {
 	brightdataBaseUrl?: unknown;
+	brightdataAllowHttp?: unknown;
 	brightdataApiKey?: unknown;
 	brightdataUnlockerZone?: unknown;
 }
@@ -216,7 +217,7 @@ async function brightDataRequest(
 	};
 	const activityId = activityMonitor.logStart({ type: "fetch", url });
 	try {
-		const response = await fetchBrightDataApi(resolveProviderApiUrl("brightdata", BRIGHTDATA_REQUEST_URL, loadConfig().brightdataBaseUrl), {
+		const response = await fetchBrightDataApi(resolveProviderApiUrl("brightdata", BRIGHTDATA_REQUEST_URL, loadConfig().brightdataBaseUrl, loadConfig().brightdataAllowHttp), {
 			method: "POST",
 			headers,
 			body: JSON.stringify(unlockerBody(url, zone)),

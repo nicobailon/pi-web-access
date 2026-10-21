@@ -13,6 +13,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	youBaseUrl?: unknown;
+	youAllowHttp?: unknown;
 	youApiKey?: unknown;
 }
 
@@ -101,7 +102,7 @@ export async function searchWithYou(query: string, options: SearchOptions = {}):
 	let response: Response;
 	let entries: unknown[];
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("you", YOU_SEARCH_URL, loadConfig().youBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("you", YOU_SEARCH_URL, loadConfig().youBaseUrl, loadConfig().youAllowHttp), {
 			method: "POST",
 			headers: { Accept: "application/json", "Content-Type": "application/json", "X-API-Key": apiKey },
 			body: JSON.stringify(body),

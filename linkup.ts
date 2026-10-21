@@ -16,6 +16,7 @@ type LinkupDepth = typeof DEPTHS[number];
 
 interface LinkupConfig {
 	linkupBaseUrl?: unknown;
+	linkupAllowHttp?: unknown;
 	linkupApiKey?: unknown;
 	linkupDepth?: unknown;
 }
@@ -109,7 +110,7 @@ export async function searchWithLinkup(query: string, options: SearchOptions & {
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let entries: LinkupResult[];
 	try {
-		const response = await fetchWithCredentialRedirects(resolveProviderApiUrl("linkup", LINKUP_SEARCH_URL, loadConfig().linkupBaseUrl), {
+		const response = await fetchWithCredentialRedirects(resolveProviderApiUrl("linkup", LINKUP_SEARCH_URL, loadConfig().linkupBaseUrl, loadConfig().linkupAllowHttp), {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({

@@ -13,6 +13,7 @@ const SEARCH_TIMEOUT_MS = 30_000;
 
 interface WebSearchConfig {
 	anysearchBaseUrl?: unknown;
+	anysearchAllowHttp?: unknown;
 	anysearchApiKey?: unknown;
 }
 
@@ -123,7 +124,7 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 	let response: Response;
 
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("anysearch", ANYSEARCH_API_URL, loadConfig().anysearchBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("anysearch", ANYSEARCH_API_URL, loadConfig().anysearchBaseUrl, loadConfig().anysearchAllowHttp), {
 			method: "POST",
 			headers: {
 				...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),

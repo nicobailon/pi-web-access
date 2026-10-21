@@ -15,6 +15,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	kagiBaseUrl?: unknown;
+	kagiAllowHttp?: unknown;
 	kagiApiKey?: unknown;
 }
 
@@ -161,7 +162,7 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("kagi", KAGI_SEARCH_URL, loadConfig().kagiBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("kagi", KAGI_SEARCH_URL, loadConfig().kagiBaseUrl, loadConfig().kagiAllowHttp), {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ query, limit: numResults }),
@@ -218,7 +219,7 @@ export async function extractWithKagi(url: string, signal?: AbortSignal, options
 	const activityId = activityMonitor.logStart({ type: "api", query: `kagi extract: ${url}` });
 	let response: Response;
 	try {
-		response = await fetchRemoteUrl(resolveProviderApiUrl("kagi", KAGI_EXTRACT_URL, loadConfig().kagiBaseUrl), {
+		response = await fetchRemoteUrl(resolveProviderApiUrl("kagi", KAGI_EXTRACT_URL, loadConfig().kagiBaseUrl, loadConfig().kagiAllowHttp), {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ pages: [{ url }] }),

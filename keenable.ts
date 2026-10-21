@@ -25,6 +25,7 @@ const RECENCY_DAYS: Record<NonNullable<SearchOptions["recencyFilter"]>, number> 
 
 interface WebSearchConfig {
 	keenableBaseUrl?: unknown;
+	keenableAllowHttp?: unknown;
 	keenableApiKey?: unknown;
 }
 
@@ -153,7 +154,7 @@ export async function searchWithKeenable(query: string, options: SearchOptions =
 	let response: Response;
 	let entries: KeenableResult[];
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("keenable", apiKey ? KEENABLE_SEARCH_URL : KEENABLE_PUBLIC_SEARCH_URL, loadConfig().keenableBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("keenable", apiKey ? KEENABLE_SEARCH_URL : KEENABLE_PUBLIC_SEARCH_URL, loadConfig().keenableBaseUrl, loadConfig().keenableAllowHttp), {
 			method: "POST",
 			headers,
 			body: JSON.stringify(body),

@@ -19,6 +19,7 @@ const RECENCY_TBS: Record<NonNullable<SearchOptions["recencyFilter"]>, string> =
 
 interface WebSearchConfig {
 	serplyBaseUrl?: unknown;
+	serplyAllowHttp?: unknown;
 	serplyApiKey?: unknown;
 }
 
@@ -130,7 +131,7 @@ export async function searchWithSerply(query: string, options: SearchOptions = {
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
 	const requestCount = options.domainFilter?.length ? Math.min(20, numResults + 5) : numResults;
-	const url = new URL(resolveProviderApiUrl("serply", SERPLY_SEARCH_URL, loadConfig().serplyBaseUrl));
+	const url = new URL(resolveProviderApiUrl("serply", SERPLY_SEARCH_URL, loadConfig().serplyBaseUrl, loadConfig().serplyAllowHttp));
 	url.searchParams.set("q", buildQuery(query, filters));
 	url.searchParams.set("num", String(requestCount));
 	if (options.recencyFilter) url.searchParams.set("tbs", RECENCY_TBS[options.recencyFilter]);

@@ -14,6 +14,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	ollamaBaseUrl?: unknown;
+	ollamaAllowHttp?: unknown;
 	ollamaApiKey?: unknown;
 }
 
@@ -134,7 +135,7 @@ export async function searchWithOllama(query: string, options: OllamaSearchOptio
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("ollama", OLLAMA_SEARCH_URL, loadConfig().ollamaBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("ollama", OLLAMA_SEARCH_URL, loadConfig().ollamaBaseUrl, loadConfig().ollamaAllowHttp), {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
 			body: JSON.stringify({ query, max_results: numResults }),
@@ -195,7 +196,7 @@ export async function extractWithOllama(url: string, signal?: AbortSignal, optio
 	const activityId = activityMonitor.logStart({ type: "api", query: `ollama fetch: ${url}` });
 	let response: Response;
 	try {
-		response = await fetchRemoteUrl(resolveProviderApiUrl("ollama", OLLAMA_FETCH_URL, loadConfig().ollamaBaseUrl), {
+		response = await fetchRemoteUrl(resolveProviderApiUrl("ollama", OLLAMA_FETCH_URL, loadConfig().ollamaBaseUrl, loadConfig().ollamaAllowHttp), {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
 			body: JSON.stringify({ url }),

@@ -12,6 +12,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	bochaBaseUrl?: unknown;
+	bochaAllowHttp?: unknown;
 	bochaApiKey?: unknown;
 }
 
@@ -157,7 +158,7 @@ export async function searchWithBocha(query: string, options: SearchOptions = {}
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("bocha", BOCHA_SEARCH_URL, loadConfig().bochaBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("bocha", BOCHA_SEARCH_URL, loadConfig().bochaBaseUrl, loadConfig().bochaAllowHttp), {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ query, count: numResults, freshness: mapFreshness(options.recencyFilter), summary: true }),

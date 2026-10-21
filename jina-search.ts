@@ -13,6 +13,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	jinaSearchBaseUrl?: unknown;
+	jinaSearchAllowHttp?: unknown;
 	jinaApiKey?: unknown;
 }
 
@@ -109,7 +110,7 @@ function buildSearchRequest(query: string, options: JinaSearchOptions, numResult
 	const exclusions = filters.excludes.map((domain) => ` -site:${domain}`).join("");
 	const constrainedQuery = `${query.trim()}${exclusions}${recency}`.trim();
 	if (/^\.{1,2}$/.test(constrainedQuery)) throw new Error("Jina Search query must not be a dot path segment");
-	const url = new URL(encodeURIComponent(constrainedQuery), resolveProviderApiUrl("jinaSearch", JINA_SEARCH_BASE_URL, loadConfig().jinaSearchBaseUrl));
+	const url = new URL(encodeURIComponent(constrainedQuery), resolveProviderApiUrl("jinaSearch", JINA_SEARCH_BASE_URL, loadConfig().jinaSearchBaseUrl, loadConfig().jinaSearchAllowHttp));
 	url.searchParams.set("count", String(numResults));
 	for (const domain of filters.includes) url.searchParams.append("site", domain);
 	return { url: url.toString(), filters };

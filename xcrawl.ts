@@ -15,6 +15,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	xcrawlBaseUrl?: unknown;
+	xcrawlAllowHttp?: unknown;
 	xcrawlApiKey?: unknown;
 }
 
@@ -174,7 +175,7 @@ export async function searchWithXCrawl(query: string, options: SearchOptions = {
 	let response: Response;
 
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("xcrawl", XCRAWL_API_URL, loadConfig().xcrawlBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("xcrawl", XCRAWL_API_URL, loadConfig().xcrawlBaseUrl, loadConfig().xcrawlAllowHttp), {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
