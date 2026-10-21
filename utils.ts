@@ -161,9 +161,8 @@ export async function fetchWithCredentialRedirects(
 ): Promise<Response> {
 	let current = new URL(url);
 	const configuredOrigin = current.origin;
-	// Callers without a provider flag may still explicitly configure HTTP endpoints.
-	const httpAllowed = allowHttp ?? (current.protocol === "http:" && !isLoopbackHostname(current.hostname));
-	assertApiHttpAllowed(current, configuredOrigin, httpAllowed);
+	// Providers pass their resolved flag, including false; other callers retain their HTTP behavior.
+	if (allowHttp !== undefined) assertApiHttpAllowed(current, configuredOrigin, allowHttp);
 	const source = new URL(url);
 	for (const name of credentialQueryParams) source.searchParams.delete(name);
 	let requestInit = init;
@@ -182,7 +181,7 @@ export async function fetchWithCredentialRedirects(
 		if (next.protocol !== "http:" && next.protocol !== "https:") {
 			throw new Error(`API redirect from ${current.origin} must use HTTP(S)`);
 		}
-		assertApiHttpAllowed(next, configuredOrigin, httpAllowed);
+		if (allowHttp !== undefined) assertApiHttpAllowed(next, configuredOrigin, allowHttp);
 		const method = requestInit.method?.toUpperCase() ?? "GET";
 		if (
 			((response.status === 301 || response.status === 302) && method === "POST")

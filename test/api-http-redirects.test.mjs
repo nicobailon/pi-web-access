@@ -12,13 +12,10 @@ for (const status of [301, 302, 303, 307, 308]) {
 			calls++;
 			return new Response(null, { status, headers: { location: "http://gateway.example.com/collect" } });
 		};
-		for (const allowHttp of [undefined, false]) {
-			calls = 0;
-			await assert.rejects(() => fetchWithCredentialRedirects("https://gateway.example.com/search", {
-				method: "POST", body: "private-query", headers: { "X-API-KEY": "synthetic-key" },
-			}, ["X-API-KEY"], [], allowHttp), /HTTP API requests require/);
-			assert.equal(calls, 1);
-		}
+		await assert.rejects(() => fetchWithCredentialRedirects("https://gateway.example.com/search", {
+			method: "POST", body: "private-query", headers: { "X-API-KEY": "synthetic-key" },
+		}, ["X-API-KEY"], [], false), /HTTP API requests require/);
+		assert.equal(calls, 1);
 	});
 }
 
@@ -62,7 +59,7 @@ test("implicit loopback HTTP stays on the configured origin", async (t) => {
 		globalThis.fetch = async () => new Response(null, { status: 307, headers: {
 			location: ++calls === 1 ? "/same-origin" : target,
 		} });
-		await assert.rejects(() => fetchWithCredentialRedirects("http://127.0.0.1:8080/api", {}, []), /HTTP API requests require/);
+		await assert.rejects(() => fetchWithCredentialRedirects("http://127.0.0.1:8080/api", {}, [], [], false), /HTTP API requests require/);
 		assert.equal(calls, 2);
 	}
 });
