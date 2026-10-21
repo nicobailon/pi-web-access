@@ -5,7 +5,7 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const SERPAPI_API_BASE_URL = "https://serpapi.com";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -151,7 +151,7 @@ export async function searchWithSerpApi(query: string, options: SearchOptions = 
 		response = await fetchWithCredentialRedirects(url.toString(), {
 			headers: { Accept: "application/json" },
 			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
-		}, [], ["api_key"]);
+		}, [], ["api_key"], resolveProviderAllowHttp("serpapi", loadConfig().serpapiAllowHttp));
 		if (!response.ok) {
 			const errorText = await response.text();
 			throw new Error(`SerpApi error ${response.status}: ${redactCredential(errorText, apiKey).slice(0, 300)}`);

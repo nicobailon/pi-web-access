@@ -3,7 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { validateRemoteUrl, type Lookup } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { assertApiHttpAllowed, getWebSearchConfigPath, resolveProviderAllowHttp, resolveProviderApiUrl } from "./utils.ts";
 
 const CONFIG_PATH = getWebSearchConfigPath();
 const BRIGHTDATA_REQUEST_URL = "https://api.brightdata.com/request";
@@ -171,6 +171,9 @@ async function fetchBrightDataApi(
 	options: BrightDataExtractOptions | undefined,
 ): Promise<Response> {
 	let current = await validateRemoteUrl(url, ssrfOptions(options));
+	const configuredOrigin = current.origin;
+	const allowHttp = resolveProviderAllowHttp("brightdata", loadConfig().brightdataAllowHttp);
+	assertApiHttpAllowed(current, configuredOrigin, allowHttp);
 	let headers = init.headers;
 	// `redirect: "manual"` is what makes this loop exist: with the default "follow"
 	// the runtime resolves the chain itself, the final response is a 200, and the
@@ -189,7 +192,9 @@ async function fetchBrightDataApi(
 		if (!location) return response;
 		if (redirects === DEFAULT_MAX_REDIRECTS) throw new Error(`Too many redirects fetching ${current.toString()}`);
 
-		const next = await validateRemoteUrl(new URL(location, current), ssrfOptions(options));
+		const nextUrl = new URL(location, current);
+		assertApiHttpAllowed(nextUrl, configuredOrigin, allowHttp);
+		const next = await validateRemoteUrl(nextUrl, ssrfOptions(options));
 		if (next.origin !== current.origin) headers = withoutSensitiveHeaders(headers);
 		current = next;
 	}

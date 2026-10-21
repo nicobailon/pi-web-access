@@ -5,7 +5,7 @@ import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
 
 const BRAVE_API_BASE_URL = "https://api.search.brave.com/res/v1";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -191,7 +191,7 @@ export async function searchWithBrave(
 						"Accept-Encoding": "gzip",
 					},
 					signal: searchSignal,
-				}, ["X-Subscription-Token"]);
+				}, ["X-Subscription-Token"], [], resolveProviderAllowHttp("brave", loadConfig().braveAllowHttp));
 
 				braveRateLimit.observe(current.headers);
 				if (current.status !== 429 || attempt === 1) return current;

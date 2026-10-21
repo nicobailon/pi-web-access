@@ -6,7 +6,7 @@ import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const LINKUP_SEARCH_URL = "https://api.linkup.so/v1/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -120,7 +120,7 @@ export async function searchWithLinkup(query: string, options: SearchOptions & {
 				...(filters.exclude.length ? { excludeDomains: filters.exclude } : {}),
 			}),
 			signal,
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("linkup", loadConfig().linkupAllowHttp));
 		if (!response.ok) {
 			const body = redactCredential(await response.text(), apiKey).slice(0, 300);
 			throw new Error(`Linkup error ${response.status}: ${body}`);

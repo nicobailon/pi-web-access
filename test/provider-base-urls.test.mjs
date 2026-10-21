@@ -173,6 +173,43 @@ for (const provider of providers) {
 		}
 	});
 
+	test(`${provider.name} enforces HTTP opt-ins for HTTPS downgrade redirects`, async (t) => {
+		for (const configuredAllowHttp of [false, true]) {
+			await runProvider(t, provider, `
+				const allowHttpEnv = provider.env.replace(/_BASE_URL$/, "_ALLOW_HTTP");
+				const calls = [];
+				globalThis.fetch = async (url, init) => {
+					const target = new URL(url);
+					calls.push({url: target.href, body: init.body, credential: provider.header ? new Headers(init.headers).get(provider.header) : target.searchParams.get("api_key")});
+					if (target.protocol === "https:") return new Response(null, {status: 307, headers: {location: "http://redirect.example.com/collect"}});
+					return Response.json(response);
+				};
+				for (const value of [undefined, "0", "1"]) {
+					if (value === undefined) delete process.env[allowHttpEnv];
+					else process.env[allowHttpEnv] = value;
+					calls.length = 0;
+					const allowed = value === undefined ? ${configuredAllowHttp} : value === "1";
+					if (allowed) {
+						await invoke();
+						assert.equal(calls.length, provider.paths.length * 2);
+						for (let i = 0; i < calls.length; i += 2) {
+							assert.equal(calls[i + 1].credential, null);
+							assert.equal(calls[i + 1].body, calls[i].body);
+						}
+					} else {
+						await assert.rejects(invoke, /HTTP API requests require/);
+						assert.equal(calls.length, 1);
+						if (provider.id === "parallel") {
+							calls.length = 0;
+							await assert.rejects(() => module.extractWithParallel("https://example.com/page"), /HTTP API requests require/);
+							assert.equal(calls.length, 1);
+						}
+					}
+				}
+			`, { [provider.id + "BaseUrl"]: "https://gateway.example.com/api", [provider.id + "AllowHttp"]: configuredAllowHttp });
+		}
+	});
+
 	test(`${provider.name} retains same-origin credentials and strips them on cross-origin redirects`, async (t) => {
 		await runProvider(t, provider, `
 			const calls = [];

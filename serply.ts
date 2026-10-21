@@ -5,7 +5,7 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const SERPLY_SEARCH_URL = "https://api.serply.io/v1/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -143,7 +143,7 @@ export async function searchWithSerply(query: string, options: SearchOptions = {
 		response = await fetchWithCredentialRedirects(String(url), {
 			headers: { Accept: "application/json", "X-Api-Key": apiKey },
 			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
-		}, ["X-Api-Key"]);
+		}, ["X-Api-Key"], [], resolveProviderAllowHttp("serply", loadConfig().serplyAllowHttp));
 		if (!response.ok) {
 			const errorText = await response.text();
 			throw new Error(`Serply error ${response.status}: ${redactCredential(errorText, apiKey).slice(0, 300)}`);

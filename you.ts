@@ -5,7 +5,7 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const YOU_SEARCH_URL = "https://ydc-index.io/v1/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -107,7 +107,7 @@ export async function searchWithYou(query: string, options: SearchOptions = {}):
 			headers: { Accept: "application/json", "Content-Type": "application/json", "X-API-Key": apiKey },
 			body: JSON.stringify(body),
 			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
-		}, ["X-API-Key"]);
+		}, ["X-API-Key"], [], resolveProviderAllowHttp("you", loadConfig().youAllowHttp));
 		if (!response.ok) {
 			const errorText = await response.text();
 			throw new Error(`You.com error ${response.status}: ${redactCredential(errorText, apiKey).slice(0, 300)}`);

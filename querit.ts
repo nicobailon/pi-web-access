@@ -6,7 +6,7 @@ import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const QUERIT_SEARCH_URL = "https://api.querit.ai/v1/search";
 const QUERIT_CONTENTS_URL = "https://api.querit.ai/v1/contents";
@@ -204,7 +204,7 @@ async function queritJsonRequest<T>(
 			},
 			body: JSON.stringify(body),
 			signal: requestSignal(signal, timeoutMs),
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("querit", loadConfig().queritAllowHttp));
 	} catch (err) {
 		const message = errorMessage(err);
 		const isRequestAbort = err instanceof Error

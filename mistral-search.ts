@@ -3,7 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const MISTRAL_CONVERSATIONS_URL = "https://api.mistral.ai/v1/conversations";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -237,7 +237,7 @@ export async function searchWithMistral(query: string, options: SearchOptions = 
 				tools: [{ type: tool }],
 			}),
 			signal: requestSignal,
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("mistralSearch", loadConfig().mistralSearchAllowHttp));
 
 		if (!response.ok) {
 			const errorText = redactCredential(await response.text(), apiKey);

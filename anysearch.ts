@@ -5,7 +5,7 @@ import { normalizeSearchResultCount } from "./search-result-count-normalization.
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -134,7 +134,7 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 			signal: options.signal
 				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
 				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("anysearch", loadConfig().anysearchAllowHttp));
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);

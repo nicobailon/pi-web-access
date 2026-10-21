@@ -3,7 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const PERPLEXITY_SEARCH_URL = "https://api.perplexity.ai/search";
 const PERPLEXITY_CHAT_URL = "https://api.perplexity.ai/chat/completions";
@@ -149,7 +149,7 @@ async function postPerplexity(
 			},
 			body: JSON.stringify(body),
 			signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout,
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("perplexity", loadConfig().perplexityAllowHttp));
 	} catch (err) {
 		if (timedOut()) {
 			activityMonitor.logError(activityId, "request timed out");

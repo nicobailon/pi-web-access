@@ -7,7 +7,7 @@ import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl } from "./ssrf-protection.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const DEEPSEEK_SEARCH_URL = "https://api.deepseek.com/v1/tools/search";
 const DEEPSEEK_FETCH_URL = "https://api.deepseek.com/v1/tools/fetch";
@@ -232,7 +232,7 @@ export async function searchWithDeepSeek(query: string, options: DeepSeekSearchO
 			},
 			body: JSON.stringify({ query: builtQuery, count: numResults, ...(options.includeContent ? { need_content: true } : {}) }),
 			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("deepseek", loadConfig().deepseekAllowHttp));
 		if (!response.ok) {
 			const errorText = redactCredential(describeError(await response.text()), apiKey).slice(0, 300);
 			throw new Error(`DeepSeek error ${response.status}: ${errorText}`);
@@ -330,7 +330,7 @@ export async function extractWithDeepSeek(
 			},
 			body: JSON.stringify({ url }),
 			signal: signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal,
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("deepseek", loadConfig().deepseekAllowHttp));
 		if (!response.ok) {
 			const errorText = redactCredential(describeError(await response.text()), apiKey).slice(0, 300);
 			throw new Error(`DeepSeek Fetch error ${response.status}: ${errorText}`);

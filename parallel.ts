@@ -4,7 +4,7 @@ import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const PARALLEL_API_BASE_URL = "https://api.parallel.ai";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -344,7 +344,7 @@ async function parallelFetch(
 			},
 			body: JSON.stringify(body),
 			signal: requestSignal(signal),
-		}, ["x-api-key"]);
+		}, ["x-api-key"], [], resolveProviderAllowHttp("parallel", loadConfig().parallelAllowHttp));
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);

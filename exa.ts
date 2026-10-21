@@ -3,7 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
 
 const EXA_API_BASE_URL = "https://api.exa.ai";
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
@@ -472,7 +472,7 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 					: { highlights: true },
 			}),
 			signal: requestSignal(options.signal),
-		}, ["x-api-key"]);
+		}, ["x-api-key"], [], resolveProviderAllowHttp("exa", loadConfig().exaAllowHttp));
 
 		if (!response.ok) {
 			const errorText = redactCredential(await response.text(), apiKey);

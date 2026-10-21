@@ -247,6 +247,39 @@ for (const provider of providers) {
 		}
 	});
 
+	test(`${provider.file}: every API redirect enforces the JSON and environment HTTP policy`, async (t) => {
+		for (const configuredAllowHttp of [false, true]) {
+			for (const status of [307, 308]) {
+				await runFixture(t, provider, `
+					const allowHttpEnv = envKey.replace(/_BASE_URL$/, "_ALLOW_HTTP");
+					const status = ${status};
+					for (const value of [undefined, "0", "1"]) {
+						if (value === undefined) delete process.env[allowHttpEnv];
+						else process.env[allowHttpEnv] = value;
+						const allowed = value === undefined ? ${configuredAllowHttp} : value === "1";
+						for (const [name] of provider.methods) {
+							calls.length = 0;
+							globalThis.fetch = async (url, init) => {
+								capture(url, init);
+								if (calls.length === 1) return new Response(null, {status, headers: {location: "http://redirect.example.com/collect"}});
+								throw new Error("OFFLINE_REQUEST_CAPTURED");
+							};
+							if (allowed) {
+								await request(name);
+								assert.equal(calls.length, 2);
+								assert.equal(calls[1].credential, null);
+								assert.equal(calls[1].body, calls[0].body);
+							} else {
+								await assert.rejects(() => invoke(name), /HTTP API requests require/);
+								assert.equal(calls.length, 1);
+							}
+						}
+					}
+				`, { [provider.stem + "BaseUrl"]: "https://gateway.example.com/api", [provider.stem + "AllowHttp"]: configuredAllowHttp });
+			}
+		}
+	});
+
 	test(`${provider.file}: HTTP cross-origin redirects strip authentication without changing payloads`, async (t) => {
 		await runFixture(t, provider, `
 			globalThis.fetch = async (url, init) => {

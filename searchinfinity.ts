@@ -5,7 +5,7 @@ import { hasCredentialSource, redactCredential, resolveCredential } from "./cred
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const SEARCHINFINITY_SEARCH_URL = "https://torchlight.byteintlapi.com/search_api/web_search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -172,7 +172,7 @@ async function searchinfinityJsonRequest(
 			},
 			body: JSON.stringify(body),
 			signal: requestSignal(signal, SEARCH_TIMEOUT_MS),
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("searchinfinity", loadConfig().searchinfinityAllowHttp));
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
