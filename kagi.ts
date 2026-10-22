@@ -6,7 +6,7 @@ import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl, type SsrfConfig } from "./ssrf-protection.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const KAGI_SEARCH_URL = "https://kagi.com/api/v1/search";
 const KAGI_EXTRACT_URL = "https://kagi.com/api/v1/extract";
@@ -15,6 +15,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	kagiBaseUrl?: unknown;
+	kagiAllowHttp?: unknown;
 	kagiApiKey?: unknown;
 }
 
@@ -161,12 +162,12 @@ export async function searchWithKagi(query: string, options: KagiSearchOptions =
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("kagi", KAGI_SEARCH_URL, loadConfig().kagiBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("kagi", KAGI_SEARCH_URL, loadConfig().kagiBaseUrl, loadConfig().kagiAllowHttp), {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ query, limit: numResults }),
 			signal: options.signal ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal]) : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("kagi", loadConfig().kagiAllowHttp));
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
@@ -218,7 +219,7 @@ export async function extractWithKagi(url: string, signal?: AbortSignal, options
 	const activityId = activityMonitor.logStart({ type: "api", query: `kagi extract: ${url}` });
 	let response: Response;
 	try {
-		response = await fetchRemoteUrl(resolveProviderApiUrl("kagi", KAGI_EXTRACT_URL, loadConfig().kagiBaseUrl), {
+		response = await fetchRemoteUrl(resolveProviderApiUrl("kagi", KAGI_EXTRACT_URL, loadConfig().kagiBaseUrl, loadConfig().kagiAllowHttp), {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ pages: [{ url }] }),
@@ -226,6 +227,7 @@ export async function extractWithKagi(url: string, signal?: AbortSignal, options
 		}, {
 			allowRanges: ssrf.allowRanges,
 			trustEnvProxy: ssrf.trustEnvProxy,
+			apiAllowHttp: resolveProviderAllowHttp("kagi", loadConfig().kagiAllowHttp),
 			onRedirect: ({ from, to, init }) => to.origin === from.origin ? init : { ...init, headers: { "Content-Type": "application/json", Accept: "application/json" } },
 			...(options.lookup ? { lookup: options.lookup } : {}),
 		});

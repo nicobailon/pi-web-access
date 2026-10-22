@@ -4,7 +4,7 @@ import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const SERPBASE_API_URL = "https://api.serpbase.dev/google/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -18,6 +18,7 @@ const RECENCY_TBS: Record<string, string> = {
 
 interface WebSearchConfig {
 	serpbaseBaseUrl?: unknown;
+	serpbaseAllowHttp?: unknown;
 	serpbaseApiKey?: unknown;
 }
 
@@ -158,7 +159,7 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
-	const url = new URL(resolveProviderApiUrl("serpbase", SERPBASE_API_URL, loadConfig().serpbaseBaseUrl));
+	const url = new URL(resolveProviderApiUrl("serpbase", SERPBASE_API_URL, loadConfig().serpbaseBaseUrl, loadConfig().serpbaseAllowHttp));
 	url.searchParams.set("q", buildQuery(query, filters));
 	// SerpBase's Google Search endpoint authenticates with an `api_key` query parameter.
 	url.searchParams.set("api_key", apiKey);
@@ -170,7 +171,7 @@ export async function searchWithSerpBase(query: string, options: SearchOptions =
 		response = await fetchWithCredentialRedirects(String(url), {
 			headers: { Accept: "application/json" },
 			signal: options.signal ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal]) : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, [], ["api_key"]);
+		}, [], ["api_key"], resolveProviderAllowHttp("serpbase", loadConfig().serpbaseAllowHttp));
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);

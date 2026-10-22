@@ -5,7 +5,7 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const KEENABLE_SEARCH_URL = "https://api.keenable.ai/v1/search";
 // Without a key the request goes to the public endpoint, which identifies the caller
@@ -25,6 +25,7 @@ const RECENCY_DAYS: Record<NonNullable<SearchOptions["recencyFilter"]>, number> 
 
 interface WebSearchConfig {
 	keenableBaseUrl?: unknown;
+	keenableAllowHttp?: unknown;
 	keenableApiKey?: unknown;
 }
 
@@ -153,12 +154,12 @@ export async function searchWithKeenable(query: string, options: SearchOptions =
 	let response: Response;
 	let entries: KeenableResult[];
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("keenable", apiKey ? KEENABLE_SEARCH_URL : KEENABLE_PUBLIC_SEARCH_URL, loadConfig().keenableBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("keenable", apiKey ? KEENABLE_SEARCH_URL : KEENABLE_PUBLIC_SEARCH_URL, loadConfig().keenableBaseUrl, loadConfig().keenableAllowHttp), {
 			method: "POST",
 			headers,
 			body: JSON.stringify(body),
 			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
-		}, ["X-API-Key"]);
+		}, ["X-API-Key"], [], resolveProviderAllowHttp("keenable", loadConfig().keenableAllowHttp));
 		if (!response.ok) {
 			const errorText = redactCredential(await response.text(), apiKey).slice(0, 300);
 			const hint = response.status === 429 && !apiKey

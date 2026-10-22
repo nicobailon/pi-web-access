@@ -5,7 +5,7 @@ import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const SERPDIVE_API_URL = "https://api.serpdive.com/v1/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -24,6 +24,7 @@ const DEFAULT_MODEL: SerpdiveModel = "krill";
 
 interface WebSearchConfig {
 	serpdiveBaseUrl?: unknown;
+	serpdiveAllowHttp?: unknown;
 	serpdiveApiKey?: unknown;
 	serpdiveModel?: unknown;
 }
@@ -232,7 +233,7 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("serpdive", SERPDIVE_API_URL, loadConfig().serpdiveBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("serpdive", SERPDIVE_API_URL, loadConfig().serpdiveBaseUrl, loadConfig().serpdiveAllowHttp), {
 			method: "POST",
 			headers: {
 				"Authorization": `Bearer ${apiKey}`,
@@ -240,7 +241,7 @@ export async function searchWithSerpdive(query: string, options: SerpdiveSearchO
 			},
 			body: JSON.stringify(body),
 			signal: requestSignal(options.signal),
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("serpdive", loadConfig().serpdiveAllowHttp));
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);

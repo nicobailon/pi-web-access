@@ -32,6 +32,8 @@ function runChild(script, env = {}) {
 		"PI_CODING_AGENT_DIR",
 		"XDG_CONFIG_HOME",
 		"BRIGHTDATA_API_KEY",
+		"BRIGHTDATA_BASE_URL",
+		"BRIGHTDATA_ALLOW_HTTP",
 		"KAGI_API_KEY",
 		"OLLAMA_API_KEY",
 		"BRIGHTDATA_UNLOCKER_ZONE",
@@ -261,6 +263,7 @@ test("Bright Data Web Unlocker blocks API redirects to private targets", async (
 		{
 			BRIGHTDATA_API_KEY: "bd-test-key",
 			BRIGHTDATA_UNLOCKER_ZONE: "pi_unlocker",
+			BRIGHTDATA_ALLOW_HTTP: "true",
 		},
 	);
 	assert.equal(child.status, 0, child.stderr);
@@ -790,13 +793,12 @@ test("Bright Data Web Unlocker rejects a malformed zone and a malformed config r
 	);
 });
 
-test("a private Bright Data endpoint mirror requires an explicit narrow SSRF range", async () => {
-	// The API host is fixed, so the only way a private address can be reached is
-	// through a redirect. That hop is exempt only when the user opted a narrow
-	// range into ssrf.allowRanges, which extract.ts threads in per attempt.
-	for (const allowRanges of [undefined, ["127.0.0.0/8"]]) {
+test("a private Bright Data HTTP mirror requires both HTTP opt-in and a narrow SSRF range", async () => {
+	// Neither the HTTP opt-in nor the SSRF allowlist grants the other permission.
+	for (const [allowHttp, allowRanges] of [[false, undefined], [false, ["127.0.0.0/8"]], [true, undefined], [true, ["127.0.0.0/8"]]]) {
 		const home = await configHome({
 			brightdataApiKey: "bd-test-key",
+			brightdataAllowHttp: allowHttp,
 			brightdataUnlockerZone: "pi_unlocker",
 			fetchRouting: { allowRemoteHostedProviders: true },
 			...(allowRanges ? { ssrf: { allowRanges } } : {}),
@@ -821,7 +823,7 @@ test("a private Bright Data endpoint mirror requires an explicit narrow SSRF ran
 		);
 		assert.equal(child.status, 0, child.stderr);
 		const output = JSON.parse(child.stdout.trim());
-		if (allowRanges) {
+		if (allowHttp && allowRanges) {
 			assert.deepEqual(output.calls.slice(2), [
 				"https://api.brightdata.com/request",
 				"http://127.0.0.1:3002/request",
@@ -833,7 +835,7 @@ test("a private Bright Data endpoint mirror requires an explicit narrow SSRF ran
 			]);
 			assert.match(
 				output.result.error,
-				/Bright Data fallback failed: Blocked internal address/,
+				allowHttp ? /Bright Data fallback failed: Blocked internal address/ : /HTTP API requests require/,
 			);
 		}
 	}

@@ -5,7 +5,7 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const CERAMIC_SEARCH_URL = "https://api.ceramic.ai/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -18,6 +18,7 @@ const MAX_SNIPPET_CHARS = 500;
 
 interface WebSearchConfig {
 	ceramicBaseUrl?: unknown;
+	ceramicAllowHttp?: unknown;
 	ceramicApiKey?: unknown;
 }
 
@@ -152,7 +153,7 @@ export async function searchWithCeramic(query: string, options: SearchOptions = 
 	let response: Response;
 	let entries: CeramicResult[];
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("ceramic", CERAMIC_SEARCH_URL, loadConfig().ceramicBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("ceramic", CERAMIC_SEARCH_URL, loadConfig().ceramicBaseUrl, loadConfig().ceramicAllowHttp), {
 			method: "POST",
 			headers: {
 				Accept: "application/json",
@@ -161,7 +162,7 @@ export async function searchWithCeramic(query: string, options: SearchOptions = 
 			},
 			body: JSON.stringify(body),
 			signal: options.signal ? AbortSignal.any([timeoutSignal, options.signal]) : timeoutSignal,
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("ceramic", loadConfig().ceramicAllowHttp));
 		if (!response.ok) {
 			const errorText = redactCredential(describeError(await response.text()), apiKey).slice(0, 300);
 			throw new Error(`Ceramic error ${response.status}: ${errorText}`);

@@ -4,7 +4,7 @@ import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const BOCHA_SEARCH_URL = "https://api.bochaai.com/v1/web-search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -12,6 +12,7 @@ const SEARCH_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	bochaBaseUrl?: unknown;
+	bochaAllowHttp?: unknown;
 	bochaApiKey?: unknown;
 }
 
@@ -157,12 +158,12 @@ export async function searchWithBocha(query: string, options: SearchOptions = {}
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("bocha", BOCHA_SEARCH_URL, loadConfig().bochaBaseUrl), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("bocha", BOCHA_SEARCH_URL, loadConfig().bochaBaseUrl, loadConfig().bochaAllowHttp), {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ query, count: numResults, freshness: mapFreshness(options.recencyFilter), summary: true }),
 			signal: options.signal ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal]) : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, ["Authorization"]);
+		}, ["Authorization"], [], resolveProviderAllowHttp("bocha", loadConfig().bochaAllowHttp));
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
