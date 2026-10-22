@@ -95,7 +95,7 @@ test("invalid HTTP environment flags fail without falling back to JSON or the of
 	for (const allowHttpEnvironmentValue of ["", " ", "yes", "no", "on", "off", "2", "null"]) {
 		for (const configuredValue of [undefined, "http://gateway.example.com", "https://gateway.example.com"]) {
 			assert.throws(() => resolveApiBaseUrl({ ...baseUrlOptions, configuredValue, allowHttp: true, allowHttpEnvironmentValue }),
-				/^Error: BRAVE_ALLOW_HTTP must be true, false, 1, or 0$/);
+				/^Error: Invalid configuration: BRAVE_ALLOW_HTTP must be true, false, 1, or 0$/);
 		}
 	}
 });

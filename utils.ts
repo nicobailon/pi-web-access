@@ -59,7 +59,7 @@ function resolveAllowHttp(options: Pick<ApiBaseUrlOptions, "configKey" | "enviro
 		const value = options.allowHttpEnvironmentValue.trim().toLowerCase();
 		if (!["true", "false", "1", "0"].includes(value)) {
 			const environmentKey = options.environmentKey.replace(/_BASE_URL$/, "_ALLOW_HTTP");
-			throw new Error(`${environmentKey} must be true, false, 1, or 0`);
+			throw new Error(`Invalid configuration: ${environmentKey} must be true, false, 1, or 0`);
 		}
 		allowHttp = value === "true" || value === "1";
 	} else if (allowHttp !== undefined && typeof allowHttp !== "boolean") {
