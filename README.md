@@ -173,6 +173,7 @@ web_search({ queries: ["query 1", "query 2"] })
 web_search({ query: "latest news", numResults: 10, recencyFilter: "week" })
 web_search({ query: "...", domainFilter: ["github.com"] })
 web_search({ query: "...", provider: "openai" })
+web_search({ query: "...", provider: "openai", model: "gpt-6-luna" })
 web_search({ query: "...", provider: "kimi" })
 web_search({ query: "...", provider: "mistral" })
 web_search({ query: "...", provider: "all" })
@@ -190,10 +191,30 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
 | `category` | Exa only: restrict results to a category such as `news` or `research paper`; other providers ignore it. Without an API key, if Exa's filtered search is unavailable, the category is added to the query instead |
 | `provider` | Configured provider when omitted or set to `auto`; `all` searches every eligible provider except Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, and Linkup simultaneously; otherwise `openai`, `brave`, `parallel`, `parallel-mcp`, `tinyfish`, `search1api`, `searchinfinity`, `querit`, `tavily`, `you`, `firecrawl`, `jina`, `serpdive`, `kagi`, `bocha`, `ollama`, `anysearch`, `xcrawl`, `valyu`, `xai`, `mistral`, `brightdata`, `serpbase`, `serpapi`, `serper`, `serply`, `baizhi`, `zai`, `keenable`, `ceramic`, `deepseek`, `linkup`, `searxng`, `degoog`, `duckduckgo`, `exa`, `perplexity`, `gemini`, or `kimi` (auto-selects when no provider or routing is configured; Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, and Linkup are explicit-only) |
+| `model` | Pi only: optional exact server model ID, requiring a single explicit `provider`: `openai`, `xai`, `mistral`, or `gemini` (API only). Omit for ordinary searches; explicit overrides fail instead of silently substituting a model/provider |
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator; fresh-install default), `summary-review` (open curator and auto-generate a summary draft), or `auto-summary` (generate a summary without opening the curator) |
 
 Batch searches run up to three queries concurrently. Provider routing and fallback within each query remain sequential. Brave requests share an in-process queue and honor the rate-limit buckets returned in `X-RateLimit-*`; exhausted short windows delay the next request with a small safety margin, while long quota resets fail fast and keep the advertised cooldown active for later queued calls. HTTP 429 responses are retried once after the advertised `Retry-After` or rate-limit reset. Brave's 30-second search deadline covers queueing, cooldown waits, and both request attempts. The queue coordinates one Pi process; separate Pi processes still rely on Brave's 429 response.
+
+#### Per-call search models (Pi)
+
+Keep Claude, GLM, or another model as your main agent and explicitly request a different provider/model just for search:
+
+```typescript
+web_search({ query: "Research this topic", provider: "openai", model: "gpt-6-luna" })
+web_search({ queries: ["first angle", "second angle"], provider: "mistral", model: "mistral-small-latest" })
+```
+
+Omit `provider`/`model` for ordinary searches to preserve the configured/default selection and fallback behavior. A provider-only call still uses its existing configured/default model. An override takes precedence over `openaiSearchModel`, `xaiSearchModel`, `mistralSearchModel`, or Gemini's `searchModel` for this invocation only, including every query in its batch. Concurrent and later searches remain independent.
+
+Use an exact server model ID supported by your existing account/endpoint; IDs are trimmed but not rewritten, and need not appear in Pi's model catalog. Local aliases such as a `-fast` shortcut are not resolved. Model selection does not select a new account, grant model access, change credentials/endpoints, switch your conversation model, or change your summary model. Existing authentication and endpoint safeguards still apply, including when the main agent is not an OpenAI model.
+
+A `model` requires an explicit single `openai`, `xai`, `mistral`, or `gemini` provider. Omitted providers (even with a configured default), `auto`, `all`, provider arrays, unsupported providers, blank IDs, and non-string values are rejected before authentication or requests. Missing/rejected credentials, unavailable models, incompatible hosted search tools, quota failures, and other request failures remain visible errors—no other model/provider is substituted. Gemini overrides require API-path authentication (API key, ADC, or gateway) and never fall back to browser cookies. Gemini calls without an override keep their existing API/browser fallback.
+
+Overrides work in ordinary, auto-summary, nested/codemode, and curator searches. The curator keeps provider switching unrestricted: explicitly selecting the original provider uses its requested model; selecting another provider (including `all`) uses that selection's configured/default models, and switching back restores the original override. The curator shows this selection without confirmation dialogs or a new model picker. Override-bound curator sessions do not save provider preferences. Summary-model selection remains separate.
+
+Compact diagnostics label requested/sent IDs and differing backend-returned IDs. Optional `requestedModel`, `sentModel`, and `returnedModel` fields are retained in structured query results, tool details, and stored/retrieved results; missing fields in older records are valid. A returned ID is backend-reported, not independently verified, and is never invented from the request. This argument is not exposed in the public MCP schema or `source_check`; automatic current-model routing policies remain unchanged.
 
 ### fetch_content
 
@@ -285,7 +306,7 @@ Add it to an `mcpServers` config (Claude Code, Cursor, and similar clients; Code
 ```
 
 - The server reads the same `web-search.json` and provider environment variables as the extension. It lists only the tools enabled there, under their default names; `toolNames` renames do not apply.
-- Pi-only features are not available: the curator and summaries (a configured `workflow` is ignored), Kimi search, OpenAI search through ChatGPT sign-in or the current Pi model, `fetch_content` answer mode and video prompts or frames, and direct image fetches. Explicit requests for them return a tool error rather than a fallback, and automatic provider selection only uses providers that work outside Pi.
+- Pi-only features are not available: per-call search `model` overrides, the curator and summaries (a configured `workflow` is ignored), Kimi search, OpenAI search through ChatGPT sign-in or the current Pi model, `fetch_content` answer mode and video prompts or frames, and direct image fetches. Explicit requests for them return a tool error rather than a fallback, and automatic provider selection only uses providers that work outside Pi.
 - `includeContent` waits for the page fetch before `web_search` returns.
 - The server keeps the 50 most recent results in memory for `get_search_content`; they are gone when it exits. Restart the server to pick up config changes.
 - Install with npm's default settings or `--legacy-peer-deps`. `--omit=peer` leaves out `zod`, which the MCP SDK needs.

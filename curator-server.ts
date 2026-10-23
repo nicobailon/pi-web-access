@@ -3,6 +3,7 @@ import { generateCuratorPage } from "./curator-page.ts";
 import type { ProviderAvailability } from "./gemini-search.ts";
 import type { SummaryMeta } from "./summary-review.ts";
 import { resolveCuratorNetworkConfig } from "./utils.ts";
+import { failedSearchModelMetadata, searchModelMetadata, type SearchModelMetadata } from "./search-model.ts";
 
 const STALE_THRESHOLD_MS = 30000;
 const WATCHDOG_INTERVAL_MS = 1000;
@@ -10,7 +11,7 @@ const MAX_BODY_SIZE = 64 * 1024;
 
 type ServerState = "SEARCHING" | "RESULT_SELECTION" | "COMPLETED";
 type CuratorResultEventData = IndexedCuratorSearchEntry & { slotIndex?: number };
-type CuratorSearchErrorEventData = { queryIndex: number; query: string; error: string; provider?: string; slotIndex?: number };
+type CuratorSearchErrorEventData = SearchModelMetadata & { queryIndex: number; query: string; error: string; provider?: string; slotIndex?: number };
 type CuratorStoredEvent =
 	| { event: "result"; data: CuratorResultEventData }
 	| { event: "search-error"; data: CuratorSearchErrorEventData };
@@ -26,9 +27,10 @@ export interface CuratorServerOptions {
 	searchProvider: string;
 	summaryModels: Array<{ value: string; label: string }>;
 	defaultSummaryModel: string | null;
+	searchModelOverride?: { provider: string; model: string };
 }
 
-export interface CuratorSearchEntry {
+export interface CuratorSearchEntry extends SearchModelMetadata {
 	answer: string;
 	results: Array<{ title: string; url: string; domain: string; snippet?: string }>;
 	provider: string;
@@ -60,7 +62,7 @@ export interface CuratorServerHandle {
 	url: string;
 	close: () => void;
 	pushResult: (queryIndex: number, data: CuratorSearchEntry & { query?: string; slotIndex?: number }) => void;
-	pushError: (queryIndex: number, error: string, provider?: string, meta?: { query?: string; slotIndex?: number }) => void;
+	pushError: (queryIndex: number, error: string, provider?: string, meta?: SearchModelMetadata & { query?: string; slotIndex?: number }) => void;
 	searchesDone: () => void;
 	/** Reports browser connection state so a cancelled search can surface WHY it
 	 * went stale (e.g. the browser never connected). */
@@ -204,6 +206,7 @@ export function startCuratorServer(
 		searchProvider,
 		summaryModels,
 		defaultSummaryModel,
+		searchModelOverride,
 	} = options;
 	let browserConnected = false;
 	let lastHeartbeatAt = Date.now();
@@ -357,6 +360,7 @@ export function startCuratorServer(
 		searchProvider,
 		summaryModels,
 		defaultSummaryModel,
+		searchModelOverride,
 	);
 
 	const server = http.createServer(async (req, res) => {
@@ -509,6 +513,7 @@ export function startCuratorServer(
 						answer: "",
 						results: [],
 						error: message,
+						...failedSearchModelMetadata(err),
 						provider: typeof provider === "string" && provider.length > 0 ? provider : defaultProvider,
 					};
 					callbacks.onAddSearchResults([entry]);
@@ -744,7 +749,7 @@ export function startCuratorServer(
 				pushError: (queryIndex, error, provider, meta) => {
 					if (completed) return;
 					nextQueryIndex = Math.max(nextQueryIndex, queryIndex + 1);
-					const eventData: CuratorSearchErrorEventData = { queryIndex, query: meta?.query ?? queries[queryIndex] ?? "", error, provider, slotIndex: meta?.slotIndex };
+					const eventData: CuratorSearchErrorEventData = { queryIndex, query: meta?.query ?? queries[queryIndex] ?? "", error, provider, slotIndex: meta?.slotIndex, ...(meta ? searchModelMetadata(meta) : {}) };
 					retainStreamedEvent({ event: "search-error", data: eventData });
 					sendSSE("search-error", eventData);
 				},

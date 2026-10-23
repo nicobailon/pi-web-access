@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { normalizeSearchModelOverride, searchModelFailure, searchModelSuccess } from "./search-model.ts";
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { SearchOptions, SearchResponse, SearchResult } from "./perplexity.ts";
@@ -212,18 +213,21 @@ export function isMistralAvailable(): boolean {
 }
 
 export async function searchWithMistral(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
+	const requestedModel = normalizeSearchModelOverride(options.model);
+	if (requestedModel !== undefined) options.signal?.throwIfAborted();
 	const config = loadConfig();
-	const model = resolveSearchModel(config.mistralSearchModel);
+	const model = requestedModel ?? resolveSearchModel(config.mistralSearchModel);
 	const tool = resolveSearchTool(config.mistralSearchTool);
 	const numResults = normalizeCount(options.numResults);
 	const apiKey = await getApiKey(options.signal);
+	const apiUrl = resolveProviderApiUrl("mistralSearch", MISTRAL_CONVERSATIONS_URL, config.mistralSearchBaseUrl);
 	const requestSignal = options.signal
 		? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
 		: AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
-		const response = await fetchWithCredentialRedirects(resolveProviderApiUrl("mistralSearch", MISTRAL_CONVERSATIONS_URL, loadConfig().mistralSearchBaseUrl), {
+		const response = await fetchWithCredentialRedirects(apiUrl, {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
@@ -251,7 +255,7 @@ export async function searchWithMistral(query: string, options: SearchOptions = 
 		}
 		const result = parseConversationResponse(parsed, options, numResults);
 		activityMonitor.logComplete(activityId, response.status);
-		return result;
+		return { ...result, ...searchModelSuccess(requestedModel, model, (parsed as Record<string, unknown>).model) };
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
@@ -260,9 +264,9 @@ export async function searchWithMistral(query: string, options: SearchOptions = 
 		} else {
 			activityMonitor.logError(activityId, redactedMessage);
 		}
-		if (redactedMessage === message) throw err;
+		if (redactedMessage === message) throw searchModelFailure(err, "mistral", requestedModel, model);
 		const redactedError = new Error(redactedMessage);
 		if (err instanceof Error) redactedError.name = err.name;
-		throw redactedError;
+		throw searchModelFailure(redactedError, "mistral", requestedModel, model);
 	}
 }

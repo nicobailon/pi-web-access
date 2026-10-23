@@ -51,6 +51,7 @@ import { isDeepSeekAvailable, searchWithDeepSeek } from "./deepseek.ts";
 import { isKimiSearchAvailable, searchWithKimi } from "./kimi-search.ts";
 import { isMistralAvailable, searchWithMistral } from "./mistral-search.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
+import { normalizeSearchModelOverride, searchModelFailure, searchModelSuccess } from "./search-model.ts";
 
 export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "you", "firecrawl", "jina", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "bocha", "xcrawl", "baizhi", "zai", "keenable", "ceramic", "deepseek", "linkup"] as const;
 export const SEARCH_PROVIDERS = ["auto", "all", ...RESOLVED_SEARCH_PROVIDERS] as const;
@@ -265,6 +266,21 @@ export function normalizeSearchProviderSelection(value: unknown, label = "provid
 	return SEARCH_PROVIDERS.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
 }
 
+/** Validate the original arguments, before config can supply an implicit provider. */
+export function validateSearchModelOverride(provider: unknown, model: unknown, providerFromConfig = false): string | undefined {
+	const normalized = normalizeSearchModelOverride(model);
+	if (normalized === undefined) return undefined;
+	const selected = typeof provider === "string" ? provider.trim().toLowerCase() : "";
+	if (providerFromConfig || !selected || selected === "auto" || selected === "all") {
+		throw new Error("web_search model requires an explicit single provider: openai, xai, mistral, or gemini (API only); omitted, auto, all, and array providers are ambiguous");
+	}
+	if (!["openai", "xai", "mistral", "gemini"].includes(selected)) {
+		throw new Error(`web_search model is not supported for provider ${JSON.stringify(selected)}; use openai, xai, mistral, or gemini (API only)`);
+	}
+	assertSearchProviderSelectionAllowed(selected as ResolvedSearchProvider, "Requested provider");
+	return normalized;
+}
+
 export interface FullSearchOptions extends SearchOptions {
 	provider?: SearchProviderSelection;
 	/** The caller already substituted the configured default for an omitted or "auto" provider. */
@@ -303,6 +319,12 @@ async function searchWithGemini(
 	options: SearchOptions,
 	strictErrors: boolean,
 ): Promise<SearchResponse | null> {
+	// An explicit model cannot be honored by Gemini Web. Never enter its fallback.
+	if (options.model !== undefined) {
+		const result = await searchWithGeminiApi(query, options);
+		if (result) return result;
+		throw new Error("Gemini API search unavailable: an explicit model requires API-path authentication (API key, ADC, or gateway); browser cookies cannot honor it");
+	}
 	const errors: string[] = [];
 
 	try {
@@ -670,6 +692,18 @@ async function searchWithConfiguredRouting(
 }
 
 export async function search(query: string, options: FullSearchOptions = {}): Promise<AttributedSearchResponse> {
+	const model = validateSearchModelOverride(options.provider, options.model, options.providerFromConfig);
+	if (model !== undefined) {
+		options.signal?.throwIfAborted();
+		const provider = (options.provider as string).trim().toLowerCase() as ResolvedSearchProvider;
+		try {
+			const result = await searchWithResolvedProvider(provider, query, { ...options, model, provider });
+			options.signal?.throwIfAborted();
+			return result;
+		} catch (err) {
+			throw searchModelFailure(err, provider, model);
+		}
+	}
 	const config = getSearchConfig();
 	const provider = options.provider === undefined || options.provider === "auto"
 		? config.searchProvider
@@ -771,21 +805,25 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 	const apiKey = isGeminiAdcAvailable() ? null : await getApiKey(requestSignal);
 	if (!apiKey && !isGatewayConfigured() && !isGeminiAdcAvailable()) return null;
 
+	const model = options.model ?? getSearchConfig().searchModel ?? DEFAULT_SEARCH_MODEL;
+	let sentModel: string | undefined;
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
-		const model = getSearchConfig().searchModel ?? DEFAULT_SEARCH_MODEL;
 		const body = {
 			contents: [{ role: "user", parts: [{ text: query }] }],
 			tools: [{ google_search: {} }],
 		};
 
-		const res = await fetchGeminiApi(`${getVersionedApiBase()}/models/${model}:generateContent`, {
+		const res = await fetchGeminiApi(`${getVersionedApiBase()}/models/${options.model !== undefined ? encodeURIComponent(model) : model}:generateContent`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
 			signal: requestSignal,
 		}, apiKey);
+		// fetchGeminiApi may resolve ADC/gateway auth before making the request.
+		// Do not claim a sent model when that preliminary work fails.
+		sentModel = model;
 
 		if (!res.ok) {
 			const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
@@ -801,8 +839,11 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 		const metadata = data.candidates?.[0]?.groundingMetadata;
 		const results = await resolveGroundingChunks(metadata?.groundingChunks, options.signal);
 
-		if (!answer && results.length === 0) return null;
-		return { answer, results };
+		if (!answer && results.length === 0) {
+			if (options.model !== undefined) throw new Error("Gemini API returned no answer or sources");
+			return null;
+		}
+		return { answer, results, ...searchModelSuccess(options.model, model, data.modelVersion) };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		if (message.toLowerCase().includes("abort")) {
@@ -810,7 +851,7 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 		} else {
 			activityMonitor.logError(activityId, message);
 		}
-		throw err;
+		throw searchModelFailure(err, "gemini", options.model, sentModel);
 	}
 }
 
@@ -917,6 +958,7 @@ async function resolveRedirect(proxyUrl: string, signal?: AbortSignal): Promise<
 }
 
 interface GeminiSearchResponse {
+	modelVersion?: string;
 	candidates?: Array<{
 		content?: { parts?: Array<{ text?: string }> };
 		groundingMetadata?: {

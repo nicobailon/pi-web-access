@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
+import type { SearchModelMetadata } from "./search-model.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
@@ -23,13 +24,15 @@ export interface SearchResult {
 	snippet: string;
 }
 
-export interface SearchResponse {
+export interface SearchResponse extends SearchModelMetadata {
 	answer: string;
 	results: SearchResult[];
 	inlineContent?: ExtractedContent[];
 }
 
 export interface SearchOptions {
+	/** Per-call server model ID; only model-backed search integrations support it. */
+	model?: string;
 	numResults?: number;
 	recencyFilter?: "day" | "week" | "month" | "year";
 	domainFilter?: string[];

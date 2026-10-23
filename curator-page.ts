@@ -78,9 +78,10 @@ export function generateCuratorPage(
 	searchProvider: string,
 	summaryModels: Array<{ value: string; label: string }>,
 	defaultSummaryModel: string | null,
+	searchModelOverride?: { provider: string; model: string },
 ): string {
 	const providerButtonsHtml = buildProviderButtons(availableProviders, defaultProvider, queries.length > 0);
-	const inlineData = safeInlineJSON({ queries, sessionToken, timeout, defaultProvider, searchProvider, summaryModels, defaultSummaryModel, availableProviders });
+	const inlineData = safeInlineJSON({ queries, sessionToken, timeout, defaultProvider, searchProvider, summaryModels, defaultSummaryModel, availableProviders, searchModelOverride });
 
 	return `<!DOCTYPE html>
 <html lang="en">
@@ -115,6 +116,7 @@ ${CSS}
 <span class="hero-meta-sep"></span>
 <div class="provider-buttons" id="provider-buttons">${providerButtonsHtml}</div>
 </div>
+<p id="search-model-notice" class="hero-desc" hidden></p>
 </div>
 <div id="result-cards"></div>
 <div class="send-raw-row hidden" id="send-raw-row">
@@ -1520,6 +1522,7 @@ const SCRIPT = `(function() {
 
   var currentProvider = initialDefaultProvider;
   var currentSearchProvider = initialSearchProvider;
+  updateSearchModelNotice();
   var initialStreamDone = queries.length === 0;
   var providerBatchInFlight = false;
   var batchLoadingProvider = null;
@@ -1732,6 +1735,24 @@ const SCRIPT = `(function() {
     var normalized = normalizeProvider(provider, "");
     if (!normalized) return "";
     return '<span class="provider-tag provider-' + normalized + '">' + escHtml(providerLabel(normalized)) + "</span>";
+  }
+
+  function updateSearchModelNotice() {
+    var notice = document.getElementById("search-model-notice");
+    var override = DATA.searchModelOverride;
+    if (!notice || !override) return;
+    notice.hidden = false;
+    notice.textContent = currentProvider === override.provider
+      ? "Search model requested: " + override.model + " (" + providerLabel(override.provider) + "). Other provider choices use their configured/default models."
+      : "Search model: configured/default for " + providerLabel(currentProvider) + ". Selecting " + providerLabel(override.provider) + " again restores " + override.model + ".";
+  }
+
+  function searchModelLabel(data) {
+    var parts = [];
+    if (data.sentModel) parts.push("sent: " + data.sentModel);
+    if (data.requestedModel && data.requestedModel !== data.sentModel) parts.push("requested: " + data.requestedModel);
+    if (data.returnedModel && data.returnedModel !== data.sentModel) parts.push("returned: " + data.returnedModel);
+    return parts.length ? "Search model — " + parts.join("; ") : "";
   }
 
   function buildAltChipsHtml(provider, queryText) {
@@ -2203,7 +2224,7 @@ const SCRIPT = `(function() {
     }
   }
 
-  function renderErrorCard(card, queryText, errorText, provider) {
+  function renderErrorCard(card, queryText, errorText, provider, data) {
     var tag = providerTagHtml(provider);
     card.innerHTML =
       '<div class="result-card-header">' +
@@ -2213,7 +2234,7 @@ const SCRIPT = `(function() {
             '<div class="result-card-query">' + escHtml(queryText) + "</div>" +
             tag +
           "</div>" +
-          '<div class="result-card-meta" style="color:var(--timer-urgent-fg)">Failed</div>' +
+          '<div class="result-card-meta" style="color:var(--timer-urgent-fg)">Failed' + (searchModelLabel(data) ? " · " + escHtml(searchModelLabel(data)) : "") + '</div>' +
         "</div>" +
       "</div>" +
       '<div class="result-card-error-msg">' + escHtml(errorText || "Search failed") + "</div>";
@@ -2230,6 +2251,8 @@ const SCRIPT = `(function() {
     var metaText = sourceCount + " source" + (sourceCount !== 1 ? "s" : "");
     if (domains.length > 0) metaText += " \u00B7 " + domains.join(", ");
     if (sourceCount > 3) metaText += ", +" + (sourceCount - 3);
+    var modelLabel = searchModelLabel(data);
+    if (modelLabel) metaText += " · " + modelLabel;
 
     var preview = "";
     if (data.answer) {
@@ -2342,7 +2365,7 @@ const SCRIPT = `(function() {
 
     if (data.error) {
       card.classList.add("error");
-      renderErrorCard(card, queryText, data.error, provider);
+      renderErrorCard(card, queryText, data.error, provider, data);
     } else {
       card.classList.add("checked");
       populateResultCard(card, data, queryText, provider);
@@ -2423,6 +2446,7 @@ const SCRIPT = `(function() {
     if (!normalized) return;
     currentProvider = normalized;
     currentSearchProvider = normalized;
+    updateSearchModelNotice();
     recomputeProviderStates();
     if (persist) {
       postJson("/provider", { provider: normalized }).then(function(data) {
@@ -2864,6 +2888,9 @@ const SCRIPT = `(function() {
       results: [],
       error: data.error || "Search failed",
       provider: data.provider,
+      requestedModel: data.requestedModel,
+      sentModel: data.sentModel,
+      returnedModel: data.returnedModel,
     }, queryText, data.provider, slotId);
   }
 

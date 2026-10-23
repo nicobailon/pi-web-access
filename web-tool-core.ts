@@ -15,12 +15,14 @@ import { findContent, type FindMode } from "./content-find.ts";
 import {
 	assertSearchProviderSelectionAllowed,
 	normalizeSearchProviderSelection,
+	validateSearchModelOverride,
 	search,
 	type SearchProvider,
 	type SearchProviderSelection,
 } from "./gemini-search.ts";
 import { isOpenAISearchAvailable } from "./openai-search.ts";
 import type { SearchResult } from "./perplexity.ts";
+import { failedSearchModelMetadata, formatSearchModel, searchModelMetadata, SearchModelOverrideError } from "./search-model.ts";
 import { getWebSearchConfigPath, runWithProxy } from "./utils.ts";
 import { deleteResult, generateId, getResult, storeResult, type QueryResultData, type StoredSearchData } from "./storage.ts";
 import {
@@ -285,6 +287,8 @@ export function withRegisteredFetchOptions(
 }
 
 function isAbortError(err: unknown): boolean {
+	// Neither diagnostic prefixes nor backend-echoed model IDs prove cancellation.
+	if (err instanceof SearchModelOverrideError) return err.cause instanceof Error && err.cause.name === "AbortError";
 	return (err instanceof Error ? err.message : String(err)).toLowerCase().includes("abort");
 }
 
@@ -308,8 +312,8 @@ function searchStructuredContent(responseId: string, fetchId: string | null, res
 	return {
 		responseId,
 		fetchId,
-		queries: results.map(({ query, answer, error, provider, providers, results }) => ({
-			query, answer, error, provider, providers,
+		queries: results.map(({ query, answer, error, provider, providers, results, ...modelMetadata }) => ({
+			query, answer, error, provider, providers, ...searchModelMetadata(modelMetadata),
 			results: results.map(({ title, url, snippet }) => ({ title, url, snippet })),
 		})),
 	};
@@ -446,6 +450,8 @@ function formatFullResults(queryData: QueryResultData): string {
 	let output = `## Results for: "${queryData.query}"\n\n`;
 	const providers = queryData.providers ?? (queryData.provider ? [queryData.provider] : []);
 	if (providers.length > 0) output += `**Provider${providers.length === 1 ? "" : "s"}:** ${providers.join(", ")}\n\n`;
+	const model = formatSearchModel(queryData);
+	if (model) output += `**Search model:** ${model}\n\n`;
 	if (queryData.answer) {
 		output += `${queryData.answer}\n\n---\n\n`;
 	}
@@ -636,6 +642,10 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 		let output = "";
 		if (hasApprovedSummary) {
 			output = opts.approvedSummary!.trim();
+			for (const result of opts.results) {
+				const model = formatSearchModel(result);
+				if (model) output += `\n\n**Search model (${result.provider}):** ${model}${result.error ? `\nError: ${result.error}` : ""}`;
+			}
 		} else {
 			if (opts.curated) {
 				output += "[These results were manually curated by the user in the browser. Use them as-is — do not re-search or discard.]\n\n";
@@ -648,12 +658,14 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				? `**Provider:** ${providerNames[0]}\n\n`
 				: `**Providers used:** ${providerNames.map((name, index) => `Query ${index + 1}: ${name}`).join("; ")}\n\n`;
 			const duplicateQueries = opts.curated ? duplicateQuerySet(opts.results) : new Set<string>();
-			for (const { query, answer, results, error, provider } of opts.results) {
+			for (const { query, answer, results, error, provider, ...modelMetadata } of opts.results) {
 				if (opts.queryList.length > 1) {
 					output += opts.curated
 						? formatQueryHeader(query, provider, duplicateQueries)
 						: `## Query: "${query}"\n\n`;
 				}
+				const model = formatSearchModel(modelMetadata);
+				if (model) output += `**Search model:** ${model}\n\n`;
 				if (error) output += `Error: ${error}\n\n`;
 				else output += formatSearchSummary(results, answer) + "\n\n";
 			}
@@ -718,6 +730,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				queryProviders: opts.results.map(result => ({
 					query: result.query,
 					providers: result.providers ?? (result.provider ? [result.provider] : []),
+					...searchModelMetadata(result),
 				})),
 				truncated: presentation.truncated,
 				originalChars: presentation.originalChars,
@@ -729,6 +742,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					curatedQueries: opts.results.map(r => ({
 						query: r.query,
 						provider: r.provider || null,
+						...searchModelMetadata(r),
 						answer: r.answer || null,
 						sources: r.results.map(s => ({ title: s.title, url: s.url })),
 						error: r.error,
@@ -754,6 +768,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 	}
 
 	async function webSearch(params: WebSearchParams, signal?: AbortSignal, call: WebSearchCallOptions = {}): Promise<WebToolResult> {
+		const model = validateSearchModelOverride(params.provider, params.model);
 		const { extensionContext: ctx, onUpdate } = call;
 		return runWithProxy(typeof params.proxy === "string" ? params.proxy : undefined, async () => {
 			const rawQueryList: unknown[] = Array.isArray(params.queries)
@@ -783,8 +798,9 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				});
 
 				try {
-					const { answer, results, inlineContent, provider, providerResponses } = await search(query, {
+					const { answer, results, inlineContent, provider, providerResponses, ...modelMetadata } = await search(query, {
 						provider: resolvedProvider,
+						...(model !== undefined ? { model } : {}),
 						providerFromConfig,
 						numResults: params.numResults,
 						recencyFilter,
@@ -796,13 +812,13 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					});
 
 					const providers = providerResponses?.map(response => response.provider) ?? [provider];
-					return { result: { query, answer, results, error: null, provider, providers } satisfies QueryResultData, inlineContent };
+					return { result: { query, answer, results, error: null, provider, providers, ...searchModelMetadata(modelMetadata) } satisfies QueryResultData, inlineContent };
 				} catch (err) {
 					if (signal?.aborted || isAbortError(err)) throw err;
 					const message = err instanceof Error ? err.message : String(err);
 					const requestedProvider = toCuratorProvider(resolvedProvider);
 					return {
-						result: { query, answer: "", results: [], error: message, provider: requestedProvider } satisfies QueryResultData,
+						result: { query, answer: "", results: [], error: message, provider: requestedProvider, ...failedSearchModelMetadata(err, model) } satisfies QueryResultData,
 						inlineContent: undefined,
 					};
 				} finally {
@@ -1246,7 +1262,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			if (queryData.error) {
 				return {
 					content: [{ type: "text", text: `Error retrieving query ${formatInputValue(queryData.query)} from responseId ${formatInputValue(params.responseId)}: ${queryData.error}. Check the stored search result and retry with another query or queryIndex if needed.` }],
-					details: { error: queryData.error, query: queryData.query },
+					details: { error: queryData.error, query: queryData.query, ...searchModelMetadata(queryData) },
 				};
 			}
 
@@ -1257,7 +1273,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					const { text, ...findDetails } = found;
 					return {
 						content: [{ type: "text", text }],
-						details: { responseId: params.responseId, query: queryData.query, resultCount: queryData.results.length, contentLength: fullResults.length, findMode: params.findMode ?? "case-insensitive", ...findDetails },
+						details: { responseId: params.responseId, query: queryData.query, ...searchModelMetadata(queryData), resultCount: queryData.results.length, contentLength: fullResults.length, findMode: params.findMode ?? "case-insensitive", ...findDetails },
 					};
 				} catch (err) {
 					const error = err instanceof Error ? err.message : String(err);
@@ -1298,6 +1314,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				details: {
 					responseId: params.responseId,
 					query: queryData.query,
+					...searchModelMetadata(queryData),
 					resultCount: queryData.results.length,
 					contentLength: fullResults.length,
 					offset,
@@ -1532,7 +1549,10 @@ export function createStandaloneWebToolCore(): StandaloneWebToolCore {
 			.filter((key) => settings.enabledTools[key])
 			.map((key) => DEFAULT_TOOL_NAMES[key]),
 		async webSearch(params, signal) {
-			const rejection = await standaloneProviderRejection(params.provider);
+			const model = validateSearchModelOverride(params.provider, params.model);
+			// Programmatic overrides use the core's per-query errors/metadata. The
+			// public MCP schema does not expose model and retains its existing guards.
+			const rejection = model === undefined ? await standaloneProviderRejection(params.provider) : undefined;
 			return rejection ? standaloneError(rejection) : markToolError(await core.webSearch(params, signal));
 		},
 		async fetchContent(params, signal) {

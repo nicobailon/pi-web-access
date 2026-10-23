@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchResult } from "./perplexity.ts";
+import type { SearchModelMetadata } from "./search-model.ts";
 import { getWebSearchConfigDir } from "./utils.ts";
 
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -30,7 +31,7 @@ interface CacheFile {
 	ino: number;
 }
 
-export interface QueryResultData {
+export interface QueryResultData extends SearchModelMetadata {
 	query: string;
 	answer: string;
 	results: SearchResult[];
