@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Exa search results show each source's published date and authors, and results from Exa's `publication` category (its research paper index) also show the citation count and DOI. The README now names `publication` as the Exa category for research papers. Exa uses it in place of `research paper`, which still works.
+
 ## [0.44.0] - 2026-10-20
 
 ### Highlights
