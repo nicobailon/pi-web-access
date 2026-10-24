@@ -79,6 +79,32 @@ Codex auth with the official `https://chatgpt.com/backend-api` base uses `/backe
 
 If no candidate has usable Pi credentials and a valid provider base URL, this mode fails closed and marks OpenAI unavailable; it does not fall back to the official endpoint or a standalone API key. API-key-only configurations can use `openaiResponsesUrl` instead. This switch applies to independent OpenAI provider selection; `searchRouting.useCurrentModel` retains its existing official-endpoint selection and eligibility rules.
 
+### Azure OpenAI web search (Bing grounding)
+
+Azure OpenAI supports the Responses API's built-in `web_search` tool, backed by Grounding with Bing Search / Bing Custom Search. Use the existing `openai` search provider; this is not a separate raw Bing Search API integration.
+
+For a standalone Azure API key, add the following to your active `web-search.json` (normally `~/.pi/agent/web-search.json`; `PI_CODING_AGENT_DIR`, XDG configuration, or an existing legacy `~/.pi/web-search.json` can change the location):
+
+```json
+{
+  "provider": "openai",
+  "openaiSearchProviders": [],
+  "openaiResponsesUrl": "https://YOUR-RESOURCE.openai.azure.com/openai/v1/responses",
+  "openaiApiKey": "$AZURE_OPENAI_API_KEY",
+  "openaiSearchModel": "YOUR-DEPLOYMENT-NAME"
+}
+```
+
+The empty provider list prevents an existing Pi OpenAI/Codex login from taking precedence over the Azure key. Set `AZURE_OPENAI_API_KEY` in the environment; do not put the key itself in shared configuration. An explicitly configured Microsoft Entra JWT access token is also supported and is sent as Bearer auth; raw Azure API keys use the `api-key` header. Token acquisition and renewal remain the caller's responsibility.
+
+To reuse a configured Pi Azure provider instead, set `openaiSearchProviders` to its provider ID and `openaiUseProviderBaseUrl: true`, with no `openaiResponsesUrl`. Its base URL must already end in `/openai/v1` or `/openai/v1/responses`. Use `openaiSearchModel` to specify the Azure deployment name if it differs from the selected model ID. Do not enable `openaiUseAlphaSearch`: Azure does not implement the Codex standalone search protocol.
+
+Current-model routing (`searchRouting.useCurrentModel: true`, with no top-level `provider`) also accepts `openai-responses` and `azure-openai-responses` models on HTTPS Azure resource endpoints under `*.openai.azure.com`, `*.cognitiveservices.azure.com`, or `*.services.ai.azure.com`. Their configured base URL must use `/openai/v1`; the model ID is sent as the deployment name, including names without a `gpt-` prefix. Environment-only Azure endpoint configuration and deployment-name maps are not resolved by this integration. Other gateway and sovereign-cloud endpoints can use the explicit Responses endpoint configuration, but are not automatically recognized as Azure for authentication or current-model eligibility.
+
+**Costs and privacy:** Bing grounding incurs search charges in addition to model usage. Microsoft states that grounding data flows outside your compliance and geographic boundary and is not covered by the Microsoft Data Protection Addendum. Confirm that this is appropriate before sending sensitive queries. See [Microsoft's Azure web search documentation](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/web-search).
+
+After reloading Pi, verify with a public, non-sensitive query. A successful hosted search must contain a `web_search_call` and return an answer or sources; an ordinary model-only response is rejected. This configuration makes paid Azure search calls.
+
 ### Optional OpenAI standalone search
 
 Set `openaiUseAlphaSearch: true` to use the independent Codex `alpha/search` protocol instead of Responses-hosted `web_search`. The default is `false`; omitting the flag keeps existing Responses behavior. Non-boolean values are rejected.
@@ -109,7 +135,7 @@ To route automatic searches through the active Pi model, configure an ordered ro
 }
 ```
 
-With `useCurrentModel: true`, the automatic `openai` step uses Hosted `web_search` (or standalone search when `openaiUseAlphaSearch` is enabled) when the active model is a GPT model backed by an official OpenAI Responses endpoint: `openai`/`openai-responses` on HTTPS `api.openai.com`, or `openai-codex`/`openai-codex-responses` on the official ChatGPT Codex endpoint. Third-party gateways, Azure, and other models continue to the next route entry. A tool-level `provider` or top-level `provider` remains an explicit override; `provider: "openai"` keeps the existing independent OpenAI/Codex search-model behavior.
+With `useCurrentModel: true`, the automatic `openai` step uses Hosted `web_search` (or standalone search when `openaiUseAlphaSearch` is enabled) when the active model is a GPT model backed by an official OpenAI Responses endpoint: `openai`/`openai-responses` on HTTPS `api.openai.com`, or `openai-codex`/`openai-codex-responses` on the official ChatGPT Codex endpoint. Azure v1 Responses models are also eligible as described above, using their model ID as the deployment name. Third-party gateways and other models continue to the next route entry. A tool-level `provider` or top-level `provider` remains an explicit override; `provider: "openai"` keeps the existing independent OpenAI/Codex search-model behavior.
 
 For sandboxed or corporate networks where only the proxy can resolve hostnames, set `ssrf.trustEnvProxy` to `true` to skip local DNS preflight for proxied hostnames:
 
