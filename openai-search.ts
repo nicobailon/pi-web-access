@@ -735,13 +735,13 @@ async function runOpenAISearch(
 	ctx?: Pick<ExtensionContext, "sessionManager">,
 ): Promise<SearchResponse> {
 	const useAlphaSearch = isAlphaSearchEnabled();
-	const isAzure = isAzureResponsesUrl(new URL(auth.responsesUrl));
+	const useCodexEndpoint = auth.useCodexEndpoint ?? (auth.provider === "openai-codex" || isCodexJwt(auth.apiKey));
+	const responsesUrl = useCodexEndpoint && !auth.useProviderBaseUrl ? CODEX_RESPONSES_URL : auth.responsesUrl;
+	const isAzure = isAzureResponsesUrl(new URL(responsesUrl));
 	if (isAzure && useAlphaSearch) {
 		throw new OpenAIAlphaSearchUnsupportedError("Azure OpenAI does not support Codex alpha/search; disable openaiUseAlphaSearch to use hosted web_search");
 	}
 	if (useAlphaSearch) options.signal?.throwIfAborted();
-	const useCodexEndpoint = !isAzure && (auth.useCodexEndpoint ?? (auth.provider === "openai-codex" || isCodexJwt(auth.apiKey)));
-	const responsesUrl = useCodexEndpoint && !auth.useProviderBaseUrl ? CODEX_RESPONSES_URL : auth.responsesUrl;
 	const requestUrl = useAlphaSearch ? resolveAlphaSearchUrl(responsesUrl) : responsesUrl;
 	const body = useAlphaSearch ? buildAlphaSearchBody(query, options, auth.model) : {
 		model: auth.model,

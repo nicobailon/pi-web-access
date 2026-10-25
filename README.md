@@ -95,7 +95,7 @@ For a standalone Azure API key, add the following to your active `web-search.jso
 }
 ```
 
-The empty provider list prevents an existing Pi OpenAI/Codex login from taking precedence over the Azure key. Set `AZURE_OPENAI_API_KEY` in the environment; do not put the key itself in shared configuration. An explicitly configured Microsoft Entra JWT access token is also supported and is sent as Bearer auth; raw Azure API keys use the `api-key` header. Token acquisition and renewal remain the caller's responsibility.
+The empty provider list prevents an existing Pi OpenAI/Codex login from taking precedence over the Azure key. Without it, a Codex login keeps searching through ChatGPT Codex and never sends its token to Azure, while a Pi OpenAI login's credential is sent to the Azure endpoint in place of the Azure key. Set `AZURE_OPENAI_API_KEY` in the environment; do not put the key itself in shared configuration. An explicitly configured Microsoft Entra JWT access token is also supported and is sent as Bearer auth; raw Azure API keys use the `api-key` header. Token acquisition and renewal remain the caller's responsibility.
 
 To reuse a configured Pi Azure provider instead, set `openaiSearchProviders` to its provider ID and `openaiUseProviderBaseUrl: true`, with no `openaiResponsesUrl`. Its base URL must already end in `/openai/v1` or `/openai/v1/responses`. Use `openaiSearchModel` to specify the Azure deployment name if it differs from the selected model ID. Do not enable `openaiUseAlphaSearch`: Azure does not implement the Codex standalone search protocol.
 

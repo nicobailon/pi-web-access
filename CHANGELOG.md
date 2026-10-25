@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Web search through Azure OpenAI, which grounds answers with Bing. Point `openaiResponsesUrl` at your Azure resource's `/openai/v1/responses` endpoint and set `openaiSearchModel` to your deployment name; an Azure API key is sent in the `api-key` header and a Microsoft Entra token as Bearer auth. A Pi Azure provider can be reused with `openaiUseProviderBaseUrl`, and an active Pi model on an Azure endpoint works with `searchRouting.useCurrentModel`. Azure doesn't support `openaiUseAlphaSearch`, so that setting is rejected before any request. A Codex login keeps searching through ChatGPT Codex even when `openaiResponsesUrl` points at Azure. Bing grounding is billed separately by Microsoft; see the README for cost and privacy notes.
+
 ## [0.44.0] - 2026-10-20
 
 ### Highlights
