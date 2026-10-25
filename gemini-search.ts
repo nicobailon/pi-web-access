@@ -77,6 +77,8 @@ export interface SearchRoutingConfig {
 	providers: ResolvedSearchProvider[];
 	useCurrentModel?: boolean;
 	fallbackOn: Array<Extract<SearchProviderErrorKind, "transient" | "quota" | "network" | "invalid-response" | "unsupported"> | WeakResultKind>;
+	/** Total budget for one routed search across every candidate, in milliseconds. */
+	timeoutMs?: number;
 }
 
 /** A successful response a route may still move past: no results and no answer (`empty`), or no result on a requested domain (`domain-miss`; an empty response also counts when a domain was requested). */
@@ -125,6 +127,7 @@ const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
 // `all` must never fan out to an opt-in or paid provider without the user asking for it.
 export const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "ollama", "perplexity", "gemini", "bocha"];
 const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported", "empty", "domain-miss"] as const;
+const MAX_ROUTING_TIMEOUT_MS = 600_000;
 
 type SearchConfig = {
 	searchProvider: SearchProviderSelection;
@@ -208,10 +211,15 @@ function normalizeSearchRouting(value: unknown): SearchRoutingConfig {
 			fallbackOn.push(kind as SearchRoutingConfig["fallbackOn"][number]);
 		}
 	}
+	const timeoutMs = raw.timeoutMs;
+	if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_ROUTING_TIMEOUT_MS)) {
+		throw new Error(`searchRouting.timeoutMs in ${CONFIG_PATH} must be an integer from 1 through ${MAX_ROUTING_TIMEOUT_MS}`);
+	}
 	return {
 		providers,
 		...(useCurrentModel !== undefined ? { useCurrentModel: useCurrentModel as boolean } : {}),
 		fallbackOn,
+		...(timeoutMs !== undefined ? { timeoutMs } : {}),
 	};
 }
 
@@ -723,25 +731,58 @@ function weakResult(response: SearchResponse, domainFilter: string[] | undefined
 
 async function searchWithConfiguredRouting(
 	query: string,
-	options: FullSearchOptions,
+	callerOptions: FullSearchOptions,
 	routing: SearchRoutingConfig,
 ): Promise<AttributedSearchResponse> {
+	const deadline = routing.timeoutMs ? AbortSignal.timeout(routing.timeoutMs) : undefined;
+	const options: FullSearchOptions = deadline
+		? { ...callerOptions, signal: callerOptions.signal ? AbortSignal.any([callerOptions.signal, deadline]) : deadline }
+		: callerOptions;
+	const timedOut = () => deadline?.aborted === true && callerOptions.signal?.aborted !== true;
+	// Availability checks, Pi auth, and cookie scans ignore the signal, so race each step against it (caller abort or deadline); abandoned work finishes in the background and is ignored.
+	const untilDeadline = <T>(work: Promise<T>): Promise<T> => {
+		if (!deadline) return work;
+		const signal = options.signal!;
+		let onAbort = () => {};
+		const aborted = new Promise<never>((_, reject) => {
+			onAbort = () => reject(signal.reason);
+			if (signal.aborted) onAbort();
+			else signal.addEventListener("abort", onAbort, { once: true });
+		});
+		return Promise.race([work, aborted]).finally(() => signal.removeEventListener("abort", onAbort));
+	};
 	const diagnostics: string[] = [];
 	let firstWeak: AttributedSearchResponse | undefined;
 	for (const provider of routing.providers) {
+		if (timedOut()) {
+			diagnostics.push(`routing timeout after ${routing.timeoutMs}ms`);
+			break;
+		}
 		const useCurrentModel = provider === "openai" && routing.useCurrentModel === true;
-		if (!(await isResolvedProviderAvailable(provider, options, useCurrentModel))) {
+		const available = await untilDeadline(isResolvedProviderAvailable(provider, options, useCurrentModel)).catch((err) => {
+			if (timedOut()) return undefined;
+			throw err;
+		});
+		if (available === undefined) {
+			diagnostics.push(`${provider}: routing timeout after ${routing.timeoutMs}ms`);
+			break;
+		}
+		if (!available) {
 			diagnostics.push(`${provider}: unavailable`);
 			continue;
 		}
 		try {
-			const response = await searchWithResolvedProvider(provider, query, options, useCurrentModel);
+			const response = await untilDeadline(searchWithResolvedProvider(provider, query, options, useCurrentModel));
 			const weak = weakResult(response, options.domainFilter);
 			const moveOn = (weak.empty && routing.fallbackOn.includes("empty")) || (weak.domainMiss && routing.fallbackOn.includes("domain-miss"));
 			if (!moveOn) return response;
 			diagnostics.push(`${provider} [${weak.kind}]`);
 			firstWeak ??= response;
 		} catch (err) {
+			if (timedOut()) {
+				diagnostics.push(`${provider}: routing timeout after ${routing.timeoutMs}ms`);
+				break;
+			}
 			const classified = classifyProviderError(provider, err);
 			diagnostics.push(`${provider} [${classified.kind}]: ${errorMessage(err)}`);
 			if (!routing.fallbackOn.includes(classified.kind as SearchRoutingConfig["fallbackOn"][number])) {
