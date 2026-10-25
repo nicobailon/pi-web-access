@@ -45,10 +45,12 @@ Relative dates ("2 days ago") and dates without a year are read against today's 
 Each URL gets a heading and one line per field:
 
 - `total: 42.1 (0.99)`: extracted. The value has the right type, is a real date or time where that applies, and the model's confidence is at least 0.80.
-- `invoice: uncertain (guess INV-2291, 0.55)`: the model's best guess, shown as a guess. This is what you get below 0.80, when the value has the wrong type (`"Oct 27"` for a date, `2.5` for an integer, `2026-13-45`, empty text, a negative duration), or when the model gave no confidence.
-- `coupon: not on the page`: the model found nothing.
+- `invoice: uncertain (guess INV-2291, 0.55)`: the model found a value but isn't sure of it, so it is shown as a guess. This is what you get below 0.80, when the value has the wrong type (`"Oct 27"` for a date, `2.5` for an integer, `2026-13-45`, empty text, a negative duration), or when the model gave no confidence.
+- `coupon: not on the page`: the model decided the value is not on the page. Clairic still sends a fallback guess in that case; it is not shown, because it is not taken from the page.
 
-The typed results are also in `details.extractions`. Pages are fetched as in `readable` mode, including `proxy`, and PDFs are read from their text. `auth` is refused with extract, as with answer mode, so authenticated page text never goes to Cloudflare. The fetched pages are stored as usual, so `get_search_content` can read them afterwards.
+The typed results are also in `details.extractions`; the text result is cut at `maxInlineContentChars` when long values would exceed it. Pages are fetched as in `readable` mode, including `proxy`, and PDFs are read from their text. Up to three pages are sent to Clairic at a time. The fetched pages are stored as usual, so `get_search_content` can read them afterwards.
+
+Extract never sends text that needed your credentials: `auth` is refused, as with answer mode, and so are GitHub repository, issue and pull request URLs, because those are read with your signed-in `gh` account and may be private.
 
 If the Clairic call for a page fails (missing credentials, HTTP error, timeout after 30 seconds, or an answer that doesn't check out), that page shows `Extraction failed: <reason>` with any credential removed; the other URLs carry on, and the page itself is still stored.
 
@@ -69,10 +71,10 @@ Results from `eval/field-extract.mjs` run through Pi, 2 rounds per set, so each 
 
 | Set | Field results | Correct | Correct "not on the page" | Withheld (right guess, < 0.80) | Wrong guess, withheld | Wrong value extracted |
 | --- | --- | --- | --- | --- | --- | --- |
-| Calibration | 43 × 2 | 62 | 18 | 4 | 2 (highest 0.32) | 0 |
-| Held-out | 40 × 2 | 54 | 20 | 4 | 2 (highest 0.13) | 0 |
+| Calibration | 43 × 2 | 62 | 16 | 4 | 4 (highest 0.32) | 0 |
+| Held-out | 40 × 2 | 54 | 18 | 4 | 4 (highest 0.24) | 0 |
 
-Every field that was not on its page came back as not on the page. Latency was about 210 ms per page (p50).
+No value was reported extracted that was wrong, and no field that was on its page came back as not on the page. Two fields per set that were not on their page came back as low-confidence guesses (0.02 to 0.24) instead of "not on the page", shown as uncertain; "Wrong guess, withheld" counts them. Latency was about 200 ms per page (p50).
 
 ## Measure it yourself
 

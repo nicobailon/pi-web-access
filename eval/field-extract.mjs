@@ -57,7 +57,8 @@ for (const { name, pages } of fixtureSets) {
 				const want = page.expected[field];
 				const result = extraction.fields[field];
 				let outcome;
-				if (want === null) outcome = result.status === "extracted" ? "wrongExtracted" : "correctNull";
+				// A guess for a field that is not on the page is still wrong, even when it is withheld.
+				if (want === null) outcome = result.status === "extracted" ? "wrongExtracted" : result.status === "uncertain" ? "wrongWithheld" : "correctNull";
 				else if (result.status === "extracted") outcome = same(type, result.value, want) ? "correct" : "wrongExtracted";
 				else if (result.status === "uncertain") outcome = same(type, result.guess, want) ? "withheld" : "wrongWithheld";
 				else outcome = "missed";

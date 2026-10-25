@@ -87,11 +87,12 @@ function matchesType(spec: FieldSpec | { type: ItemType }, value: unknown): bool
 /** A value needs a valid confidence at the threshold to count as extracted; Clairic may send only p_null when nothing was found. */
 function fieldResult(spec: FieldSpec, answer: unknown): FieldResult {
 	if (!answer || typeof answer !== "object" || Array.isArray(answer)) throw new Error("the response is invalid: a field answer is missing");
-	const { value = null, guess = null, confidence: rawConfidence } = answer as Record<string, unknown>;
-	if (value === null && guess === null) return { status: "null" };
+	const { value = null, confidence: rawConfidence } = answer as Record<string, unknown>;
+	// A null value is Clairic's "not on the page" verdict; the guess it still sends then is a fallback, not evidence.
+	if (value === null) return { status: "null" };
 	const confidence = typeof rawConfidence === "number" && rawConfidence >= 0 && rawConfidence <= 1 ? rawConfidence : undefined;
 	if (value !== null && confidence !== undefined && confidence >= EXTRACT_THRESHOLD && matchesType(spec, value)) return { status: "extracted", value, confidence };
-	return { status: "uncertain", guess: guess ?? value, ...(confidence !== undefined ? { confidence } : {}) };
+	return { status: "uncertain", guess: value, ...(confidence !== undefined ? { confidence } : {}) };
 }
 
 /** Clairic is not in Pi's model catalog, so it is called directly with Pi's `cloudflare-workers-ai` credential. */

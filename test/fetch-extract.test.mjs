@@ -118,7 +118,7 @@ test("low confidence, a wrong type, an impossible date or time, an empty or nega
 			note: { type: "text", value: " ", confidence: 0.99 },
 			wait: { type: "duration", value: -5, confidence: 0.99 },
 			gate: { type: "text", value: "B12" },
-			coupon: { type: "text", value: null, p_null: 0.99 },
+			coupon: { type: "text", value: null, guess: "SAVE10", confidence: 0.99, p_null: 0.99 },
 		}),
 	});
 	assert.equal(run.child.status, 0, run.child.stderr);
@@ -147,6 +147,7 @@ test("invalid or misplaced fields, and auth with extract, fail before any page f
 		{ url: PAGE_A, mode: "extract" },
 		{ url: PAGE_A, mode: "readable", fields: { price: "number" } },
 		{ url: PAGE_A, mode: "extract", fields: { price: "number" }, auth: true },
+		{ url: "https://github.com/acme/private/issues/7", mode: "extract", fields: { price: "number" } },
 	]);
 	assert.equal(run.child.status, 0, run.child.stderr);
 	assert.deepEqual(run.results.map((result) => result.text), [
@@ -155,8 +156,17 @@ test("invalid or misplaced fields, and auth with extract, fail before any page f
 		"Error: mode extract requires fields.",
 		"Error: fields requires mode extract.",
 		"Error: auth cannot be combined with mode extract.",
+		"Error: mode extract does not read GitHub repositories, issues or pull requests (https://github.com/acme/private/issues/7), because they are read with your signed-in gh account.",
 	]);
 	assert.deepEqual([run.pageFetches, run.clairicRequests.length], [0, 0]);
+test("extracted values are cut at maxInlineContentChars, and the full values stay in the details", () => {
+	const long = "word ".repeat(400).trim();
+	const run = runFetch({ ...extractConfig, maxInlineContentChars: 1000 }, [{ url: PAGE_A, mode: "extract", fields: { note: "text" } }], { a: clairic({ note: { type: "text", value: long, confidence: 0.99 } }) });
+	assert.equal(run.child.status, 0, run.child.stderr);
+	assert.match(run.results[0].text, /\[Field values cut at 1000 characters; the full values are in the tool details\.\]/);
+	assert.equal(run.results[0].details.extractions[0].fields.note.value, long);
+});
+
 });
 
 test("a failed extraction is shown per page without the credential, and the fetched pages stay stored", () => {
