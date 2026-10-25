@@ -176,6 +176,7 @@ web_search({ query: "...", provider: "openai" })
 web_search({ query: "...", provider: "kimi" })
 web_search({ query: "...", provider: "mistral" })
 web_search({ query: "...", provider: "all" })
+web_search({ query: "...", provider: "brave,exa" })
 web_search({ query: "...", includeContent: true })
 web_search({ queries: ["query 1", "query 2"], workflow: "none" })
 web_search({ queries: ["query 1", "query 2"], workflow: "summary-review" })
@@ -189,7 +190,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
 | `category` | Exa only: restrict results to a category such as `publication` (research papers), `news`, or `company`; other providers ignore it. Each Exa source lists its published date and authors when Exa returns them, and `publication` results also list the citation count and DOI. Without an API key, if Exa's filtered search is unavailable, the category is added to the query instead |
-| `provider` | Configured provider when omitted or set to `auto`; `all` searches every eligible provider except Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, and Linkup simultaneously; otherwise `openai`, `brave`, `parallel`, `parallel-mcp`, `tinyfish`, `search1api`, `searchinfinity`, `querit`, `tavily`, `you`, `firecrawl`, `jina`, `serpdive`, `kagi`, `bocha`, `ollama`, `anysearch`, `xcrawl`, `valyu`, `xai`, `mistral`, `brightdata`, `serpbase`, `serpapi`, `serper`, `serply`, `baizhi`, `zai`, `keenable`, `ceramic`, `deepseek`, `linkup`, `searxng`, `degoog`, `duckduckgo`, `exa`, `perplexity`, `gemini`, or `kimi` (auto-selects when no provider or routing is configured; Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, Valyu, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, and Linkup are explicit-only) |
+| `provider` | A string. Omit it or pass `"auto"` to use the configured provider (auto-selects when no provider or routing is configured). `"all"` searches every eligible provider at once; see [All providers](#all-providers) for the explicit-only providers it skips. Otherwise one provider name (`openai`, `brave`, `parallel`, `parallel-mcp`, `tinyfish`, `search1api`, `searchinfinity`, `querit`, `tavily`, `you`, `firecrawl`, `jina`, `serpdive`, `kagi`, `bocha`, `ollama`, `anysearch`, `xcrawl`, `valyu`, `xai`, `mistral`, `brightdata`, `serpbase`, `serpapi`, `serper`, `serply`, `baizhi`, `zai`, `keenable`, `ceramic`, `deepseek`, `linkup`, `searxng`, `degoog`, `duckduckgo`, `exa`, `perplexity`, `gemini`, or `kimi`), or several comma-separated names such as `"brave,exa"` to search them all at once. An unknown name fails before any request, and the error lists the valid names. With `webSearch.allowedProviders` set, the tool description lists the allowed names |
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator; fresh-install default), `summary-review` (open curator and auto-generate a summary draft), or `auto-summary` (generate a summary without opening the curator) |
 

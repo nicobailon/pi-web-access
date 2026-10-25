@@ -34,8 +34,10 @@ test("Kagi-only policy constrains the provider schema", () => {
   const output = JSON.parse(result.stdout);
   assert.doesNotMatch(output.description, /Brave/);
   for (const schema of [output.searchProvider, output.sourceProvider]) {
-    assert.deepEqual(schema.anyOf[0].enum, ["auto", "all", "kagi"]);
-    assert.deepEqual(schema.anyOf[1].items.enum, ["kagi"]);
+    assert.equal(schema.type, "string");
+    assert.equal(schema.anyOf, undefined);
+    assert.match(schema.description, /Allowed: kagi\.$/);
+    assert.doesNotMatch(schema.description, /Brave/);
   }
 });
 
@@ -207,16 +209,16 @@ test("an absent config file preserves registration and search behavior", () => {
   const result = child(undefined, `
     const tools = []; const commands = [];
     (await import(${JSON.stringify(indexUrl)})).default({ registerTool(t) { tools.push(t); }, registerCommand(name) { commands.push(name); }, registerShortcut() {}, on() {} });
-    const providers = tools.find(t => t.name === "web_search").parameters.properties.provider.anyOf[0].enum;
+    const providerDescription = tools.find(t => t.name === "web_search").parameters.properties.provider.description;
     globalThis.fetch = async () => ${kagiResponse};
     const response = await (await import(${JSON.stringify(searchUrl)})).search("q", { provider: "kagi" });
-    console.log(JSON.stringify({ tools: tools.map(t => t.name), commands, hasSerply: providers.includes("serply"), provider: response.provider }));
+    console.log(JSON.stringify({ tools: tools.map(t => t.name), commands, listsProviders: /serply|Allowed:/.test(providerDescription), provider: response.provider }));
   `, { KAGI_API_KEY: "k" });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), {
     tools: ["web_search", "source_check", "fetch_content", "get_search_content"],
     commands: ["websearch", "curator", "google-account", "search"],
-    hasSerply: true,
+    listsProviders: false,
     provider: "kagi",
   });
 });

@@ -265,6 +265,33 @@ export function normalizeSearchProviderSelection(value: unknown, label = "provid
 	return SEARCH_PROVIDERS.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
 }
 
+/** Strict parser for tool-call `provider` arguments; config values keep the lenient normalizer. */
+export function parseProviderArgument(value: unknown): SearchProviderSelection | undefined {
+	if (value === undefined) return undefined;
+	if (Array.isArray(value)) return normalizeResolvedProviderList(value, "provider");
+	const unknown = (name: string) => new Error(`Unknown search provider "${name}". Use auto, all, or one or more comma-separated names: ${getAllowedSearchProviders().join(", ")}`);
+	if (typeof value !== "string") throw unknown(String(value));
+	const normalized = value.trim().toLowerCase();
+	if (normalized === "") return undefined;
+	if (normalized.startsWith("[")) {
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(normalized);
+		} catch {
+			throw new Error("provider must be a provider name or comma-separated names; the given value is not valid JSON");
+		}
+		return normalizeResolvedProviderList(parsed, "provider");
+	}
+	const names = normalized.split(",").map(name => name.trim()).filter(Boolean);
+	if (names.length === 1) {
+		if (!SEARCH_PROVIDERS.includes(names[0] as SearchProvider)) throw unknown(names[0]);
+		return names[0] as SearchProvider;
+	}
+	const invalid = names.find(name => !RESOLVED_SEARCH_PROVIDERS.includes(name as ResolvedSearchProvider));
+	if (invalid !== undefined || names.length === 0) throw unknown(invalid ?? value);
+	return normalizeResolvedProviderList(names, "provider");
+}
+
 export interface FullSearchOptions extends SearchOptions {
 	provider?: SearchProviderSelection;
 	/** The caller already substituted the configured default for an omitted or "auto" provider. */

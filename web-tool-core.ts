@@ -15,6 +15,7 @@ import { findContent, type FindMode } from "./content-find.ts";
 import {
 	assertSearchProviderSelectionAllowed,
 	normalizeSearchProviderSelection,
+	parseProviderArgument,
 	search,
 	type SearchProvider,
 	type SearchProviderSelection,
@@ -186,7 +187,7 @@ export function normalizeProviderInput(value: unknown, label = "provider"): Sear
 }
 
 export function resolveRequestedProvider(requested: unknown): SearchProviderSelection {
-	const normalizedRequested = normalizeProviderInput(requested);
+	const normalizedRequested = parseProviderArgument(requested);
 	if (normalizedRequested && normalizedRequested !== "auto") {
 		assertSearchProviderSelectionAllowed(normalizedRequested, "Requested provider");
 		return normalizedRequested;
@@ -773,7 +774,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			const allUrls: string[] = [];
 			const allInlineContent: ExtractedContent[] = [];
 			const resolvedProvider = resolveRequestedProvider(params.provider);
-			const providerFromConfig = (normalizeProviderInput(params.provider) ?? "auto") === "auto";
+			const providerFromConfig = (parseProviderArgument(params.provider) ?? "auto") === "auto";
 
 			const queryResponses = await runSearchQueries(queryList, async (query) => {
 				signal?.throwIfAborted();
@@ -884,7 +885,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				try {
 					const response = await search(query, {
 						provider: resolveRequestedProvider(params.provider),
-						providerFromConfig: (normalizeProviderInput(params.provider) ?? "auto") === "auto",
+						providerFromConfig: (parseProviderArgument(params.provider) ?? "auto") === "auto",
 						numResults,
 						recencyFilter,
 						domainFilter,

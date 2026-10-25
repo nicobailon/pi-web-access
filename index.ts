@@ -6,7 +6,7 @@ import { normalizeFetchContentParams } from "./fetch-params.ts";
 import { answerFromPage } from "./page-query.ts";
 import { rewriteSearchQuery } from "./query-rewrite.ts";
 import { clearCloneCache, releaseClonesUnusedSince, touchClones } from "./github-extract.ts";
-import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getConfiguredSearchRouting, providerLabel, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
+import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getConfiguredSearchRouting, parseProviderArgument, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
 import { formatSeconds, getWebSearchConfigDir, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
 import {
@@ -212,13 +212,6 @@ function curatorResultIndex(queryIndex: number, entryIndex: number, queryCount: 
 
 function curatorResultIndexCapacity(queryCount: number): number {
 	return queryCount * RESOLVED_SEARCH_PROVIDERS.length;
-}
-
-function searchProviderSchema(description: string, allowedProviders: readonly ResolvedSearchProvider[]) {
-	return Type.Union([
-		StringEnum(["auto", "all", ...allowedProviders]),
-		Type.Array(StringEnum([...allowedProviders]), { minItems: 1 }),
-	], { description });
 }
 
 function isCommandEnabled(config: WebSearchConfig, name: "websearch" | "curator" | "search" | "google-account"): boolean {
@@ -742,13 +735,8 @@ export default function (pi: ExtensionAPI) {
 		throw new Error(`toolActivation "none" in ${WEB_SEARCH_CONFIG_PATH} requires toolExposure "deferred"`);
 	}
 	const allowedSearchProviders = initConfig.webSearch?.allowedProviders === undefined ? RESOLVED_SEARCH_PROVIDERS : getAllowedSearchProviders();
-	const allEligibleProviders = allowedSearchProviders.filter(provider => ALL_SEARCH_PROVIDERS.includes(provider));
-	const allExcludedProviders = allowedSearchProviders.filter(provider => !ALL_SEARCH_PROVIDERS.includes(provider));
-	const allPolicyDescription = allEligibleProviders.length === 0
-		? `all has no eligible allowed providers; explicit-only allowed providers (${allExcludedProviders.map(providerLabel).join(", ")}) remain excluded`
-		: allExcludedProviders.length > 0
-		? `all searches eligible allowed providers (${allEligibleProviders.map(providerLabel).join(", ")}); explicit-only allowed providers (${allExcludedProviders.map(providerLabel).join(", ")}) remain excluded`
-		: `all searches every eligible allowed provider (${allEligibleProviders.map(providerLabel).join(", ")})`;
+	// Depends on config only, never on credentials, so definitions stay byte-stable across environments.
+	const providerDescription = `Overrides the configured provider: auto, all, a provider name, or comma-separated names. Omit for the default.${initConfig.webSearch?.allowedProviders === undefined ? "" : ` Allowed: ${allowedSearchProviders.join(", ")}.`}`;
 	const curatorRunState = registerCuratorRunLifecycle(pi);
 	const toolNames = resolveToolNames(initConfig);
 	const webSearchEnabled = isToolEnabled(initConfig, "webSearch");
@@ -1422,7 +1410,7 @@ export default function (pi: ExtensionAPI) {
 	if (webSearchEnabled) pi.registerTool({
 		name: toolNames.webSearch,
 		label: "Web Search",
-		prepareArguments: (args) => parseStringifiedArrays(args, ["provider", "queries", "domainFilter"]) as never,
+		prepareArguments: (args) => parseStringifiedArrays(args, ["queries", "domainFilter"]) as never,
 		description:
 			`Search the web and return source-linked results or provider answers.${getSearchContentEnabled ? ` Full results are stored for retrieval with ${toolNames.getSearchContent} using the returned responseId.` : ""} For research, prefer queries with 2-4 varied angles over a single query. Omit provider to use the configured default; set it only to override that.`,
 		promptSnippet:
@@ -1437,7 +1425,7 @@ export default function (pi: ExtensionAPI) {
 			),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains (prefix with - to exclude)" })),
 			category: Type.Optional(Type.String({ description: "Exa only: result category, e.g. news, research paper" })),
-			provider: Type.Optional(searchProviderSchema(`Search provider or non-empty list of allowed providers to search simultaneously; ${allPolicyDescription}; omit this field to use the configured provider, or use auto when none is configured`, allowedSearchProviders)),
+			provider: Type.Optional(Type.String({ description: providerDescription })),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review", "auto-summary"], {
 					description: "Search workflow mode: none = no curator (default), summary-review = open curator with auto summary draft, auto-summary = generate summary without opening curator",
@@ -1497,7 +1485,7 @@ export default function (pi: ExtensionAPI) {
 				let cancelled = false;
 
 				const requestedProvider = resolveRequestedProvider(params.provider);
-				const providerFromConfig = (normalizeProviderInput(params.provider) ?? "auto") === "auto";
+				const providerFromConfig = (parseProviderArgument(params.provider) ?? "auto") === "auto";
 				const bootstrap = await loadCuratorBootstrap(requestedProvider, ctx, {
 					numResults: params.numResults,
 					recencyFilter,
@@ -1981,7 +1969,7 @@ export default function (pi: ExtensionAPI) {
 			fetchContent: Type.Optional(Type.Boolean({ description: "Fetch up to 5 result pages for exact passage extraction." })),
 			recencyFilter: Type.Optional(StringEnum(["day", "week", "month", "year"], { description: "Filter by recency." })),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Limit to domains; prefix with - to exclude." })),
-			provider: Type.Optional(searchProviderSchema(`Search provider or non-empty list of allowed providers to search simultaneously; ${allPolicyDescription}`, allowedSearchProviders)),
+			provider: Type.Optional(Type.String({ description: providerDescription })),
 			proxy: Type.Optional(Type.String({
 				description: "http(s) or socks proxy URL (e.g. http://host:port or socks5h://host:port) used for every outbound request in this call (search APIs and result-page fetches). Empty string forces direct access.",
 			})),

@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - Exa search results show each source's published date and authors, and results from Exa's `publication` category (its research paper index) also show the citation count and DOI. The README now names `publication` as the Exa category for research papers. Exa uses it in place of `research paper`, which still works. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #596](https://github.com/nicobailon/pi-web-access/pull/596).
 
+### Changed
+
+- The `provider` argument of `web_search` and `source_check` is now a plain string, which makes the tool definitions sent to the model on every request about 2,600 characters (roughly 650 tokens) smaller. To search several providers at once, pass their names separated by commas, for example `"brave,exa"`, instead of a list. An unknown provider name now returns an error that lists the valid names, instead of quietly using automatic selection. The `provider` setting in `web-search.json`, including lists, works as before ([#595](https://github.com/nicobailon/pi-web-access/issues/595)).
+
 ### Fixed
 
 - DuckDuckGo search no longer locks itself out. Several searches at once, such as a `queries` list, used to trigger DuckDuckGo's bot check for the whole IP address for 10 to 15 minutes, and every retry kept the block in place. DuckDuckGo searches now run one at a time, at least 2 seconds apart. After a bot check the provider stops sending requests for 5 minutes, doubling up to 1 hour, and fails at once with a `quota` error, so search routing can fall back right away.

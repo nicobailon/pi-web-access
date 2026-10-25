@@ -102,6 +102,14 @@ test("explicit provider array overrides configured provider and runs only the se
 	]);
 });
 
+test("explicit comma-separated providers override the configured provider", async () => {
+	const calls = runTool(await createConfig(), "Tavily, openai");
+	assert.deepEqual(calls.sort(), [
+		"https://api.openai.com/v1/responses",
+		"https://api.tavily.com/search",
+	]);
+});
+
 test("explicit auto uses configured provider", async () => {
 	const calls = runTool(await createConfig(), "auto");
 	assert.deepEqual(calls, ["https://api.perplexity.ai/search"]);

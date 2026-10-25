@@ -724,6 +724,7 @@ test("a default provider array falls back to searchRouting only when every array
 			partial: summarize(await core.webSearch({ query: "one succeeds" })),
 			mixed: summarize(await core.webSearch({ query: "mixed" })),
 			explicit: summarize(await core.webSearch({ query: "explicit array", provider: ["brave", "perplexity"] })),
+			explicitList: summarize(await core.webSearch({ query: "explicit list", provider: "brave,perplexity" })),
 		};
 		console.log(JSON.stringify({ out, calls }));
 	`, {
@@ -744,16 +745,20 @@ test("a default provider array falls back to searchRouting only when every array
 	// One failure (401) is not a fallbackOn type: the array error stands, no routing.
 	assert.equal(out.mixed.isError, true);
 	assert.match(out.mixed.text, /Selected-provider search failed/);
-	// A per-call array stays strict.
-	assert.equal(out.explicit.isError, true);
-	assert.match(out.explicit.text, /Selected-provider search failed/);
+	// A per-call array or comma-separated list stays strict.
+	for (const explicit of [out.explicit, out.explicitList]) {
+		assert.equal(explicit.isError, true);
+		assert.match(explicit.text, /Selected-provider search failed/);
+	}
 	assert.deepEqual(calls.sort(), [
 		"api.perplexity.ai both fail",
 		"api.perplexity.ai explicit array",
+		"api.perplexity.ai explicit list",
 		"api.perplexity.ai mixed",
 		"api.perplexity.ai one succeeds",
 		"api.search.brave.com both fail",
 		"api.search.brave.com explicit array",
+		"api.search.brave.com explicit list",
 		"api.search.brave.com mixed",
 		"api.search.brave.com one succeeds",
 		"api.tavily.com both fail",

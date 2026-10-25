@@ -265,9 +265,10 @@ test("Linkup is exposed in Pi and MCP schemas and Curator, and obeys the provide
 		const { generateCuratorPage } = await import(${JSON.stringify(moduleUrl("curator-page"))});
 		const available = new Proxy({ all: false, linkup: true }, { get: (obj, key) => obj[key] ?? false });
 		const page = generateCuratorPage(["q"], "token", 20, available, "linkup", "linkup", [], null);
-		console.log(JSON.stringify({ mcpSchemas, mcpErrors, sourceProvider: sourceCheck.details.artifact.provider, schemas: tools.filter(t => ["web_search", "source_check"].includes(t.name)).map(t => t.parameters.properties.provider.anyOf[0].enum), button: page.includes('data-provider="linkup"'), label: page.includes('provider === "linkup") return "Linkup"') }));
+		console.log(JSON.stringify({ mcpSchemas, mcpErrors, sourceProvider: sourceCheck.details.artifact.provider, schemas: tools.filter(t => ["web_search", "source_check"].includes(t.name)).map(t => t.parameters.properties.provider.description), button: page.includes('data-provider="linkup"'), label: page.includes('provider === "linkup") return "Linkup"') }));
 	`);
-	assert.deepEqual(output.schemas, [["auto", "all", "linkup"], ["auto", "all", "linkup"]]);
+	assert.equal(output.schemas.length, 2);
+	for (const description of output.schemas) assert.match(description, /Allowed: linkup\./);
 	assert.ok(output.mcpSchemas.every(schema => schema.includes("linkup")));
 	assert.deepEqual(output.mcpErrors, []);
 	assert.equal(output.sourceProvider, "linkup");
