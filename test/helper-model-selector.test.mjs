@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -78,14 +77,20 @@ test("without preferredFallback only the configured summary model is tried", asy
 	assert.deepEqual(await draft("ollama/missing"), { calls: ["anthropic/claude-haiku-4-5"], reason: undefined });
 });
 
-async function autoSummary(summaryModel) {
-	await writeFile(configPath, JSON.stringify({ workflow: "none", ...(summaryModel === undefined ? {} : { summaryModel }) }));
+async function searchTool(config) {
+	await writeFile(configPath, JSON.stringify({ workflow: "none", ...config }));
 	const tools = [];
 	initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
-	globalThis.fetch = async () => Response.json({ web: { results: [{ title: "Source", url: "http://93.184.216.34/", description: "snippet" }] } });
+	globalThis.fetch = async (url, init) => String(url).startsWith("https://api.search.brave.com/")
+		? Response.json({ web: { results: [{ title: "Source", url: "http://93.184.216.34/", description: "snippet" }] } })
+		: originalFetch(url, init);
+	return tools.find(tool => tool.name === "web_search");
+}
+
+async function autoSummary(summaryModel) {
+	const search = await searchTool(summaryModel === undefined ? {} : { summaryModel });
 	const calls = [];
 	const ctx = { model: local, scopedModels: [], modelRegistry: registry([haiku, local], calls) };
-	const search = tools.find(tool => tool.name === "web_search");
 	const result = await search.execute("s", { query: "q", provider: "brave", workflow: "auto-summary" }, undefined, undefined, ctx);
 	return { calls, fallbackReason: result.details.summary.fallbackReason };
 }
@@ -121,7 +126,7 @@ test("queryRewriteModel selects the only model used for query rewrite", async ()
 	assert.deepEqual(await rewrite(undefined), { outcome: "SUMMARY", calls: [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }] });
 });
 
-test("queryRewriteModel config is read for each curator rewrite and validated", async () => {
+test("queryRewriteModel config is validated", async () => {
 	const read = async config => {
 		await writeFile(configPath, JSON.stringify(config));
 		try { return getQueryRewriteModel(); } catch (error) { return error.message; }
@@ -131,6 +136,50 @@ test("queryRewriteModel config is read for each curator rewrite and validated", 
 	for (const value of ["nope", 42, ""]) {
 		assert.equal(await read({ queryRewriteModel: value }), `queryRewriteModel in ${configPath} must be "current", "current:<level>", or "provider/model-id[:<level>]"`);
 	}
-	const indexSrc = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
-	assert.equal(indexSrc.match(/rewriteSearchQuery\(query, (?:pc\.)?summaryContext, rewriteSignal, getQueryRewriteModel\(\)\)/g)?.length, 2);
+});
+
+async function curator(config, model) {
+	const search = await searchTool({ autoOpenBrowser: false, curatorTimeoutSeconds: 5, ...config });
+	const calls = [];
+	const ctx = { model, scopedModels: [], modelRegistry: registry([haiku, local], calls), cwd: "", isProjectTrusted: () => true, ui: { notify() {} } };
+	const controller = new AbortController();
+	let revealUrl;
+	const urlReady = new Promise(resolve => { revealUrl = resolve; });
+	const execution = search.execute("c", { query: "q", provider: "brave", workflow: "summary-review" }, controller.signal, update => {
+		if (update.details?.curatorUrl) revealUrl(new URL(update.details.curatorUrl));
+	}, ctx);
+	const url = await urlReady;
+	const token = url.searchParams.get("session");
+	const stateUrl = new URL(`/state?session=${token}`, url.origin);
+	while (!(await (await originalFetch(stateUrl)).json()).done) await new Promise(resolve => setTimeout(resolve, 10));
+	const post = async (path, body) => (await originalFetch(new URL(path, url.origin), {
+		method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, ...body }),
+	})).json();
+	return { calls, html: await (await originalFetch(url)).text(), post, close: async () => { controller.abort(); await execution; } };
+}
+
+test("curator rewrite and Auto summary use only the configured helper models", async () => {
+	const session = await curator({ summaryModel: "ollama/missing", queryRewriteModel: "current" }, local);
+	try {
+		assert.match(session.html, /"defaultSummaryModel":"ollama\/missing"/);
+		assert.equal((await session.post("/rewrite", { query: "q" })).query, "SUMMARY");
+		assert.deepEqual(session.calls, [{ model: "strata/strata", reasoning: undefined }]);
+		const summary = await session.post("/summarize", { selected: [0] });
+		assert.equal(summary.meta.fallbackReason, "summary-model-unavailable: Summary model not found: ollama/missing");
+		assert.equal(session.calls.length, 1);
+	} finally {
+		await session.close();
+	}
+});
+
+test("curator lists no models for summaryModel current without a session model", async () => {
+	const session = await curator({ summaryModel: "current" }, undefined);
+	try {
+		assert.match(session.html, /"summaryModels":\[\]/);
+		const summary = await session.post("/summarize", { selected: [0] });
+		assert.equal(summary.meta.fallbackReason, "summary-model-unavailable: Summary model not found: current (no active Pi session model)");
+		assert.deepEqual(session.calls, []);
+	} finally {
+		await session.close();
+	}
 });
