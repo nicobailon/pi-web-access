@@ -80,6 +80,7 @@ export interface WebSearchConfig {
 	autoOpenBrowser?: unknown;
 	curatorRemote?: unknown;
 	summaryModel?: string;
+	queryRewriteModel?: string;
 	summaryGenerationDeadlineMs?: unknown;
 	summaryInstructions?: unknown;
 	maxInlineContentChars?: unknown;

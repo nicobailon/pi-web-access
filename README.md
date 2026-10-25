@@ -594,6 +594,7 @@ Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_D
   "allowBrowserCookies": false,
   "searchModel": "gemini-3.6-flash",
   "summaryModel": "anthropic/claude-haiku-4-5",
+  "queryRewriteModel": "current",
   "summaryGenerationDeadlineMs": 30000,
   "summaryInstructions": "- Preserve concrete figures verbatim: prices, limits, versions, dates.\n- Name the product version each claim applies to.",
   "maxInlineContentChars": 30000,
@@ -650,7 +651,9 @@ Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_D
 
 `webSearch.allowedProviders` is an optional, non-empty search-provider allowlist with no duplicate entries. When omitted, every current search provider remains permitted. When present, explicit scalar and array requests for providers outside the list fail before any provider request, while `auto`, `all`, configured routing, `source_check`, and Curator use only listed providers. The allowlist does not make explicit-only or paid providers eligible for automatic fallback or `all`; they must still be named explicitly or included in `searchRouting.providers`. A configured `provider`/`searchProvider` or `searchRouting.providers` entry outside the allowlist is rejected as invalid configuration. This setting affects search only: it does not restrict `fetchRouting`, fetch answer models, or summary models.
 
-`summaryModel` accepts an optional thinking-level suffix, such as `anthropic/claude-haiku-4-5:low`. Supported suffixes are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`.
+`summaryModel` accepts an optional thinking-level suffix, such as `anthropic/claude-haiku-4-5:low`. Supported suffixes are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`. `"current"` uses the model the Pi session is on when the search starts, such as a local model; add a suffix (`"current:low"`) to set a thinking level, since the session's own level is not copied. Pi `enabledModels` still applies. When `summaryModel` is set, no fallback model is tried, including for a model you pick in the curator: if the model is unavailable or fails, you get the deterministic summary with the reason it failed, not a summary from another provider. Unset, the built-in list of small models is tried in order. Any other value makes summary workflows fail with an error naming the config file.
+
+`queryRewriteModel` picks the model for the curator's query rewrite and takes the same values as `summaryModel`. When set, only that model is used, and if it is unavailable or fails the rewrite shows an error. Unset, the rewrite tries `anthropic/claude-haiku-4-5`, then `google/gemini-3.6-flash`, then `openai/gpt-5-mini`.
 
 `summaryInstructions` appends custom text to the Requirements section of the summary prompt used by the curator UI and `auto-summary` mode (e.g. `"- Preserve concrete figures verbatim: prices, limits, versions, dates.\n- Name the product version each claim applies to."`). The text is passed verbatim to the summary model, so use one `- ` bullet per requirement. It is additive: the built-in guardrails (no invented sources, explicit weak/conflicting-evidence notes, the Sources section) always stay in place, and curator regeneration feedback is still appended afterwards. Missing, non-string, or blank values leave the default prompt unchanged.
 

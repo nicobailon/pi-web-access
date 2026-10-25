@@ -78,7 +78,7 @@ import { isZaiAvailable } from "./zai.ts";
 import { isValyuAvailable } from "./valyu.ts";
 import { isXcrawlAvailable } from "./xcrawl.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
-import { findModelWithProviderRouting, isModelInScope, splitThinkingSuffix } from "./summary-model-scope.ts";
+import { findModelWithProviderRouting, isModelInScope, resolveHelperModelSelector } from "./summary-model-scope.ts";
 import { registerCuratorRunLifecycle, resolveWebSearchWorkflow, type WebSearchWorkflow } from "./curator-run.ts";
 import { registerWebToolActivation } from "./tool-activation.ts";
 import {
@@ -297,6 +297,19 @@ export function getSummaryInstructions(): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readHelperModelKey(key: "summaryModel" | "queryRewriteModel"): string | undefined {
+	const value: unknown = loadConfig()[key];
+	if (value === undefined) return undefined;
+	const message = `${key} in ${WEB_SEARCH_CONFIG_PATH} must be "current", "current:<level>", or "provider/model-id[:<level>]"`;
+	if (typeof value !== "string") throw new Error(message);
+	try {
+		resolveHelperModelSelector(value, key);
+	} catch {
+		throw new Error(message);
+	}
+	return value.trim();
 }
 
 function shouldAutoOpenCuratorBrowser(config: WebSearchConfig): boolean {
@@ -973,16 +986,18 @@ export default function (pi: ExtensionAPI) {
 		if (selectedResults.length === 0) {
 			throw new Error("No selected results available for summary generation");
 		}
+		const configuredSummaryModel = readHelperModelKey("summaryModel");
 		try {
 			return await generateSummaryDraft(
 				selectedResults,
 				summaryContext,
 				signal,
-				modelOverride,
+				modelOverride?.trim() || configuredSummaryModel,
 				feedback,
 				undefined,
 				getSummaryGenerationDeadlineMs(),
 				getSummaryInstructions(),
+				{ preferredFallback: configuredSummaryModel === undefined },
 			);
 		} catch (err) {
 			const isEmptyResponse = err instanceof Error && err.message.includes("Summary model returned empty response");
@@ -1000,7 +1015,7 @@ export default function (pi: ExtensionAPI) {
 
 	async function loadSummaryModelChoices(
 		summaryContext: SummaryGenerationContext,
-	): Promise<{ summaryModels: Array<{ value: string; label: string }>; defaultSummaryModel: string | null }> {
+	): Promise<{ summaryModels: Array<{ value: string; label: string }>; defaultSummaryModel: string | null; preferredFallback: boolean }> {
 		const summaryModels: Array<{ value: string; label: string }> = [];
 		const seen = new Set<string>();
 		const availableValues = new Set<string>();
@@ -1025,8 +1040,7 @@ export default function (pi: ExtensionAPI) {
 			addModel(summaryContext.model.provider, summaryContext.model.id);
 		}
 
-		const config = loadConfig();
-		const configuredSummaryModel = typeof config.summaryModel === "string" ? config.summaryModel.trim() : "";
+		const configuredSummaryModel = readHelperModelKey("summaryModel");
 		const preferredDefaults = [
 			{ provider: "anthropic", id: "claude-haiku-4-5" },
 			{ provider: "openai-codex", id: "gpt-5.6-luna" },
@@ -1036,32 +1050,18 @@ export default function (pi: ExtensionAPI) {
 			{ provider: "deepseek", id: "deepseek-v4-flash" },
 		];
 
-		const resolveAvailableModelValue = (selector: string): string | null => {
-			const parsed = splitThinkingSuffix(selector);
-			const slashIndex = parsed.value.indexOf("/");
-			if (slashIndex <= 0 || slashIndex >= parsed.value.length - 1) return null;
-			const model = findModelWithProviderRouting(
-				summaryContext.modelRegistry,
-				parsed.value.slice(0, slashIndex),
-				parsed.value.slice(slashIndex + 1),
-			);
-			if (!model) return null;
-			const value = `${model.provider}/${model.id}`;
-			if (!availableValues.has(value)) return null;
-			if (selector !== value && !seen.has(selector)) {
-				seen.add(selector);
-				summaryModels.push({ value: selector, label: selector });
-			}
-			return selector;
-		};
-
 		let defaultSummaryModel: string | null = null;
-		if (configuredSummaryModel.length > 0) {
-			defaultSummaryModel = availableValues.has(configuredSummaryModel)
-				? configuredSummaryModel
-				: resolveAvailableModelValue(configuredSummaryModel);
-		}
-		if (!defaultSummaryModel) {
+		if (configuredSummaryModel !== undefined) {
+			const spec = resolveHelperModelSelector(configuredSummaryModel, "summary model", summaryContext.model);
+			// With no concrete value to show, list nothing so the curator sends Auto (the configured selector).
+			if (!spec) return { summaryModels: [], defaultSummaryModel: configuredSummaryModel, preferredFallback: false };
+			// The curator groups choices by provider, so `current` must be concrete. Unavailable models stay listed so failures are visible.
+			defaultSummaryModel = `${spec.provider}/${spec.id}${spec.thinkingLevel ? `:${spec.thinkingLevel}` : ""}`;
+			if (!seen.has(defaultSummaryModel)) {
+				seen.add(defaultSummaryModel);
+				summaryModels.push({ value: defaultSummaryModel, label: defaultSummaryModel });
+			}
+		} else {
 			for (const preferred of preferredDefaults) {
 				const model = findModelWithProviderRouting(summaryContext.modelRegistry, preferred.provider, preferred.id);
 				const value = model ? `${model.provider}/${model.id}` : null;
@@ -1071,7 +1071,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 		}
-		return { summaryModels, defaultSummaryModel };
+		return { summaryModels, defaultSummaryModel, preferredFallback: configuredSummaryModel === undefined };
 	}
 
 	function resolveSummaryForSubmit(
@@ -1291,7 +1291,7 @@ export default function (pi: ExtensionAPI) {
 					async onRewriteQuery(query, rewriteSignal) {
 						return runWithProxy(pc.proxy, async () => {
 							if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
-							return rewriteSearchQuery(query, pc.summaryContext, rewriteSignal);
+							return rewriteSearchQuery(query, pc.summaryContext, rewriteSignal, readHelperModelKey("queryRewriteModel"));
 						});
 					},
 				},
@@ -1716,6 +1716,7 @@ export default function (pi: ExtensionAPI) {
 						undefined,
 						getSummaryGenerationDeadlineMs(),
 						getSummaryInstructions(),
+						{ preferredFallback: summaryModelChoices.preferredFallback },
 					);
 					return { approvedSummary: generated.summary, summaryMeta: generated.meta };
 				};
@@ -2475,7 +2476,7 @@ export default function (pi: ExtensionAPI) {
 							if (commandHandle && !isCommandActive()) {
 								throw new Error("Curator session is no longer active.");
 							}
-							return rewriteSearchQuery(query, summaryContext, rewriteSignal);
+							return rewriteSearchQuery(query, summaryContext, rewriteSignal, readHelperModelKey("queryRewriteModel"));
 						},
 					},
 				);
