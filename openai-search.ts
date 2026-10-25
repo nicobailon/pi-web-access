@@ -349,11 +349,11 @@ async function resolvePiAuth(ctx: ExtensionContext, responsesUrl: string, provid
 	return undefined;
 }
 
-export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSignal): Promise<OpenAIAuth | undefined> {
+export async function resolveOpenAIAuth(ctx?: ExtensionContext, signal?: AbortSignal, model?: string): Promise<OpenAIAuth | undefined> {
 	const config = loadConfig();
 	const responsesUrl = resolveConfiguredResponsesUrl(config.openaiResponsesUrl);
 	const useProviderBaseUrl = resolveUseProviderBaseUrl(config);
-	const modelOverride = resolveConfiguredSearchModel(config.openaiSearchModel);
+	const modelOverride = model ?? resolveConfiguredSearchModel(config.openaiSearchModel);
 	const providers = resolveConfiguredSearchProviders(config.openaiSearchProviders);
 	if (ctx) {
 		const auth = await resolvePiAuth(ctx, responsesUrl, providers, modelOverride, config.openaiResponsesUrl !== undefined, useProviderBaseUrl);
@@ -841,7 +841,7 @@ export async function searchWithOpenAI(
 	options: SearchOptions = {},
 	ctx?: ExtensionContext,
 ): Promise<SearchResponse> {
-	const auth = await resolveOpenAIAuth(ctx, options.signal);
+	const auth = await resolveOpenAIAuth(ctx, options.signal, options.model);
 	if (!auth) {
 		throw new Error(
 			"OpenAI web search unavailable. Either:\n" +

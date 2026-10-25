@@ -51,6 +51,27 @@ export function isLoopbackHostname(hostnameValue: string): boolean {
 		|| (isIP(normalized) === 4 && normalized.split(".", 1)[0] === "127");
 }
 
+function allowsHttpBaseUrls(): boolean {
+	const environmentValue = process.env.PI_WEB_ACCESS_ALLOW_HTTP_BASE_URLS;
+	if (environmentValue !== undefined) {
+		const value = environmentValue.trim().toLowerCase();
+		if (value === "true" || value === "1") return true;
+		if (value === "false" || value === "0") return false;
+		throw new Error("Invalid configuration: PI_WEB_ACCESS_ALLOW_HTTP_BASE_URLS must be true, false, 1, or 0");
+	}
+	const path = getWebSearchConfigPath();
+	if (!existsSync(path)) return false;
+	let raw: unknown;
+	try {
+		raw = JSON.parse(readFileSync(path, "utf-8"));
+	} catch (err) {
+		throw new Error(`Failed to parse ${path}: ${err instanceof Error ? err.message : String(err)}`);
+	}
+	const value = raw && typeof raw === "object" ? (raw as { allowHttpBaseUrls?: unknown }).allowHttpBaseUrls : undefined;
+	if (value !== undefined && typeof value !== "boolean") throw new Error(`allowHttpBaseUrls in ${path} must be a boolean`);
+	return value === true;
+}
+
 export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
 	const fromEnvironment = options.environmentValue !== undefined;
 	const value = fromEnvironment ? options.environmentValue : options.configuredValue;
@@ -69,7 +90,7 @@ export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
 	} catch {
 		throw new Error(`${source} must be an absolute HTTP(S) URL`);
 	}
-	if (url.protocol !== "https:" && (url.protocol !== "http:" || !isLoopbackHostname(url.hostname))) {
+	if (url.protocol !== "https:" && (url.protocol !== "http:" || (!isLoopbackHostname(url.hostname) && !allowsHttpBaseUrls()))) {
 		throw new Error(`${source} must be an absolute HTTPS URL`);
 	}
 	if (url.username || url.password) {

@@ -15,6 +15,7 @@ import { findContent, type FindMode } from "./content-find.ts";
 import {
 	assertSearchProviderSelectionAllowed,
 	normalizeSearchProviderSelection,
+	validateSearchModelOverride,
 	search,
 	type SearchProvider,
 	type SearchProviderSelection,
@@ -754,6 +755,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 	}
 
 	async function webSearch(params: WebSearchParams, signal?: AbortSignal, call: WebSearchCallOptions = {}): Promise<WebToolResult> {
+		const model = validateSearchModelOverride(params.provider, params.model);
 		const { extensionContext: ctx, onUpdate } = call;
 		return runWithProxy(typeof params.proxy === "string" ? params.proxy : undefined, async () => {
 			const rawQueryList: unknown[] = Array.isArray(params.queries)
@@ -785,6 +787,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				try {
 					const { answer, results, inlineContent, provider, providerResponses } = await search(query, {
 						provider: resolvedProvider,
+						model,
 						providerFromConfig,
 						numResults: params.numResults,
 						recencyFilter,
