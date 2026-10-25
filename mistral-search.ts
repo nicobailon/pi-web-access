@@ -213,7 +213,7 @@ export function isMistralAvailable(): boolean {
 
 export async function searchWithMistral(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const config = loadConfig();
-	const model = resolveSearchModel(config.mistralSearchModel);
+	const model = options.model ?? resolveSearchModel(config.mistralSearchModel);
 	const tool = resolveSearchTool(config.mistralSearchTool);
 	const numResults = normalizeCount(options.numResults);
 	const apiKey = await getApiKey(options.signal);

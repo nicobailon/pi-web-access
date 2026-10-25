@@ -6,6 +6,7 @@ import { getApiKey, getVersionedApiBase, fetchGeminiApi, isGatewayConfigured, is
 import { isGeminiAdcAvailable } from "./gemini-adc.ts";
 import { getGeminiWebAvailabilityDiagnostic, isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.ts";
+import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { isExaAvailable, searchWithExa } from "./exa.ts";
 import { isBraveAvailable, searchWithBrave } from "./brave.ts";
 import {
@@ -75,8 +76,11 @@ export type SearchProviderErrorKind =
 export interface SearchRoutingConfig {
 	providers: ResolvedSearchProvider[];
 	useCurrentModel?: boolean;
-	fallbackOn: Array<Extract<SearchProviderErrorKind, "transient" | "quota" | "network" | "invalid-response" | "unsupported">>;
+	fallbackOn: Array<Extract<SearchProviderErrorKind, "transient" | "quota" | "network" | "invalid-response" | "unsupported"> | WeakResultKind>;
 }
+
+/** A successful response a route may still move past: no results and no answer (`empty`), or no result on a requested domain (`domain-miss`; an empty response also counts when a domain was requested). */
+export type WeakResultKind = "empty" | "domain-miss";
 
 export class SearchProviderError extends Error {
 	readonly provider: ResolvedSearchProvider;
@@ -120,7 +124,7 @@ const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
 // Explicit-only providers (Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, Linkup) are deliberately absent:
 // `all` must never fan out to an opt-in or paid provider without the user asking for it.
 export const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "ollama", "perplexity", "gemini", "bocha"];
-const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported"] as const;
+const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported", "empty", "domain-miss"] as const;
 
 type SearchConfig = {
 	searchProvider: SearchProviderSelection;
@@ -198,7 +202,7 @@ function normalizeSearchRouting(value: unknown): SearchRoutingConfig {
 	const fallbackOn: SearchRoutingConfig["fallbackOn"] = [];
 	for (const kind of raw.fallbackOn) {
 		if (typeof kind !== "string" || !VALID_ROUTING_KINDS.includes(kind as typeof VALID_ROUTING_KINDS[number])) {
-			throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} may only contain transient, quota, network, invalid-response, or unsupported`);
+			throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} may only contain transient, quota, network, invalid-response, unsupported, empty, or domain-miss`);
 		}
 		if (!fallbackOn.includes(kind as SearchRoutingConfig["fallbackOn"][number])) {
 			fallbackOn.push(kind as SearchRoutingConfig["fallbackOn"][number]);
@@ -265,6 +269,23 @@ export function normalizeSearchProviderSelection(value: unknown, label = "provid
 	return SEARCH_PROVIDERS.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
 }
 
+/** Validate the original arguments, before config can supply an implicit provider. */
+export function validateSearchModelOverride(provider: unknown, model: unknown, providerFromConfig = false): string | undefined {
+	if (model === undefined) return undefined;
+	if (typeof model !== "string" || !model.trim()) {
+		throw new Error("web_search model must be a non-empty string containing an exact server model ID");
+	}
+	const selected = typeof provider === "string" ? provider.trim().toLowerCase() : "";
+	if (providerFromConfig || !selected || selected === "auto" || selected === "all") {
+		throw new Error("web_search model requires an explicit single provider: openai, xai, mistral, or gemini (API only); omitted, auto, all, and array providers are ambiguous");
+	}
+	if (!["openai", "xai", "mistral", "gemini"].includes(selected)) {
+		throw new Error(`web_search model is not supported for provider ${JSON.stringify(selected)}; use openai, xai, mistral, or gemini (API only)`);
+	}
+	assertSearchProviderSelectionAllowed(selected as ResolvedSearchProvider, "Requested provider");
+	return model.trim();
+}
+
 export interface FullSearchOptions extends SearchOptions {
 	provider?: SearchProviderSelection;
 	/** The caller already substituted the configured default for an omitted or "auto" provider. */
@@ -303,6 +324,12 @@ async function searchWithGemini(
 	options: SearchOptions,
 	strictErrors: boolean,
 ): Promise<SearchResponse | null> {
+	// Gemini Web cannot honor an explicit model, so never fall back to it.
+	if (options.model !== undefined) {
+		const result = await searchWithGeminiApi(query, options);
+		if (result) return result;
+		throw new Error("Gemini API search unavailable: an explicit model requires API-path authentication (API key, ADC, or gateway); browser cookies cannot honor it");
+	}
 	const errors: string[] = [];
 
 	try {
@@ -644,12 +671,30 @@ async function searchWithProviders(
 	};
 }
 
+/** Describes a successful response a route may move past; `fallback` says which fallbackOn kinds apply. */
+function weakResult(response: SearchResponse, domainFilter: string[] | undefined): { kind: WeakResultKind; empty: boolean; domainMiss: boolean } {
+	const empty = response.results.length === 0 && !response.answer.trim();
+	const wanted = (domainFilter ?? [])
+		.filter((domain) => !domain.trim().startsWith("-"))
+		.flatMap((domain) => normalizeDomain(domain) ?? []);
+	const domainMiss = wanted.length > 0 && !response.results.some((result) => {
+		try {
+			const host = new URL(result.url).hostname.toLowerCase();
+			return wanted.some((domain) => host === domain || host.endsWith(`.${domain}`));
+		} catch {
+			return false;
+		}
+	});
+	return { kind: empty ? "empty" : "domain-miss", empty, domainMiss };
+}
+
 async function searchWithConfiguredRouting(
 	query: string,
 	options: FullSearchOptions,
 	routing: SearchRoutingConfig,
 ): Promise<AttributedSearchResponse> {
 	const diagnostics: string[] = [];
+	let firstWeak: AttributedSearchResponse | undefined;
 	for (const provider of routing.providers) {
 		const useCurrentModel = provider === "openai" && routing.useCurrentModel === true;
 		if (!(await isResolvedProviderAvailable(provider, options, useCurrentModel))) {
@@ -657,7 +702,12 @@ async function searchWithConfiguredRouting(
 			continue;
 		}
 		try {
-			return await searchWithResolvedProvider(provider, query, options, useCurrentModel);
+			const response = await searchWithResolvedProvider(provider, query, options, useCurrentModel);
+			const weak = weakResult(response, options.domainFilter);
+			const moveOn = (weak.empty && routing.fallbackOn.includes("empty")) || (weak.domainMiss && routing.fallbackOn.includes("domain-miss"));
+			if (!moveOn) return response;
+			diagnostics.push(`${provider} [${weak.kind}]`);
+			firstWeak ??= response;
 		} catch (err) {
 			const classified = classifyProviderError(provider, err);
 			diagnostics.push(`${provider} [${classified.kind}]: ${errorMessage(err)}`);
@@ -666,10 +716,14 @@ async function searchWithConfiguredRouting(
 			}
 		}
 	}
+	// Like the built-in auto chain, hand back the first weak response rather than an error.
+	if (firstWeak) return firstWeak;
 	throw new Error(`Configured search routing exhausted:\n  - ${diagnostics.join("\n  - ")}`);
 }
 
 export async function search(query: string, options: FullSearchOptions = {}): Promise<AttributedSearchResponse> {
+	const model = validateSearchModelOverride(options.provider, options.model, options.providerFromConfig);
+	if (model !== undefined) options = { ...options, model };
 	const config = getSearchConfig();
 	const provider = options.provider === undefined || options.provider === "auto"
 		? config.searchProvider
@@ -774,13 +828,13 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
-		const model = getSearchConfig().searchModel ?? DEFAULT_SEARCH_MODEL;
+		const model = options.model ?? getSearchConfig().searchModel ?? DEFAULT_SEARCH_MODEL;
 		const body = {
 			contents: [{ role: "user", parts: [{ text: query }] }],
 			tools: [{ google_search: {} }],
 		};
 
-		const res = await fetchGeminiApi(`${getVersionedApiBase()}/models/${model}:generateContent`, {
+		const res = await fetchGeminiApi(`${getVersionedApiBase()}/models/${options.model !== undefined ? encodeURIComponent(model) : model}:generateContent`, {
 			method: "POST",
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(body),
@@ -801,7 +855,10 @@ async function searchWithGeminiApi(query: string, options: SearchOptions = {}): 
 		const metadata = data.candidates?.[0]?.groundingMetadata;
 		const results = await resolveGroundingChunks(metadata?.groundingChunks, options.signal);
 
-		if (!answer && results.length === 0) return null;
+		if (!answer && results.length === 0) {
+			if (options.model !== undefined) throw new Error("Gemini API returned no answer or sources");
+			return null;
+		}
 		return { answer, results };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
