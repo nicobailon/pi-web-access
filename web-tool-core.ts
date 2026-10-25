@@ -964,6 +964,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				domainFilter,
 			});
 			let artifact: ResearchArtifact;
+			const failedSearchCount = errors.length;
 			if (settings.claimJudgeModel && built.passages.length > 0 && !signal?.aborted) {
 				const judgment = await judgeClaim(settings.claimJudgeModel, claim, built.passages, loadConfig(), signal);
 				artifact = { ...built, claims: [judgment.assessment] };
@@ -981,7 +982,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			});
 			return {
 				content: [{ type: "text", text: formatSourceCheckResult(artifact, getSearchContentEnabled ? toolNames.getSearchContent : null) }],
-				details: { responseId: artifact.id, artifact, sourceCount: artifact.sources.length, passageCount: artifact.passages.length, searchCount: queries.length },
+				details: { responseId: artifact.id, artifact, sourceCount: artifact.sources.length, passageCount: artifact.passages.length, searchCount: queries.length, failedSearchCount },
 			};
 		});
 	}
@@ -1498,10 +1499,10 @@ function standaloneError(error: string): WebToolResult {
 // URL, or every source_check search failed. A working search with zero matches
 // is not.
 export function markToolError<T extends Omit<WebToolResult, "structuredContent">>(result: T): T {
-	const { error, queryCount, successfulQueries, urlCount, successful, searchCount, artifact } = result.details;
+	const { error, queryCount, successfulQueries, urlCount, successful, searchCount, failedSearchCount } = result.details;
 	const nothingSucceeded = (typeof queryCount === "number" && queryCount > 0 && successfulQueries === 0)
 		|| (typeof urlCount === "number" && urlCount > 0 && successful === 0)
-		|| (typeof searchCount === "number" && searchCount > 0 && (artifact as ResearchArtifact).errors?.length === searchCount);
+		|| (typeof searchCount === "number" && searchCount > 0 && failedSearchCount === searchCount);
 	return error !== undefined || nothingSucceeded ? { ...result, isError: true } : result;
 }
 

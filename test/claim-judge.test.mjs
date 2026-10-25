@@ -34,7 +34,7 @@ function runSourceCheck(config, judgeReply) {
 			const tools = [];
 			initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
 			const result = await tools.find((tool) => tool.name === "source_check").execute("call", { claim: "The API supports streaming", provider: "brave" }, undefined, undefined, {});
-			console.log(JSON.stringify({ text: result.content[0].text, claim: result.details.artifact.claims[0], errors: result.details.artifact.errors, judgeRequests }));
+			console.log(JSON.stringify({ text: result.content[0].text, isError: result.isError, claim: result.details.artifact.claims[0], errors: result.details.artifact.errors, judgeRequests }));
 		`,
 		encoding: "utf8",
 		env,
@@ -103,6 +103,7 @@ test("each model applies its own contradicted threshold", () => {
 test("a judge failure is unclear, recorded in the artifact errors, and never shows the credential", () => {
 	const serverError = runSourceCheck(clef, { status: 500, body: `upstream rejected Bearer ${CF_TOKEN}` });
 	assert.equal(serverError.claim.status, "unclear");
+	assert.equal(serverError.isError, undefined);
 	assert.match(serverError.claim.rationale, /^Claim judge clef failed: Cloudflare Workers AI returned HTTP 500: upstream rejected Bearer \[redacted\]; review the passages\.$/);
 	assert.equal(serverError.errors.at(-1).query, "claim judge");
 	assert.ok(![serverError.text, JSON.stringify(serverError.claim), JSON.stringify(serverError.errors)].some((output) => output.includes(CF_TOKEN)));
