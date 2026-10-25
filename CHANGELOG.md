@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- After an update, the first Pi session shows the highlights of the releases you skipped, once, with a link to the full changelog. A fresh install or a downgrade shows nothing.
 - Search routing can move on to the next provider when one answers with no results, or with no results from the domains you asked for. Turn it on by adding `"empty"` or `"domain-miss"` to `searchRouting.fallbackOn`. If every provider answers that way, you get the first answer. A routed search can also be given a total time limit with `searchRouting.timeoutMs` (1 to 600000 milliseconds), which includes the time spent checking whether each provider is set up and signed in; when it runs out, you get the first answer passed over, or an error that says the route ran out of time. Thanks to [@isjiajia01](https://github.com/isjiajia01) for [PR #594](https://github.com/nicobailon/pi-web-access/pull/594).
 - `queryRewriteModel` chooses the model the curator uses to rewrite a search query: `"current"` for the model your Pi session is running, or a `provider/model-id`, each with an optional thinking level such as `"current:low"`. When set, no other model is tried. Unset, the rewrite still uses its built-in list of cloud models.
 - `summaryModel` accepts `"current"` or `"current:<level>"` to write summaries with the model your Pi session is running, which keeps them on a local or self-hosted model. Pi `enabledModels` still applies.

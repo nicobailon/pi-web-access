@@ -81,6 +81,7 @@ import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } f
 import { findModelWithProviderRouting, isModelInScope, resolveHelperModelSelector } from "./summary-model-scope.ts";
 import { registerCuratorRunLifecycle, resolveWebSearchWorkflow, type WebSearchWorkflow } from "./curator-run.ts";
 import { registerWebToolActivation } from "./tool-activation.ts";
+import { showUpgradeNotice } from "./upgrade-notice.ts";
 import {
 	createWebToolCore,
 	DEFAULT_TOOL_NAMES,
@@ -1387,7 +1388,11 @@ export default function (pi: ExtensionAPI) {
 		if (event.parentToolCallId && event.toolName === toolNames.webSearch) nestedSearchCallIds.add(event.toolCallId);
 	});
 
-	pi.on("session_start", async (_event, ctx) => { nestedSearchCallIds.clear(); startSession(ctx); });
+	pi.on("session_start", async (_event, ctx) => {
+		nestedSearchCallIds.clear();
+		startSession(ctx);
+		void showUpgradeNotice(ctx).catch((error) => console.error("Failed to show the pi-web-access upgrade notice:", error));
+	});
 	pi.on("session_tree", async (_event, ctx) => { nestedSearchCallIds.clear(); startSession(ctx); });
 
 	pi.on("session_shutdown", () => {
