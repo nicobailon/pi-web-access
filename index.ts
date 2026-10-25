@@ -1060,10 +1060,13 @@ export default function (pi: ExtensionAPI) {
 		let defaultSummaryModel: string | null = null;
 		if (configuredSummaryModel !== undefined) {
 			const spec = resolveHelperModelSpec(parseHelperModelSelector(configuredSummaryModel, "summary model"), summaryContext.model);
-			// The curator groups choices by the text before "/", so `current` must become a concrete selector.
-			// An unavailable configured model stays preselected so its failure is visible instead of another provider being used.
-			defaultSummaryModel = spec ? `${spec.provider}/${spec.id}${spec.thinkingLevel ? `:${spec.thinkingLevel}` : ""}` : configuredSummaryModel;
-			if (spec && !seen.has(defaultSummaryModel)) {
+			// `current` without a session model has no concrete value. Listing no models makes the curator send
+			// Auto (the configured selector), which fails visibly, instead of preselecting an unrelated first model.
+			if (!spec) return { summaryModels: [], defaultSummaryModel: configuredSummaryModel, preferredFallback: false };
+			// The curator groups choices by the text before "/", so `current` becomes a concrete selector, and an
+			// unavailable configured model is still listed and preselected so its failure is visible.
+			defaultSummaryModel = `${spec.provider}/${spec.id}${spec.thinkingLevel ? `:${spec.thinkingLevel}` : ""}`;
+			if (!seen.has(defaultSummaryModel)) {
 				seen.add(defaultSummaryModel);
 				summaryModels.push({ value: defaultSummaryModel, label: defaultSummaryModel });
 			}
