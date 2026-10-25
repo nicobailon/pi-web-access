@@ -1984,7 +1984,7 @@ export default function (pi: ExtensionAPI) {
 	if (fetchContentEnabled) pi.registerTool({
 		name: toolNames.fetchContent,
 		label: "Fetch Content",
-		description: `Fetch web pages, PDFs, GitHub repos, images, YouTube and local video. ${fetchContentStorageNote}`,
+		description: `Fetch web pages, PDFs, GitHub repos, images, YouTube and local video, as the mode allows. ${fetchContentStorageNote}`,
 		promptSnippet:
 			"Use to fetch URL content, direct images, GitHub repos, and videos.",
 		parameters: Type.Object({
