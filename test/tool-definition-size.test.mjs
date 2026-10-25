@@ -8,7 +8,6 @@ import { test } from "node:test";
 const indexUrl = new URL("../index.ts", import.meta.url).href;
 const CREDENTIALS = ["BRAVE_API_KEY", "EXA_API_KEY", "TAVILY_API_KEY"];
 
-// Each registration yields the definitions Pi sends with every request: { name, description, parameters }.
 function registrations(extraEnv = {}) {
 	const home = mkdtempSync(join(tmpdir(), "pi-web-access-tool-size-"));
 	const env = { ...process.env, PI_CODING_AGENT_DIR: home, XDG_CONFIG_HOME: "", HOME: join(home, "home"), USERPROFILE: join(home, "home") };

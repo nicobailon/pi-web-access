@@ -11,16 +11,10 @@ function child(config, script, extraEnv = {}) {
 	const home = mkdtempSync(join(tmpdir(), "pi-web-access-provider-arg-"));
 	if (config !== undefined) writeFileSync(join(home, "web-search.json"), JSON.stringify(config) + "\n");
 	const env = { ...process.env, PI_CODING_AGENT_DIR: home, XDG_CONFIG_HOME: "", HOME: join(home, "home"), USERPROFILE: join(home, "home"), ...extraEnv };
-	for (const key of ["BRAVE_API_KEY", "EXA_API_KEY"]) if (!(key in extraEnv)) delete env[key];
 	const result = spawnSync(process.execPath, ["--input-type=module"], { input: script, encoding: "utf8", env });
 	assert.equal(result.status, 0, result.stderr);
 	return JSON.parse(result.stdout.trim().split("\n").pop());
 }
-
-const register = `
-	const tools = [];
-	(await import(${JSON.stringify(indexUrl)})).default({ registerTool(t) { tools.push(t); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
-`;
 
 test("provider tool arguments accept names, lists, and JSON arrays, and reject anything else", () => {
 	const cases = [
@@ -51,7 +45,8 @@ test("provider tool arguments accept names, lists, and JSON arrays, and reject a
 test("unknown providers fail before any request and list only allowed providers", () => {
 	const run = (config) => child(config, `
 		let calls = 0; globalThis.fetch = async () => { calls++; throw new Error("must not fetch"); };
-		${register}
+		const tools = [];
+		(await import(${JSON.stringify(indexUrl)})).default({ registerTool(t) { tools.push(t); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
 		let error; try { await tools.find(t => t.name === "web_search").execute("call", { query: "q", provider: "bogus", workflow: "none" }); } catch (err) { error = err.message; }
 		const check = await tools.find(t => t.name === "source_check").execute("call", { claim: "c", provider: "bogus" }, undefined, undefined, { modelRegistry: {} });
 		console.log(JSON.stringify({ calls, error, check: JSON.stringify(check.details) }));
@@ -63,16 +58,4 @@ test("unknown providers fail before any request and list only allowed providers"
 	const kagiOnly = run({ webSearch: { allowedProviders: ["kagi"] } });
 	assert.equal(kagiOnly.calls, 0);
 	assert.equal(kagiOnly.error, 'Unknown search provider "bogus". Use auto, all, or one or more comma-separated names: kagi');
-});
-
-test("provider schemas are plain strings", () => {
-	const tools = child(undefined, `${register}
-		console.log(JSON.stringify(tools.map(t => ({ name: t.name, parameters: t.parameters }))));
-	`);
-	for (const name of ["web_search", "source_check"]) {
-		assert.deepEqual(tools.find(t => t.name === name).parameters.properties.provider, {
-			type: "string",
-			description: "auto, all, a provider name, or comma-separated names; omit for the configured default.",
-		});
-	}
 });

@@ -282,12 +282,11 @@ export function parseProviderArgument(value: unknown): SearchProviderSelection |
 			throw new Error("provider must be a provider name or comma-separated names; the given value is not valid JSON");
 		}
 		if (!Array.isArray(parsed) || parsed.length === 0) return normalizeResolvedProviderList(parsed, "provider");
-		names = parsed.map(entry => typeof entry === "string" ? entry.trim() : String(entry));
+		names = parsed.map(entry => String(entry).trim());
 	} else {
 		names = normalized.split(",").map(name => name.trim()).filter(Boolean);
-		if (names.length === 0) throw unknown(value);
-		if (names.length === 1) {
-			if (!SEARCH_PROVIDERS.includes(names[0] as SearchProvider)) throw unknown(names[0]);
+		if (names.length < 2) {
+			if (!SEARCH_PROVIDERS.includes(names[0] as SearchProvider)) throw unknown(names[0] ?? value);
 			return names[0] as SearchProvider;
 		}
 	}

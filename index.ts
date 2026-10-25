@@ -734,9 +734,8 @@ export default function (pi: ExtensionAPI) {
 	if (toolActivation === "none" && toolExposure !== "deferred") {
 		throw new Error(`toolActivation "none" in ${WEB_SEARCH_CONFIG_PATH} requires toolExposure "deferred"`);
 	}
-	const allowedSearchProviders = initConfig.webSearch?.allowedProviders === undefined ? RESOLVED_SEARCH_PROVIDERS : getAllowedSearchProviders();
 	// Depends on config only, never on credentials, so definitions stay byte-stable across environments.
-	const providerDescription = `auto, all, a provider name, or comma-separated names; omit for the configured default.${initConfig.webSearch?.allowedProviders === undefined ? "" : ` Allowed: ${allowedSearchProviders.join(", ")}.`}`;
+	const providerDescription = `auto, all, a provider name, or comma-separated names; omit for the configured default.${initConfig.webSearch?.allowedProviders === undefined ? "" : ` Allowed: ${getAllowedSearchProviders().join(", ")}.`}`;
 	const curatorRunState = registerCuratorRunLifecycle(pi);
 	const toolNames = resolveToolNames(initConfig);
 	const webSearchEnabled = isToolEnabled(initConfig, "webSearch");

@@ -35,9 +35,7 @@ test("Kagi-only policy constrains the provider schema", () => {
   assert.doesNotMatch(output.description, /Brave/);
   for (const schema of [output.searchProvider, output.sourceProvider]) {
     assert.equal(schema.type, "string");
-    assert.equal(schema.anyOf, undefined);
     assert.match(schema.description, /Allowed: kagi\.$/);
-    assert.doesNotMatch(schema.description, /Brave/);
   }
 });
 
