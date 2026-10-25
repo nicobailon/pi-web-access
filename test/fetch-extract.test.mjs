@@ -159,14 +159,14 @@ test("invalid or misplaced fields, and auth with extract, fail before any page f
 		"Error: mode extract does not read GitHub repositories, issues or pull requests (https://github.com/acme/private/issues/7), because they are read with your signed-in gh account.",
 	]);
 	assert.deepEqual([run.pageFetches, run.clairicRequests.length], [0, 0]);
+});
+
 test("extracted values are cut at maxInlineContentChars, and the full values stay in the details", () => {
 	const long = "word ".repeat(400).trim();
 	const run = runFetch({ ...extractConfig, maxInlineContentChars: 1000 }, [{ url: PAGE_A, mode: "extract", fields: { note: "text" } }], { a: clairic({ note: { type: "text", value: long, confidence: 0.99 } }) });
 	assert.equal(run.child.status, 0, run.child.stderr);
 	assert.match(run.results[0].text, /\[Field values cut at 1000 characters; the full values are in the tool details\.\]/);
 	assert.equal(run.results[0].details.extractions[0].fields.note.value, long);
-});
-
 });
 
 test("a failed extraction is shown per page without the credential, and the fetched pages stay stored", () => {
