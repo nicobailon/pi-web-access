@@ -19,7 +19,7 @@ Only these measured references are accepted; any other `sourceCheck` value stops
 | `cloudflare-workers-ai/typesafe/jev-1.14.0` | TypeSafe Jev 1.14 | 0.88 | 0.85 | `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` |
 | `openrouter/typesafe/jev-1.13` | TypeSafe Jev 1.13 | 0.85 | 0.90 | `OPENROUTER_API_KEY` or `/login` |
 
-The judge uses whatever credentials Pi has for that provider. `typesafe/jev-latest` is an alias, so its model can change; the other references name a fixed version. The judge needs Pi's model registry, so it does not run over MCP: there, claims stay `unclear`.
+The judge uses whatever credentials Pi has for that provider. `typesafe/jev-latest` is an alias, so its model can change; the other references name a fixed version. `openrouter/typesafe/jev-1.14` and `cloudflare-workers-ai/typesafe/jev-1.14.0` are in Pi 1.4.0's catalog but not 1.0.4's; an older Pi answers `unclear` with "not in this Pi's classifier catalog". The judge needs Pi's model registry, so it does not run over MCP: there, claims stay `unclear`.
 
 ## What you get
 
@@ -36,7 +36,7 @@ At most 48 passages and 24 KB, titles included, are sent; passages beyond that a
 
 ## How the thresholds were chosen
 
-Two sets of claims, each with 3–8 short passages labeled with their page titles and an expected answer:
+Two sets of claims, each with 2–7 short passages labeled with their page titles and an expected answer:
 
 - **Calibration**: 33 claims written while building the judge ([`eval/fixtures/claims-calibration.json`](../eval/fixtures/claims-calibration.json)).
 - **Held-out**: 32 claims written blind by a separate agent that never saw the calibration set or any model output ([`eval/fixtures/claims-holdout.json`](../eval/fixtures/claims-holdout.json)). They cover negation, wrong numbers, wrong product or version, claims stronger than the evidence, word-overlap decoys, paraphrases with no shared words, old vs. new statements, and forum rumors.
@@ -47,7 +47,7 @@ Every reference ran all 61 scored claims through Pi 3 times, and the claims clos
 
 | Model | Highest wrong `supported` | Highest wrong `contradicted` | Thresholds |
 | --- | --- | --- | --- |
-| Clef (both routes) | 0.30 | 0.81 | 0.85 / 0.87 |
+| Clef (both routes) | 0.301 | 0.812 | 0.85 / 0.87 |
 | Jev 1.14 (all three routes, including `typesafe/jev-latest`) | 0.83, over 10 rounds on h11 | 0.50 | 0.88 / 0.85 |
 | Jev 1.13 | 0.74 | 0.77, and 0.85 over 10 earlier rounds | 0.85 / 0.90 |
 
@@ -66,3 +66,5 @@ PI_WEB_ACCESS_REAL_SEMANTIC=1 node eval/claim-judge.mjs --models cloudflare-work
 ```
 
 It calls the same judge code `source_check` uses through Pi's model registry with your Pi credentials, makes real billed requests, and refuses to run without `PI_WEB_ACCESS_REAL_SEMANTIC=1`. Without `--models` it runs every accepted reference. For each reference and fixture set it prints the pass count, wrong `supported` and `contradicted` verdicts, the highest wrong probability for each, how many verdicts cited an expected passage, latency, and the known-limit cases on their own.
+
+Run it without `--import ./test/isolate-env.mjs`: that test helper hides Pi's stored credentials.

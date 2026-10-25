@@ -8,6 +8,7 @@ import { test } from "node:test";
 const agentDir = mkdtempSync(join(tmpdir(), "pi-web-access-claim-judge-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 process.env.BRAVE_API_KEY = "brave-key";
+process.env.OLLAMA_API_KEY = "ollama-key";
 const { default: initializeExtension } = await import("../index.ts");
 const { judgeClaim } = await import("../claim-judge.ts");
 const { createStandaloneWebToolCore } = await import("../web-tool-core.ts");
@@ -16,7 +17,10 @@ const CLEF = "cloudflare-workers-ai/@cf/cloudflare/clef";
 const JEV_113 = "openrouter/typesafe/jev-1.13";
 
 globalThis.fetch = async (input) => {
-	assert.match(String(input instanceof Request ? input.url : input), /^https:\/\/api\.search\.brave\.com\//);
+	const url = String(input instanceof Request ? input.url : input);
+	// Ollama keeps an empty result title, unlike Brave, which replaces it with the URL.
+	if (url === "https://ollama.com/api/web_search") return Response.json({ results: [{ title: "", url: "https://docs.example.com/untitled", content: "Responses can be streamed." }] });
+	assert.match(url, /^https:\/\/api\.search\.brave\.com\//);
 	return Response.json({ web: { results: [
 		{ title: "A", url: "https://docs.example.com/a", description: "Responses can be streamed with stream: true." },
 		{ title: "B", url: "https://docs.example.com/b", description: "Pricing starts at five dollars." },
@@ -45,11 +49,11 @@ const stop = ([supported, contradicted, notAddressed], evidence) => ({
 	},
 });
 
-async function runSourceCheck(judgeModel, ctx) {
+async function runSourceCheck(judgeModel, ctx, provider = "brave") {
 	withConfig(judgeModel ? { sourceCheck: { judgeModel } } : {});
 	const tools = [];
 	initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
-	const result = await tools.find((tool) => tool.name === "source_check").execute("call", { claim: "The API supports streaming", provider: "brave" }, undefined, undefined, ctx);
+	const result = await tools.find((tool) => tool.name === "source_check").execute("call", { claim: "The API supports streaming", provider }, undefined, undefined, ctx);
 	return { result, claim: result.details.artifact.claims[0], errors: result.details.artifact.errors };
 }
 
@@ -132,6 +136,47 @@ test("at most 48 passages are sent and the rationale counts the rest", async () 
 	const { assessment } = await judgeClaim(CLEF, "claim", passages, registry);
 	assert.equal(registry.calls.classify[0].context.state.passages.length, 48);
 	assert.match(assessment.rationale, / 12 passages were left out to fit the request limit\.$/);
+});
+
+test("a source without a title is labeled with its URL", async () => {
+	const registry = fakeRegistry(stop([0.02, 0.02, 0.96], "none"));
+	await runSourceCheck(CLEF, { modelRegistry: registry }, "ollama");
+	assert.equal(registry.calls.classify[0].context.state.passages[0].source, "https://docs.example.com/untitled");
+});
+
+test("page titles count toward the 24 KB request limit", async () => {
+	const passages = Array.from({ length: 40 }, (_, index) => ({ id: `p-${index + 1}-0`, source: "T".repeat(800), text: "short passage" }));
+	const registry = fakeRegistry(stop([0.02, 0.02, 0.96], "none"));
+	const { assessment } = await judgeClaim(CLEF, "claim", passages, registry);
+	const sent = registry.calls.classify[0].context.state.passages.length;
+	assert.ok(sent < 40);
+	assert.match(assessment.rationale, new RegExp(` ${40 - sent} passages were left out to fit the request limit\\.$`));
+});
+
+// A classify that, like Pi's, never rejects: it answers "aborted" once its signal aborts.
+const pendingRegistry = () => ({
+	findOfType: () => ({ id: "classifier" }),
+	classify: (_model, _context, { signal }) => new Promise((resolve) => signal.addEventListener("abort", () => resolve({ stopReason: "aborted", answers: {} }))),
+});
+const onePassage = [{ id: "p-1-0", source: "Docs", text: "short passage" }];
+
+test("a classifier that takes longer than 10 s is reported as a timeout", async (t) => {
+	t.mock.timers.enable({ apis: ["setTimeout"] });
+	const judging = judgeClaim(CLEF, "claim", onePassage, pendingRegistry());
+	t.mock.timers.tick(10_000);
+	assert.equal((await judging).error, "timed out after 10 s");
+});
+
+test("a caller abort while the classifier runs is rethrown", async () => {
+	const controller = new AbortController();
+	const judging = judgeClaim(CLEF, "claim", onePassage, pendingRegistry(), controller.signal);
+	controller.abort();
+	await assert.rejects(judging, { name: "AbortError" });
+});
+
+test("a Pi without classifier support is unclear, not an exception", async () => {
+	const { assessment } = await judgeClaim(CLEF, "claim", onePassage, { findOfType: () => ({ id: "classifier" }) });
+	assert.equal(assessment.rationale, `Claim judge ${CLEF} failed: this Pi version cannot run classifier models; update Pi; review the passages.`);
 });
 
 test("an unknown judgeModel fails extension load naming the config path", () => {
