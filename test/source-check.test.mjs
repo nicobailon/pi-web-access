@@ -39,7 +39,7 @@ test("fetched content supplies exact passages when the provider snippet is empty
 });
 
 test("fetched passages keep sentences whole across internal periods such as domain names", () => {
-  const content = "Intro. A number of domains such as example.com and example.org are maintained for documentation purposes. Tail.";
+  const content = "He said \"intro.\" A number of domains such as example.com and example.org are maintained for documentation purposes. Tail.";
   const passages = buildPassages(
     [{ rank: 1, url: "https://www.iana.org/domains/reserved", title: "Reserved", snippet: "", quality: "official_docs" }],
     [{ url: "https://www.iana.org/domains/reserved", title: "Reserved", content, error: null }],
