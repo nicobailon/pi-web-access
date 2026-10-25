@@ -274,6 +274,7 @@ get_search_content({ responseId: "abc123", urlIndex: 0, findText: "installation"
 get_search_content({ responseId: "abc123", urlIndex: 0, findText: ["timeout", "retry"], findMode: "fuzzy" })
 ```
 
+Pass the `responseId` from a `web_search`, `fetch_content`, or `source_check` result.
 Choose the stored item with `query` or `queryIndex` for a search, or `url` or `urlIndex` for a fetched page. `offset` (default 0) and `limit` page through it.
 
 `findMode` supports `exact`, `case-insensitive` (default), and `fuzzy`. Finder output is capped at 20,000 characters with match counts and nearby context. Fitting responses retain their existing format and document order. Overflow responses identify queries as `Q1`, `Q2`, and so on, list each full query once, and reserve a representative excerpt for each query whose discovered match span fits the output budget. Queries with oversized spans are listed as having no representative excerpt. `findText` cannot be combined with `offset` or `limit`. The default `limit` and maximum permitted `limit` use `maxInlineContentChars`; search-page continuation guidance shares that overall output budget and may reduce the returned stored-content characters.
@@ -291,6 +292,17 @@ source_check({
   domainFilter: ["docs.example.com", "-old.example.com"]
 })
 ```
+
+| Parameter | Description |
+| ----------- | ------------- |
+| `claim` | The assertion to check |
+| `queries` | Search queries to run (default: the claim) |
+| `numResults` | Results per query (default: 5, max: 20) |
+| `fetchContent` | Fetch the top 5 pages so passages come with exact offsets in the page |
+| `recencyFilter` | `day`, `week`, `month`, or `year` |
+| `domainFilter` | Limit to domains (prefix with `-` to exclude) |
+| `provider` | Same as `web_search`: `"auto"`, `"all"`, one name, or a list such as `"brave,exa"` |
+| `proxy` | http(s) or socks proxy URL for every request in this call; `""` forces a direct connection. See [Proxy](#proxy-proxy) |
 
 The artifact preserves the `supported`, `contradicted`, `unclear`, or `missing-evidence` claim status schema, source quality hints, SHA-256 content hashes, and passage IDs with exact source offsets. It does not infer semantic support or contradiction automatically: retrieved passages produce `unclear` for manual review, while no passages produce `missing-evidence`. Search and fetch errors remain in the artifact instead of being silently discarded. Artifacts are stored with the session and retrieved through `get_search_content` using the returned `responseId`; paged artifact responses are JSON slices, so request the next `offset` when needed.
 
