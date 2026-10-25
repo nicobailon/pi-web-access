@@ -103,13 +103,13 @@ function tokenize(value: string): string[] {
 	// Short words are mostly noise ("the", "for"), but short acronyms and numbers ("API", "TLS", "429") carry meaning.
 	return [...new Set(value.split(/[^A-Za-z0-9]+/)
 		.filter((term) => term.length > 3 || (term.length > 1 && /^[A-Z0-9]+$/.test(term)))
-		.map((term) => term.toLowerCase()))];
+		.map((term) => term.length > 3 ? term.toLowerCase() : term))];
 }
 
-/** Long terms match inside words ("stream" in "streaming"); short ones only as whole words, so "api" skips "rapid". */
+/** Long terms match inside words in any case ("stream" in "Streaming"); short acronyms only as whole words in the same case, so "API" skips "rapid" and "US" skips "us". */
 function countMatches(terms: string[], text: string): number {
 	const lower = text.toLowerCase();
-	const words = new Set(lower.split(/[^a-z0-9]+/));
+	const words = new Set(text.split(/[^A-Za-z0-9]+/));
 	return terms.filter((term) => term.length > 3 ? lower.includes(term) : words.has(term)).length;
 }
 

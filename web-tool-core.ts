@@ -419,7 +419,8 @@ function formatSourceCheckResult(artifact: ResearchArtifact, getSearchContentToo
 			lines.push(`${source.rank}. [${source.quality}] ${source.title}\n   ${source.url}`);
 			for (const passage of artifact.passages.filter((candidate) => candidate.source_rank === source.rank)) {
 				const flat = passage.text.replace(/\s+/g, " ").trim();
-				const text = flat.length > 400 ? `${flat.slice(0, 400)}…` : flat;
+				// Drop a trailing high surrogate so the cut never splits an emoji.
+				const text = flat.length > 400 ? `${flat.slice(0, 400).replace(/[\uD800-\uDBFF]$/, "")}…` : flat;
 				if (text.length > budget) {
 					omitted++;
 					continue;

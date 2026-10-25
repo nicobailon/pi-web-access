@@ -51,7 +51,7 @@ test("fetched passages keep sentences whole across internal periods such as doma
 });
 
 test("fetched passages are picked by the claim, including short acronyms, even when a snippet exists", () => {
-  const content = "Pricing starts at five dollars a month. Every request requires a token. Connections to the API use TLS only. Rapid capital growth requires patience.";
+  const content = "Tell us about the tls setup. Pricing starts at five dollars a month. Every request requires a token. Connections to the API use TLS only. Rapid capital growth requires patience.";
   const passages = buildPassages(
     [{ rank: 1, url: "https://docs.example.com/api", title: "API", snippet: "Pricing starts at five dollars.", quality: "official_docs" }],
     [{ url: "https://docs.example.com/api", title: "API", content, error: null }],
@@ -238,7 +238,7 @@ test("source_check shows each source's passages in its result, capped at 4,000 c
   const results = Array.from({ length: 20 }, (_, index) => ({
     title: `Doc ${index + 1}`,
     url: `https://docs.example.com/${index + 1}`,
-    description: (index === 0 ? "L" : String.fromCharCode(97 + index)).repeat(index === 0 ? 600 : 300),
+    description: (index === 0 ? "L" : String.fromCharCode(97 + index)).repeat(index === 0 ? 600 : index === 14 ? 50 : 300),
   }));
   globalThis.fetch = async () => Response.json({ web: { results } });
   try {
@@ -248,7 +248,8 @@ test("source_check shows each source's passages in its result, capped at 4,000 c
     assert.match(text, /1\. \[official_docs\] Doc 1\n {3}https:\/\/docs\.example\.com\/1\n {3}- p-1-0: L{400}…\n2\./);
     assert.match(text, new RegExp(`- p-12-0: ${"l".repeat(300)}\\n`));
     assert.doesNotMatch(text, /p-13-0/);
-    assert.match(text, /\n8 more passages in the artifact\.\n/);
+    assert.match(text, new RegExp(`- p-15-0: ${"o".repeat(50)}\\n`));
+    assert.match(text, /\n7 more passages in the artifact\.\n/);
     assert.equal(response.details.artifact.passages[0].text.length, 600);
   } finally {
     globalThis.fetch = previousFetch;

@@ -280,7 +280,7 @@ Choose the stored item with `query` or `queryIndex` for a search, or `url` or `u
 
 ### source_check
 
-Gather evidence for a claim and return a machine-readable artifact with exact passage citations for manual semantic review. Search results are deduplicated and capped at 20 sources; `fetchContent` fetches at most 5 pages, while stored and retrieved content remains subject to the configured `maxInlineContentChars` `offset`/`limit` bounds. The result lists each source's passages under it, so the agent can weigh the claim without another call: up to 4,000 characters in all, each passage cut at 400, with the rest in the artifact. Passages from fetched pages are the sentences that share the most words with the claim, then with the search snippet; short acronyms and numbers such as `API`, `TLS` or `429` count.
+Gather evidence for a claim and return a machine-readable artifact with exact passage citations for manual semantic review. Search results are deduplicated and capped at 20 sources; `fetchContent` fetches at most 5 pages, while stored and retrieved content remains subject to the configured `maxInlineContentChars` `offset`/`limit` bounds. The result lists each source's passages under it, so the agent can weigh the claim without another call: up to 4,000 characters in all, each passage cut at 400, with the rest in the artifact. Passages from fetched pages are the sentences that share the most words with the claim, then with the search snippet; short acronyms and numbers such as `API`, `TLS` or `429` count when the page writes them the same way.
 
 ```typescript
 source_check({ claim: "The API supports streaming responses" })
