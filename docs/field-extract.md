@@ -35,7 +35,7 @@ Extract is available in Pi only, because it uses Pi's credentials. The MCP serve
 | `date` | `YYYY-MM-DD` |
 | `time` | `HH:MM` or `HH:MM:SS` |
 | `datetime` | ISO 8601, such as `2026-11-05T16:00` |
-| `duration`, `duration.<seconds\|minutes\|hours\|days\|weeks\|months\|years>` | a number, in the given unit |
+| `duration`, `duration.<seconds\|minutes\|hours\|days\|weeks\|months\|years>` | a number, in the given unit; a plain `duration` is in seconds |
 | `list`, `list.number`, `list.date` | a list of text, numbers, or dates |
 
 Relative dates ("2 days ago") and dates without a year are read against today's date (UTC). An invalid field fails the call before anything is fetched.

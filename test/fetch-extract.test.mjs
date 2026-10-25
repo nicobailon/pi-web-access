@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { parseExtractFields } from "../field-extract.ts";
+import { extractPageFields, parseExtractFields } from "../field-extract.ts";
 
 const indexUrl = new URL("../index.ts", import.meta.url).href;
 const pdfFixtureUrl = new URL("./pdf-fixture.mjs", import.meta.url).href;
@@ -193,4 +193,26 @@ test("extract is offered only when fetch.allowedModes lists it, and cannot be th
 	const asDefault = runFetch({ fetch: { allowedModes: ["extract"], defaultMode: "extract" } }, []);
 	assert.notEqual(asDefault.child.status, 0);
 	assert.match(asDefault.child.stderr, /fetch\.defaultMode in .*web-search\.json cannot be "extract"/);
+});
+
+const setUpRegistry = { async getProviderAuth() { return { auth: { apiKey: CF_TOKEN }, env: { CLOUDFLARE_ACCOUNT_ID: "acct-1" } }; } };
+
+test("a page over 200,000 characters is cut before it is sent, and the result says so", async (t) => {
+	let state;
+	t.mock.method(globalThis, "fetch", async (_url, init) => {
+		state = JSON.parse(init.body).state;
+		return Response.json({ success: true, result: { answers: { total: { type: "number", value: 1, confidence: 0.99 } }, truncated: false } });
+	});
+	const result = await extractPageFields("x".repeat(200_001), { total: { type: "number" } }, { modelRegistry: setUpRegistry });
+	assert.equal(state.length, 200_000);
+	assert.equal(result.cut, true);
+});
+
+test("a caller abort during extraction rejects instead of becoming a per-page error", async (t) => {
+	const controller = new AbortController();
+	t.mock.method(globalThis, "fetch", async (_url, init) => {
+		controller.abort();
+		init.signal.throwIfAborted();
+	});
+	await assert.rejects(extractPageFields("Alpha", { total: { type: "number" } }, { modelRegistry: setUpRegistry }, controller.signal), { name: "AbortError" });
 });

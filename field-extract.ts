@@ -97,6 +97,7 @@ function fieldResult(spec: FieldSpec, answer: unknown): FieldResult {
 /** Clairic is not in Pi's model catalog, so it is called directly with Pi's `cloudflare-workers-ai` credential. */
 async function runClairic(body: string, modelRegistry: Pick<ModelRegistry, "getProviderAuth"> | undefined, signal: AbortSignal): Promise<Record<string, unknown>> {
 	if (!modelRegistry) throw new Error("extract mode runs only inside Pi");
+	if (typeof modelRegistry.getProviderAuth !== "function") throw new Error("this Pi version cannot supply the Cloudflare credential; update Pi");
 	const credential = await modelRegistry.getProviderAuth("cloudflare-workers-ai");
 	const apiKey = credential?.auth.apiKey;
 	const accountId = credential?.env?.CLOUDFLARE_ACCOUNT_ID;
