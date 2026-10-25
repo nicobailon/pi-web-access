@@ -193,6 +193,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | `provider` | A string. Omit it or pass `"auto"` to use the configured provider (auto-selects when no provider or routing is configured). `"all"` searches every eligible provider at once; see [All providers](#all-providers) for the explicit-only providers it skips. Otherwise one provider name (`openai`, `brave`, `parallel`, `parallel-mcp`, `tinyfish`, `search1api`, `searchinfinity`, `querit`, `tavily`, `you`, `firecrawl`, `jina`, `serpdive`, `kagi`, `bocha`, `ollama`, `anysearch`, `xcrawl`, `valyu`, `xai`, `mistral`, `brightdata`, `serpbase`, `serpapi`, `serper`, `serply`, `baizhi`, `zai`, `keenable`, `ceramic`, `deepseek`, `linkup`, `searxng`, `degoog`, `duckduckgo`, `exa`, `perplexity`, `gemini`, or `kimi`), or several comma-separated names such as `"brave,exa"` to search them all at once. An unknown name fails before any request, and the error lists the valid names. With `webSearch.allowedProviders` set, the tool description lists the allowed names |
 | `includeContent` | Fetch full page content from sources in background |
 | `workflow` | `none` (skip curator; fresh-install default), `summary-review` (open curator and auto-generate a summary draft), or `auto-summary` (generate a summary without opening the curator) |
+| `proxy` | Proxy URL (`http://`, `https://`, or `socks`) for every request in this call, search and content fetches alike; `""` forces a direct connection. Node's fetch ignores `HTTP(S)_PROXY`, so use this or the config-level `proxy` when direct access is blocked. See [Proxy](#proxy-proxy) |
 
 Batch searches run up to three queries concurrently. Provider routing and fallback within each query remain sequential. Brave requests share an in-process queue and honor the rate-limit buckets returned in `X-RateLimit-*`; exhausted short windows delay the next request with a small safety margin, while long quota resets fail fast and keep the advertised cooldown active for later queued calls. HTTP 429 responses are retried once after the advertised `Retry-After` or rate-limit reset. Brave's 30-second search deadline covers queueing, cooldown waits, and both request attempts. The queue coordinates one Pi process; separate Pi processes still rely on Brave's 429 response.
 
@@ -220,9 +221,13 @@ fetch_content({ url: "https://example.com/diagram.png" })
 | `prompt` | Question for video analysis, or the page-local question required by `mode: "answer"` |
 | `mode` | `readable` (default), `raw` for exact textual HTTP bodies, or `answer` for a grounded answer from fetched content |
 | `answerModel` | Optional `provider/model-id` override for answer mode; defaults to the configured `fetch.answerProvider` + `fetch.answerModel` pair, or the current enabled Pi model when no pair is configured |
-| `timestamp` | Extract frame(s) — single (`"23:41"`), range (`"23:41-25:00"`), or seconds (`"85"`) |
-| `frames` | Number of frames to extract (max 12) |
+| `timestamp` | Extract frame(s): single (`"1:23:45"`, `"23:41"`, or seconds `"85"`) or range (`"23:41-25:00"`, 6 evenly spaced frames by default). Use a range when you know roughly where something happens; the frames act as a contact sheet for finding the right moment. Needs `ffmpeg`, plus `yt-dlp` for YouTube |
+| `frames` | Number of frames (1-12): spread across a `timestamp` range, taken 5 seconds apart from a single `timestamp`, or sampled across the whole video when used alone. Same `ffmpeg` / `yt-dlp` requirements |
+| `model` | Gemini model for video and YouTube analysis, for example `gemini-3.6-flash` (default: config, else `gemini-3.6-flash`) |
 | `forceClone` | Clone GitHub repos that exceed the 350MB size threshold |
+| `auth` | Name of an `authFetch` profile for local browser-cookie fetching, or `true` when exactly one profile exists. See [Blocked pages](#blocked-pages) |
+| `proxy` | Proxy URL for this fetch; `""` forces a direct connection. Localhost and `NO_PROXY` hosts always bypass it. See [Proxy](#proxy-proxy) |
+| `redirects` | `"same-origin"` refuses cross-origin redirects: every redirect must keep the requested scheme, hostname, and port, and extraction paths whose redirects can't be checked are refused. See `fetchContent.redirects` under configuration |
 
 For a standing answer-mode model, set both `fetch.answerProvider` and `fetch.answerModel` in `web-search.json`; a per-call `answerModel` takes precedence. Configured answer defaults are opt-in and can send fetched page text to a different provider/model, which may change privacy and cost behavior.
 
@@ -240,6 +245,8 @@ get_search_content({ responseId: "abc123", queryIndex: 0, offset: 30000 })
 get_search_content({ responseId: "abc123", urlIndex: 0, findText: "installation" })
 get_search_content({ responseId: "abc123", urlIndex: 0, findText: ["timeout", "retry"], findMode: "fuzzy" })
 ```
+
+Choose the stored item with `query` or `queryIndex` for a search, or `url` or `urlIndex` for a fetched page. `offset` (default 0) and `limit` page through it.
 
 `findMode` supports `exact`, `case-insensitive` (default), and `fuzzy`. Finder output is capped at 20,000 characters with match counts and nearby context. Fitting responses retain their existing format and document order. Overflow responses identify queries as `Q1`, `Q2`, and so on, list each full query once, and reserve a representative excerpt for each query whose discovered match span fits the output budget. Queries with oversized spans are listed as having no representative excerpt. `findText` cannot be combined with `offset` or `limit`. The default `limit` and maximum permitted `limit` use `maxInlineContentChars`; search-page continuation guidance shares that overall output budget and may reduce the returned stored-content characters.
 

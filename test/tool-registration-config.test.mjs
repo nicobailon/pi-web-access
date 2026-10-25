@@ -75,10 +75,10 @@ test("malformed config falls back during extension registration", () => {
 
 test("default public execution tool definitions retain their compatibility hashes", () => {
 	const expected = {
-		web_search: "87e5558c54cf1ed0b77b65dabf94c2b0afb8553703a9ba431ded903f7f22bdb8",
-		source_check: "7005b7fb88b3190404c39ea7a3c1578a0c84f5a2cae15e4c0cf121511b04e64e",
-		fetch_content: "cdf7a6b6e612edce16c3cf4b0fb5377c3b05c3855814363ffd8501e16775047c",
-		get_search_content: "e1c7597fc085a811c0c6fcde365a96571c275c70b93a48206a38be06a7a45a5f",
+		web_search: "5cb15bacd456db77c50450f3b7ffc0e80b183ded4045934b2a009f0c64989747",
+		source_check: "8a222e943c67fd36486ffcbd4ceeeacab3318823e642696cfec602265707474f",
+		fetch_content: "df5a2fb7668fa1316ee0f77b074f8ec8faf7d1974f59ba37a279c7f1d8d51132",
+		get_search_content: "0671f28d0815f76acaa0afc5267aac8686ea4eaa46978f35bcd674ee6446f30a",
 	};
 	const tools = registered({}).tools.filter(tool => tool.name !== "web_enable");
 	assert.deepEqual(Object.fromEntries(tools.map(({ name, description, parameters }) => [

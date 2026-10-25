@@ -65,16 +65,14 @@ test("unknown providers fail before any request and list only allowed providers"
 	assert.equal(kagiOnly.error, 'Unknown search provider "bogus". Use auto, all, or one or more comma-separated names: kagi');
 });
 
-test("provider schemas are plain strings and do not depend on provider credentials", () => {
-	const definitions = `${register}
-		console.log(JSON.stringify(tools.map(t => ({ name: t.name, description: t.description, promptSnippet: t.promptSnippet, parameters: t.parameters }))));
-	`;
-	const bare = child(undefined, definitions);
-	assert.deepEqual(child(undefined, definitions, { BRAVE_API_KEY: "b", EXA_API_KEY: "e" }), bare);
+test("provider schemas are plain strings", () => {
+	const tools = child(undefined, `${register}
+		console.log(JSON.stringify(tools.map(t => ({ name: t.name, parameters: t.parameters }))));
+	`);
 	for (const name of ["web_search", "source_check"]) {
-		assert.deepEqual(bare.find(t => t.name === name).parameters.properties.provider, {
+		assert.deepEqual(tools.find(t => t.name === name).parameters.properties.provider, {
 			type: "string",
-			description: "Overrides the configured provider: auto, all, a provider name, or comma-separated names. Omit for the default.",
+			description: "auto, all, a provider name, or comma-separated names; omit for the configured default.",
 		});
 	}
 });

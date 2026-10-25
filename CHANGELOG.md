@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Changed
 
+- The web tools now add about 1,100 tokens to each request to the model, down from about 2,800. Pi sends the definitions of `web_search`, `source_check`, `fetch_content`, and `get_search_content` with every request, and together they shrank from about 11,000 to about 4,300 characters. Every parameter is still there; the longer explanations moved to the README ([#595](https://github.com/nicobailon/pi-web-access/issues/595)).
 - The `provider` argument of `web_search` and `source_check` is now a plain string, which makes the tool definitions sent to the model on every request about 2,600 characters (roughly 650 tokens) smaller. To search several providers at once, pass their names separated by commas, for example `"brave,exa"`, instead of a list. An unknown provider name now returns an error that lists the valid names, instead of quietly using automatic selection. The `provider` setting in `web-search.json`, including lists, works as before ([#595](https://github.com/nicobailon/pi-web-access/issues/595)).
 
 ### Fixed

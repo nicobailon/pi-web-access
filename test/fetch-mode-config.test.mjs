@@ -102,7 +102,7 @@ test("configured modes align schema and execution and reject disabled modes befo
 	const result = JSON.parse(child.stdout);
 	assert.deepEqual(result.enum, ["raw"]);
 	assert.equal(result.hasAnswerModel, false);
-	assert.match(result.description, /raw \(default\): return the exact textual body using direct HTTP only/);
+	assert.match(result.modeDescription, /raw \(default\): return the exact textual body using direct HTTP only/);
 	assert.doesNotMatch(result.description, /readable|answer/);
 	assert.doesNotMatch(result.promptSnippet, /readable|answer/);
 	assert.doesNotMatch(result.modeDescription, /readable|answer/);
