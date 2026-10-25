@@ -567,3 +567,60 @@ test("provider URL reuse traverses registered web_search and content retrieval",
 	assert.equal(out.requests.length, 2);
 	assert.ok(out.requests.every(request => request.url === "https://gateway.example/v1/alpha/search"));
 });
+
+const azureUrl = "https://res.openai.azure.com/openai/v1/responses";
+const azureConfig = { openaiSearchProviders: [], openaiResponsesUrl: azureUrl, openaiSearchModel: "dep", openaiUseAlphaSearch: false };
+const jwt = (claims) => `header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.signature`;
+const azureModel = { id: "my-deploy", provider: "azure", api: "azure-openai-responses", baseUrl: "https://res.openai.azure.com/openai/v1" };
+
+test("Azure: standalone API key uses the api-key header", async (t) => {
+	const out = await runScenario(t, { config: azureConfig, payload: legacyPayload });
+	assert.equal(out.error, undefined);
+	const [request] = out.requests;
+	assert.equal(request.url, azureUrl);
+	assert.equal(request.headers["api-key"], "alpha-test-key");
+	assert.equal(request.headers.authorization, undefined);
+	assert.equal(request.headers["openai-beta"], undefined);
+	assert.equal(request.body.model, "dep");
+	assert.equal(request.body.tools[0].type, "web_search");
+});
+
+test("Azure: Entra JWT uses Bearer auth", async (t) => {
+	const token = jwt({ aud: "https://cognitiveservices.azure.com" });
+	const out = await runScenario(t, { config: { ...azureConfig, openaiApiKey: token }, payload: legacyPayload });
+	assert.equal(out.error, undefined);
+	assert.equal(out.requests[0].headers.authorization, `Bearer ${token}`);
+	assert.equal(out.requests[0].headers["api-key"], undefined);
+	assert.equal(out.requests[0].headers["openai-beta"], undefined);
+});
+
+test("Azure: current model deployment name is eligible", async (t) => {
+	const out = await runScenario(t, { current: true, model: azureModel, config: { openaiUseAlphaSearch: false }, payload: legacyPayload });
+	assert.equal(out.error, undefined);
+	assert.equal(out.requests[0].url, azureUrl);
+	assert.equal(out.requests[0].body.model, "my-deploy");
+	assert.equal(out.requests[0].headers["api-key"], "registry-test-key");
+});
+
+test("Azure: lookalike host is not eligible", async (t) => {
+	const out = await runScenario(t, { current: true, model: { ...azureModel, baseUrl: "https://res.openai.azure.com.attacker.net/openai/v1" }, config: { openaiUseAlphaSearch: false } });
+	assert.match(out.error, /not eligible/);
+	assert.equal(out.requests.length, 0);
+});
+
+test("Azure: alpha search is rejected before any request", async (t) => {
+	const out = await runScenario(t, { route: true, config: { ...azureConfig, openaiUseAlphaSearch: true, searchRouting: { providers: ["openai"], fallbackOn: ["network"] } } });
+	assert.match(out.error, /Azure OpenAI does not support Codex alpha\/search/);
+	assert.equal(out.kind, "unsupported");
+	assert.equal(out.requests.length, 0);
+});
+
+test("Azure: Codex login with Azure openaiResponsesUrl keeps the Codex endpoint", async (t) => {
+	const model = { id: "gpt-5.5", provider: "openai-codex", api: "openai-codex-responses", baseUrl: "https://chatgpt.com/backend-api" };
+	const key = jwt({ "https://api.openai.com/auth": { chatgpt_account_id: "test-account" } });
+	const out = await runScenario(t, { registry: true, model, key, config: { openaiResponsesUrl: azureUrl, openaiUseAlphaSearch: false }, payload: legacyPayload });
+	assert.equal(out.error, undefined);
+	assert.deepEqual(out.requests.map(request => request.url), ["https://chatgpt.com/backend-api/codex/responses"]);
+	assert.equal(out.requests[0].headers.authorization, `Bearer ${key}`);
+	assert.equal(out.requests[0].headers["api-key"], undefined);
+});
