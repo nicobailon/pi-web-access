@@ -30,6 +30,7 @@ export interface SearchResponse {
 }
 
 export interface SearchOptions {
+	model?: string;
 	numResults?: number;
 	recencyFilter?: "day" | "week" | "month" | "year";
 	domainFilter?: string[];

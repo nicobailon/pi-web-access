@@ -75,9 +75,9 @@ test("malformed config falls back during extension registration", () => {
 
 test("default public execution tool definitions retain their compatibility hashes", () => {
 	const expected = {
-		web_search: "5a3ed802bcfdf3494b0ed782a38753682ee828660a7de4acec50b516e0406d7a",
-		source_check: "4888cf8353b73bc1f54fe4884f3e42b7158e916ca3ec09d1e11c5b1bf003c049",
-		fetch_content: "4bb01fa96d22912d21eff48d061bba3cdd841c0e9b140aa1732d263ba94a3cee",
+		web_search: "f545aaed7b69550f08eb4234a11211f70952209a4b0c8826095a844627c017d7",
+		source_check: "dddfced17f78bbd9dd5272a379ab508a0d09cd0e19f381555721b8c3c203f16a",
+		fetch_content: "4eb3830cc2f14023ee8773f2e749c277021ab60f1053ffaa14c8e4c5b8acf89b",
 		get_search_content: "0671f28d0815f76acaa0afc5267aac8686ea4eaa46978f35bcd674ee6446f30a",
 	};
 	const tools = registered({}).tools.filter(tool => tool.name !== "web_enable");
@@ -85,6 +85,14 @@ test("default public execution tool definitions retain their compatibility hashe
 		name,
 		createHash("sha256").update(JSON.stringify({ name, description, parameters })).digest("hex"),
 	])), expected);
+});
+
+test("web_search offers model only for allowed providers that support it", () => {
+	assert.equal(registeredTool({ webSearch: { allowedProviders: ["brave"] } }, "web_search").parameters.properties.model, undefined);
+	assert.equal(
+		registeredTool({ webSearch: { allowedProviders: ["brave", "xai"] } }, "web_search").parameters.properties.model.description,
+		"Model ID; needs provider xai",
+	);
 });
 
 test("search tools constrain numResults to integer values from 1 through 20", () => {

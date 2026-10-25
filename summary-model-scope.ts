@@ -52,3 +52,21 @@ export function splitThinkingSuffix(value: string): { value: string; thinkingLev
 		? { value: value.slice(0, index), thinkingLevel: suffix as SummaryThinkingLevel }
 		: { value };
 }
+
+/**
+ * Parse `current[:level]` or `provider/model-id[:level]`; `current` names the active Pi session model and
+ * resolves to undefined when there is none. Throws for any other value.
+ */
+export function resolveHelperModelSelector(
+	value: string,
+	label: string,
+	currentModel?: ModelLike,
+): { provider: string; id: string; thinkingLevel?: SummaryThinkingLevel } | undefined {
+	const { value: selector, thinkingLevel } = splitThinkingSuffix(value.trim());
+	if (selector === "current") return currentModel ? { provider: currentModel.provider, id: currentModel.id, thinkingLevel } : undefined;
+	const slashIndex = selector.indexOf("/");
+	if (slashIndex <= 0 || slashIndex >= selector.length - 1) {
+		throw new Error(`Invalid ${label}: ${value}. Use provider/model-id or current.`);
+	}
+	return { provider: selector.slice(0, slashIndex), id: selector.slice(slashIndex + 1), thinkingLevel };
+}

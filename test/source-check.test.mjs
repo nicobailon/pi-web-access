@@ -38,6 +38,18 @@ test("fetched content supplies exact passages when the provider snippet is empty
   assert.deepEqual(artifact.passages[0].extraction_span, { start: 0, end: 37 });
 });
 
+test("fetched passages keep sentences whole across internal periods such as domain names", () => {
+  const content = "He said \"intro.\" A number of domains such as example.com and example.org are maintained for documentation purposes. Tail.";
+  const passages = buildPassages(
+    [{ rank: 1, url: "https://www.iana.org/domains/reserved", title: "Reserved", snippet: "", quality: "official_docs" }],
+    [{ url: "https://www.iana.org/domains/reserved", title: "Reserved", content, error: null }],
+    "example.com and example.org documentation",
+  );
+  const expected = "A number of domains such as example.com and example.org are maintained for documentation purposes.";
+  assert.deepEqual(passages.map((passage) => passage.text), [expected]);
+  assert.equal(content.slice(passages[0].extraction_span.start, passages[0].extraction_span.end), expected);
+});
+
 test("artifact assembly handles omitted domain filters and failed fetches", () => {
   const artifact = buildResearchArtifact({
     query: "API claim",

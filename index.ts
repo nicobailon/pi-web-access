@@ -1,6 +1,6 @@
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, type KeyId } from "@earendil-works/pi-tui";
-import { Type } from "typebox";
+import { Type, type TOptional, type TString } from "typebox";
 import type { ExtractedContent } from "./extract.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
 import { answerFromPage } from "./page-query.ts";
@@ -78,7 +78,7 @@ import { isZaiAvailable } from "./zai.ts";
 import { isValyuAvailable } from "./valyu.ts";
 import { isXcrawlAvailable } from "./xcrawl.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
-import { findModelWithProviderRouting, isModelInScope, splitThinkingSuffix } from "./summary-model-scope.ts";
+import { findModelWithProviderRouting, isModelInScope, resolveHelperModelSelector } from "./summary-model-scope.ts";
 import { registerCuratorRunLifecycle, resolveWebSearchWorkflow, type WebSearchWorkflow } from "./curator-run.ts";
 import { registerWebToolActivation } from "./tool-activation.ts";
 import {
@@ -290,6 +290,19 @@ export function getSummaryInstructions(): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function readHelperModelKey(key: "summaryModel" | "queryRewriteModel"): string | undefined {
+	const value: unknown = loadConfig()[key];
+	if (value === undefined) return undefined;
+	const message = `${key} in ${WEB_SEARCH_CONFIG_PATH} must be "current", "current:<level>", or "provider/model-id[:<level>]"`;
+	if (typeof value !== "string") throw new Error(message);
+	try {
+		resolveHelperModelSelector(value, key);
+	} catch {
+		throw new Error(message);
+	}
+	return value.trim();
 }
 
 function shouldAutoOpenCuratorBrowser(config: WebSearchConfig): boolean {
@@ -734,8 +747,10 @@ export default function (pi: ExtensionAPI) {
 	if (toolActivation === "none" && toolExposure !== "deferred") {
 		throw new Error(`toolActivation "none" in ${WEB_SEARCH_CONFIG_PATH} requires toolExposure "deferred"`);
 	}
+	const allowedSearchProviders = initConfig.webSearch?.allowedProviders === undefined ? RESOLVED_SEARCH_PROVIDERS : getAllowedSearchProviders();
+	const modelProviders = allowedSearchProviders.filter(provider => provider === "openai" || provider === "xai" || provider === "mistral" || provider === "gemini");
 	// Depends on config only, never on credentials, so definitions stay byte-stable across environments.
-	const providerDescription = `auto, all, a provider name, or comma-separated names; omit for the configured default.${initConfig.webSearch?.allowedProviders === undefined ? "" : ` Allowed: ${getAllowedSearchProviders().join(", ")}.`}`;
+	const providerDescription = `auto, all, a name, or comma-separated names; omit for the configured default.${initConfig.webSearch?.allowedProviders === undefined ? "" : ` Allowed: ${allowedSearchProviders.join(", ")}.`}`;
 	const curatorRunState = registerCuratorRunLifecycle(pi);
 	const toolNames = resolveToolNames(initConfig);
 	const webSearchEnabled = isToolEnabled(initConfig, "webSearch");
@@ -956,16 +971,18 @@ export default function (pi: ExtensionAPI) {
 		if (selectedResults.length === 0) {
 			throw new Error("No selected results available for summary generation");
 		}
+		const configuredSummaryModel = readHelperModelKey("summaryModel");
 		try {
 			return await generateSummaryDraft(
 				selectedResults,
 				summaryContext,
 				signal,
-				modelOverride,
+				modelOverride?.trim() || configuredSummaryModel,
 				feedback,
 				undefined,
 				getSummaryGenerationDeadlineMs(),
 				getSummaryInstructions(),
+				{ preferredFallback: configuredSummaryModel === undefined },
 			);
 		} catch (err) {
 			const isEmptyResponse = err instanceof Error && err.message.includes("Summary model returned empty response");
@@ -983,7 +1000,7 @@ export default function (pi: ExtensionAPI) {
 
 	async function loadSummaryModelChoices(
 		summaryContext: SummaryGenerationContext,
-	): Promise<{ summaryModels: Array<{ value: string; label: string }>; defaultSummaryModel: string | null }> {
+	): Promise<{ summaryModels: Array<{ value: string; label: string }>; defaultSummaryModel: string | null; preferredFallback: boolean }> {
 		const summaryModels: Array<{ value: string; label: string }> = [];
 		const seen = new Set<string>();
 		const availableValues = new Set<string>();
@@ -1008,8 +1025,7 @@ export default function (pi: ExtensionAPI) {
 			addModel(summaryContext.model.provider, summaryContext.model.id);
 		}
 
-		const config = loadConfig();
-		const configuredSummaryModel = typeof config.summaryModel === "string" ? config.summaryModel.trim() : "";
+		const configuredSummaryModel = readHelperModelKey("summaryModel");
 		const preferredDefaults = [
 			{ provider: "anthropic", id: "claude-haiku-4-5" },
 			{ provider: "openai-codex", id: "gpt-5.6-luna" },
@@ -1019,32 +1035,18 @@ export default function (pi: ExtensionAPI) {
 			{ provider: "deepseek", id: "deepseek-v4-flash" },
 		];
 
-		const resolveAvailableModelValue = (selector: string): string | null => {
-			const parsed = splitThinkingSuffix(selector);
-			const slashIndex = parsed.value.indexOf("/");
-			if (slashIndex <= 0 || slashIndex >= parsed.value.length - 1) return null;
-			const model = findModelWithProviderRouting(
-				summaryContext.modelRegistry,
-				parsed.value.slice(0, slashIndex),
-				parsed.value.slice(slashIndex + 1),
-			);
-			if (!model) return null;
-			const value = `${model.provider}/${model.id}`;
-			if (!availableValues.has(value)) return null;
-			if (selector !== value && !seen.has(selector)) {
-				seen.add(selector);
-				summaryModels.push({ value: selector, label: selector });
-			}
-			return selector;
-		};
-
 		let defaultSummaryModel: string | null = null;
-		if (configuredSummaryModel.length > 0) {
-			defaultSummaryModel = availableValues.has(configuredSummaryModel)
-				? configuredSummaryModel
-				: resolveAvailableModelValue(configuredSummaryModel);
-		}
-		if (!defaultSummaryModel) {
+		if (configuredSummaryModel !== undefined) {
+			const spec = resolveHelperModelSelector(configuredSummaryModel, "summary model", summaryContext.model);
+			// With no concrete value to show, list nothing so the curator sends Auto (the configured selector).
+			if (!spec) return { summaryModels: [], defaultSummaryModel: configuredSummaryModel, preferredFallback: false };
+			// The curator groups choices by provider, so `current` must be concrete. Unavailable models stay listed so failures are visible.
+			defaultSummaryModel = `${spec.provider}/${spec.id}${spec.thinkingLevel ? `:${spec.thinkingLevel}` : ""}`;
+			if (!seen.has(defaultSummaryModel)) {
+				seen.add(defaultSummaryModel);
+				summaryModels.push({ value: defaultSummaryModel, label: defaultSummaryModel });
+			}
+		} else {
 			for (const preferred of preferredDefaults) {
 				const model = findModelWithProviderRouting(summaryContext.modelRegistry, preferred.provider, preferred.id);
 				const value = model ? `${model.provider}/${model.id}` : null;
@@ -1054,7 +1056,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 		}
-		return { summaryModels, defaultSummaryModel };
+		return { summaryModels, defaultSummaryModel, preferredFallback: configuredSummaryModel === undefined };
 	}
 
 	function resolveSummaryForSubmit(
@@ -1274,7 +1276,7 @@ export default function (pi: ExtensionAPI) {
 					async onRewriteQuery(query, rewriteSignal) {
 						return runWithProxy(pc.proxy, async () => {
 							if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
-							return rewriteSearchQuery(query, pc.summaryContext, rewriteSignal);
+							return rewriteSearchQuery(query, pc.summaryContext, rewriteSignal, readHelperModelKey("queryRewriteModel"));
 						});
 					},
 				},
@@ -1408,7 +1410,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Search",
 		prepareArguments: (args) => parseStringifiedArrays(args, ["queries", "domainFilter"]) as never,
 		description:
-			`Search the web for sources or provider answers.${getSearchContentEnabled ? ` Full results are stored for retrieval with ${toolNames.getSearchContent} by responseId.` : ""} Prefer 2-4 varied queries.`,
+			`Search the web for sources or answers.${getSearchContentEnabled ? ` Full results are stored for retrieval with ${toolNames.getSearchContent} by responseId.` : ""} Prefer 2-4 varied queries.`,
 		promptSnippet:
 			"Web research. Prefer {queries:[...]} with 2-4 varied angles; omit provider unless overriding the default.",
 		parameters: Type.Object({
@@ -1419,10 +1421,11 @@ export default function (pi: ExtensionAPI) {
 			recencyFilter: Type.Optional(StringEnum(["day", "week", "month", "year"])),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Prefix - to exclude" })),
 			category: Type.Optional(Type.String({ description: "Exa only, e.g. news" })),
+			...(modelProviders.length > 0 ? { model: Type.Optional(Type.String({ description: `Model ID; needs provider ${modelProviders.join(", ")}` })) } : {}) as { model: TOptional<TString> },
 			provider: Type.Optional(Type.String({ description: providerDescription })),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review", "auto-summary"], {
-					description: "Default none; summary-review opens the curator; auto-summary returns a summary",
+					description: "Default none; summary-review opens the curator; auto-summary summarizes",
 				}),
 			),
 			proxy: Type.Optional(Type.String({ description: "http(s) or socks proxy URL (env proxy vars ignored); \"\" forces direct" })),
@@ -1456,6 +1459,13 @@ export default function (pi: ExtensionAPI) {
 					return {
 						content: [{ type: "text", text: "Error: Curation requires an active extension context." }],
 						details: { error: "Missing extension context" },
+					};
+				}
+
+				if (shouldCurate && params.model !== undefined) {
+					return {
+						content: [{ type: "text", text: "Error: model cannot be used with workflow \"summary-review\". Pass workflow \"none\" or \"auto-summary\" to search with a specific model." }],
+						details: { error: "model is not supported with summary-review" },
 					};
 				}
 
@@ -1687,6 +1697,7 @@ export default function (pi: ExtensionAPI) {
 						undefined,
 						getSummaryGenerationDeadlineMs(),
 						getSummaryInstructions(),
+						{ preferredFallback: summaryModelChoices.preferredFallback },
 					);
 					return { approvedSummary: generated.summary, summaryMeta: generated.meta };
 				};
@@ -1962,7 +1973,7 @@ export default function (pi: ExtensionAPI) {
 			recencyFilter: Type.Optional(StringEnum(["day", "week", "month", "year"])),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Prefix - to exclude" })),
 			provider: Type.Optional(Type.String({ description: providerDescription })),
-			proxy: Type.Optional(Type.String({ description: "http(s) or socks proxy URL (env proxy vars ignored); \"\" forces direct" })),
+			proxy: Type.Optional(Type.String({ description: "http(s) or socks proxy URL; \"\" forces direct" })),
 		}),
 		exposure: toolExposure,
 		async execute(_callId, params, signal, _onUpdate, ctx) {
@@ -1973,7 +1984,7 @@ export default function (pi: ExtensionAPI) {
 	if (fetchContentEnabled) pi.registerTool({
 		name: toolNames.fetchContent,
 		label: "Fetch Content",
-		description: `Fetch URLs: web pages, PDFs, GitHub repos, images, YouTube and local video. ${fetchContentStorageNote}`,
+		description: `Fetch web pages, PDFs, GitHub repos, images, YouTube and local video. ${fetchContentStorageNote}`,
 		promptSnippet:
 			"Use to fetch URL content, direct images, GitHub repos, and videos.",
 		parameters: Type.Object({
@@ -1999,13 +2010,13 @@ export default function (pi: ExtensionAPI) {
 			frames: Type.Optional(Type.Integer({
 				minimum: 1,
 				maximum: 12,
-				description: "Frames across a range, 5s apart from one time, or across the video",
+				description: "Frames over a range, 5s apart from one time, or over the video",
 			})),
 			model: Type.Optional(Type.String({ description: "Gemini model for video analysis" })),
 			auth: Type.Optional(Type.Union([Type.String(), Type.Boolean()], {
 				description: "authFetch profile name, or true for the only one",
 			})),
-			proxy: Type.Optional(Type.String({ description: "http(s) or socks proxy URL (env proxy vars ignored); \"\" forces direct" })),
+			proxy: Type.Optional(Type.String({ description: "http(s) or socks proxy URL; \"\" forces direct" })),
 			redirects: Type.Optional(StringEnum(["same-origin"], {
 				description: "Refuse cross-origin redirects",
 			})),
@@ -2438,7 +2449,7 @@ export default function (pi: ExtensionAPI) {
 							if (commandHandle && !isCommandActive()) {
 								throw new Error("Curator session is no longer active.");
 							}
-							return rewriteSearchQuery(query, summaryContext, rewriteSignal);
+							return rewriteSearchQuery(query, summaryContext, rewriteSignal, readHelperModelKey("queryRewriteModel"));
 						},
 					},
 				);
