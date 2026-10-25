@@ -12,6 +12,7 @@ import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { normalizeFetchContentParams, type FetchContentParams } from "./fetch-params.ts";
 import { resolveAuthFetchProfile, type AuthFetchProfile } from "./auth-fetch.ts";
 import { findContent, type FindMode } from "./content-find.ts";
+import { CLAIM_JUDGE_MODELS, judgeClaim, type ClaimJudgeModel } from "./claim-judge.ts";
 import {
 	assertSearchProviderSelectionAllowed,
 	normalizeSearchProviderSelection,
@@ -85,6 +86,10 @@ export interface WebSearchConfig {
 	summaryGenerationDeadlineMs?: unknown;
 	summaryInstructions?: unknown;
 	maxInlineContentChars?: unknown;
+	sourceCheck?: unknown;
+	cloudflareAccountId?: unknown;
+	cloudflareApiToken?: unknown;
+	typesafeApiKey?: unknown;
 	fetch?: {
 		defaultMode?: unknown;
 		allowedModes?: unknown;
@@ -162,6 +167,17 @@ export function resolveFetchModeConfig(config: WebSearchConfig): FetchModeConfig
 		throw new Error(`fetch.defaultMode in ${WEB_SEARCH_CONFIG_PATH} must be one of fetch.allowedModes`);
 	}
 	return { defaultMode: defaultMode as FetchMode, allowedModes };
+}
+
+export function resolveClaimJudgeModel(config: WebSearchConfig): ClaimJudgeModel | undefined {
+	if (config.sourceCheck === undefined) return undefined;
+	const judgeModel = config.sourceCheck && typeof config.sourceCheck === "object" && !Array.isArray(config.sourceCheck)
+		? (config.sourceCheck as { judgeModel?: unknown }).judgeModel
+		: undefined;
+	if (typeof judgeModel !== "string" || !Object.hasOwn(CLAIM_JUDGE_MODELS, judgeModel)) {
+		throw new Error(`sourceCheck.judgeModel in ${WEB_SEARCH_CONFIG_PATH} must be ${Object.keys(CLAIM_JUDGE_MODELS).map((model) => `"${model}"`).join(" or ")}`);
+	}
+	return judgeModel as ClaimJudgeModel;
 }
 
 // Limit each batch independently so separate Pi tool calls can still run in parallel.
@@ -522,6 +538,8 @@ export interface WebToolCoreSettings {
 	/** Output ceiling for search results and stored-content pages. fetch_content rereads config per call. */
 	maxInlineContentChars: number;
 	fetchModes: FetchModeConfig;
+	/** Model that judges source_check claims; absent leaves every claim for manual review. */
+	claimJudgeModel?: ClaimJudgeModel;
 }
 
 export interface PageAnswerRequest {
@@ -936,7 +954,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					fetched = urls.map((url) => ({ url, title: "", content: "", error: err instanceof Error ? err.message : String(err) }));
 				}
 			}
-			const artifact = withClaimAssessment(buildResearchArtifact({
+			const built = buildResearchArtifact({
 				query: claim,
 				provider,
 				summary: summaries.length > 0 ? summaries.join("\n\n") : undefined,
@@ -944,7 +962,15 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				fetched,
 				recency: recencyFilter,
 				domainFilter,
-			}), [claim]);
+			});
+			let artifact: ResearchArtifact;
+			if (settings.claimJudgeModel && built.passages.length > 0 && !signal?.aborted) {
+				const judgment = await judgeClaim(settings.claimJudgeModel, claim, built.passages, loadConfig(), signal);
+				artifact = { ...built, claims: [judgment.assessment] };
+				if (judgment.error) errors.push({ query: "claim judge", error: judgment.error });
+			} else {
+				artifact = withClaimAssessment(built, [claim]);
+			}
 			if (errors.length > 0) artifact.errors = errors;
 			storeResearchArtifact(artifact);
 			host.publishResult?.({
@@ -1531,6 +1557,7 @@ export function createStandaloneWebToolCore(): StandaloneWebToolCore {
 		},
 		maxInlineContentChars: getMaxInlineContentChars(config),
 		fetchModes: resolveFetchModeConfig(config),
+		claimJudgeModel: resolveClaimJudgeModel(config),
 	};
 	const storedIds: string[] = [];
 	const remember = (id: string) => {

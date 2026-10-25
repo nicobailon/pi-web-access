@@ -96,6 +96,7 @@ import {
 	normalizeRecencyFilter,
 	parseConfigRoot,
 	registeredFetchToolNames,
+	resolveClaimJudgeModel,
 	resolveFetchModeConfig,
 	resolveRequestedProvider,
 	runSearchQueries,
@@ -767,6 +768,7 @@ export default function (pi: ExtensionAPI) {
 		},
 		maxInlineContentChars: getMaxInlineContentChars(initConfig),
 		fetchModes: fetchModeConfig,
+		claimJudgeModel: resolveClaimJudgeModel(initConfig),
 	};
 	// Names as registered this session, so fetch failure guidance never points
 	// at tools that are disabled or were renamed after init.
