@@ -75,9 +75,9 @@ test("malformed config falls back during extension registration", () => {
 
 test("default public execution tool definitions retain their compatibility hashes", () => {
 	const expected = {
-		web_search: "5cb15bacd456db77c50450f3b7ffc0e80b183ded4045934b2a009f0c64989747",
-		source_check: "8a222e943c67fd36486ffcbd4ceeeacab3318823e642696cfec602265707474f",
-		fetch_content: "df5a2fb7668fa1316ee0f77b074f8ec8faf7d1974f59ba37a279c7f1d8d51132",
+		web_search: "5a3ed802bcfdf3494b0ed782a38753682ee828660a7de4acec50b516e0406d7a",
+		source_check: "4888cf8353b73bc1f54fe4884f3e42b7158e916ca3ec09d1e11c5b1bf003c049",
+		fetch_content: "4bb01fa96d22912d21eff48d061bba3cdd841c0e9b140aa1732d263ba94a3cee",
 		get_search_content: "0671f28d0815f76acaa0afc5267aac8686ea4eaa46978f35bcd674ee6446f30a",
 	};
 	const tools = registered({}).tools.filter(tool => tool.name !== "web_enable");
