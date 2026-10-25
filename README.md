@@ -296,7 +296,7 @@ source_check({
 | Parameter | Description |
 | ----------- | ------------- |
 | `claim` | The assertion to check |
-| `queries` | Search queries to run (default: the claim) |
+| `queries` | Search queries to run (default: the claim; up to 8) |
 | `numResults` | Results per query (default: 5, max: 20) |
 | `fetchContent` | Fetch the top 5 pages so passages come with exact offsets in the page |
 | `recencyFilter` | `day`, `week`, `month`, or `year` |

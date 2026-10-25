@@ -29,7 +29,7 @@ test("every Pi and MCP tool parameter is named in its tool's README section", ()
 		registerShortcut() {},
 		on() {},
 	});
-	assert.ok(tools.length > 0);
+	assert.deepEqual(tools.map((tool) => tool.name), ["web_search", "source_check", "fetch_content", "get_search_content"]);
 	const missing = [
 		...tools.flatMap((tool) => undocumented(tool.name, tool.parameters.properties)),
 		...MCP_TOOL_DEFINITIONS.flatMap((tool) => undocumented(tool.name, tool.inputSchema.properties)),
