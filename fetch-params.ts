@@ -10,6 +10,7 @@ export interface FetchContentParams {
 	model?: unknown;
 	mode?: unknown;
 	answerModel?: unknown;
+	fields?: unknown;
 	auth?: unknown;
 	proxy?: unknown;
 	redirects?: unknown;
@@ -23,7 +24,7 @@ export interface NormalizedFetchContentParams {
 		timestamp?: string;
 		frames?: number;
 		model?: string;
-		mode?: "readable" | "raw" | "answer";
+		mode?: "readable" | "raw" | "answer" | "extract";
 		answerModel?: string;
 		auth?: true | string;
 		proxy?: string;
@@ -82,10 +83,10 @@ function normalizeOptionalString(value: unknown): string | undefined {
 	return trimmed || undefined;
 }
 
-function normalizeMode(value: unknown): "readable" | "raw" | "answer" | undefined {
+function normalizeMode(value: unknown): "readable" | "raw" | "answer" | "extract" | undefined {
 	if (value === undefined) return undefined;
-	if (value === "readable" || value === "raw" || value === "answer") return value;
-	throw new Error('mode must be "readable", "raw", or "answer"');
+	if (value === "readable" || value === "raw" || value === "answer" || value === "extract") return value;
+	throw new Error('mode must be "readable", "raw", "answer", or "extract"');
 }
 
 function normalizeRedirects(value: unknown): "same-origin" | undefined {

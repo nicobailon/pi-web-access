@@ -372,7 +372,7 @@ export interface ExtractOptions {
 	timestamp?: string;
 	frames?: number;
 	model?: string;
-	mode?: "readable" | "raw" | "answer";
+	mode?: "readable" | "raw" | "answer" | "extract";
 	answerModel?: string;
 	authFetchProfile?: AuthFetchProfile;
 	toolNames?: RegisteredToolNames;
@@ -1405,7 +1405,7 @@ async function extractViaHttp(
 				return {
 					url,
 					title: result.title,
-					content: options?.mode === "answer"
+					content: options?.mode === "answer" || options?.mode === "extract"
 						? result.content
 						: `PDF extracted and saved to: ${result.outputPath}\n\n${result.pages > 0 ? `Pages: ${result.pages}\n` : ""}Characters: ${result.chars}`,
 					error: null,

@@ -203,6 +203,7 @@ const FETCH_MODE_DESCRIPTIONS: Record<FetchMode, string> = {
 	readable: "extract readable content as markdown",
 	raw: "return the exact textual body using direct HTTP only",
 	answer: "answer a prompt using only fetched content",
+	extract: "read typed values named in fields",
 };
 
 // Keep primary query indexes stable for curator slots, then interleave additional
@@ -2004,6 +2005,11 @@ export default function (pi: ExtensionAPI) {
 			...(fetchModeConfig.allowedModes.includes("answer") ? {
 				answerModel: Type.Optional(Type.String({
 					description: "provider/model-id for answer mode",
+				})),
+			} : {}),
+			...(fetchModeConfig.allowedModes.includes("extract") ? {
+				fields: Type.Optional(Type.Record(Type.String(), Type.String(), {
+					description: "For extract: name → \"type\" or \"type: what to find\"; types: text, number, integer, date, time, datetime, duration[.unit], list[.number|.date]",
 				})),
 			} : {}),
 			timestamp: Type.Optional(Type.String({

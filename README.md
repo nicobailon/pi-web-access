@@ -239,6 +239,7 @@ fetch_content({ url: "/path/to/recording.mp4", prompt: "What error appears on sc
 fetch_content({ url: "https://youtube.com/watch?v=abc", timestamp: "23:41-25:00", frames: 4 })
 fetch_content({ url: "https://example.com/api", mode: "raw" })
 fetch_content({ url: "https://example.com/guide", mode: "answer", prompt: "What are the installation steps?" })
+fetch_content({ url: "https://example.com/pricing", mode: "extract", fields: { pro_monthly: "number: Pro plan monthly price", trial_days: "integer" } })
 fetch_content({ url: "https://example.com/account", auth: "work", mode: "raw" })
 fetch_content({ url: "https://example.com/diagram.png" })
 ```
@@ -247,7 +248,8 @@ fetch_content({ url: "https://example.com/diagram.png" })
 | ----------- | ------------- |
 | `url` / `urls` | Single URL/path or multiple URLs |
 | `prompt` | Question for video analysis, or the page-local question required by `mode: "answer"` |
-| `mode` | `readable` (default), `raw` for exact textual HTTP bodies, or `answer` for a grounded answer from fetched content |
+| `mode` | `readable` (default), `raw` for exact textual HTTP bodies, `answer` for a grounded answer from fetched content, or `extract` for typed values (off unless `fetch.allowedModes` lists it) |
+| `fields` | For `mode: "extract"`: field name → `"type"` or `"type: what to find"`, such as `"date: release date of the latest stable version"` |
 | `answerModel` | Optional `provider/model-id` override for answer mode; defaults to the configured `fetch.answerProvider` + `fetch.answerModel` pair, or the current enabled Pi model when no pair is configured |
 | `timestamp` | Extract frame(s): single (`"1:23:45"`, `"23:41"`, or seconds `"85"`) or range (`"23:41-25:00"`, 6 evenly spaced frames by default; useful when you only know roughly where something happens). Needs `ffmpeg`, plus `yt-dlp` for YouTube |
 | `frames` | Number of frames (1-12): spread across a `timestamp` range, 5 seconds apart from a single `timestamp`, or across the whole video when used alone |
@@ -258,6 +260,8 @@ fetch_content({ url: "https://example.com/diagram.png" })
 | `redirects` | `"same-origin"` refuses redirects that change the scheme, hostname, or port. See `fetchContent.redirects` |
 
 For a standing answer-mode model, set both `fetch.answerProvider` and `fetch.answerModel` in `web-search.json`; a per-call `answerModel` takes precedence. Configured answer defaults are opt-in and can send fetched page text to a different provider/model, which may change privacy and cost behavior.
+
+Extract mode reads named values off each page with Cloudflare's Clairic model, on your own Cloudflare account: add `"extract"` to `fetch.allowedModes` and set up Pi's `cloudflare-workers-ai` provider (`CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID`, or Pi's `/login`). Each field comes back as a typed value with its confidence, as an uncertain guess, or as not on the page; a value is reported only at confidence 0.80 or higher and with the right type. The page text is sent to Cloudflare. It works in Pi only. [docs/field-extract.md](docs/field-extract.md) covers the field types, limits, and how it was measured.
 
 Thanks to [@linuxtextadventurer](https://github.com/linuxtextadventurer) for PR #328.
 
@@ -335,7 +339,7 @@ Add it to an `mcpServers` config (Claude Code, Cursor, and similar clients; Code
 ```
 
 - The server reads the same `web-search.json` and provider environment variables as the extension. It lists only the tools enabled there, under their default names; `toolNames` renames do not apply.
-- Pi-only features are not available: the curator and summaries (a configured `workflow` is ignored), Kimi search, OpenAI search through ChatGPT sign-in or the current Pi model, `fetch_content` answer mode and video prompts or frames, and direct image fetches. Explicit requests for them return a tool error rather than a fallback, and automatic provider selection only uses providers that work outside Pi. The `source_check` claim judge does not run either, so claims stay `unclear` for manual review.
+- Pi-only features are not available: the curator and summaries (a configured `workflow` is ignored), Kimi search, OpenAI search through ChatGPT sign-in or the current Pi model, `fetch_content` answer and extract modes and video prompts or frames, and direct image fetches. Explicit requests for them return a tool error rather than a fallback, and automatic provider selection only uses providers that work outside Pi. The `source_check` claim judge does not run either, so claims stay `unclear` for manual review.
 - `includeContent` waits for the page fetch before `web_search` returns.
 - The server keeps the 50 most recent results in memory for `get_search_content`; they are gone when it exits. Restart the server to pick up config changes.
 - Install with npm's default settings or `--legacy-peer-deps`. `--omit=peer` leaves out `zod`, which the MCP SDK needs.
@@ -748,7 +752,7 @@ Existing Responses endpoint settings (`openaiResponsesUrl`, `xaiResponsesUrl`), 
 
 `fetch.timeout` is an optional positive finite number of seconds for direct HTTP fetches and the Jina Reader fallback. When omitted, both use a 30-second budget. Fractional values are supported and rounded up to at least 1 millisecond; values that cannot be converted to a finite safe integer delay from 1 through Node's 2,147,483,647 ms timer maximum are rejected. An invalid declared value fails closed with an error naming `web-search.json`. An internal/per-call `timeoutMs` override takes precedence over this setting. Other remote extraction fallbacks keep their own documented budgets.
 
-`fetch.defaultMode` sets the mode used when `fetch_content` omits `mode`, and `fetch.allowedModes` controls which modes the tool exposes and accepts. Valid modes are `readable`, `raw`, and `answer`. By default, the default mode is `readable` and all three modes are allowed. The default must be included in the non-empty, duplicate-free allowed list. An explicitly requested disabled mode fails before fetching or invoking a model and is never replaced with another mode. Raw mode remains direct HTTP-only and never runs readability, specialized source handling, or hosted extraction fallbacks.
+`fetch.defaultMode` sets the mode used when `fetch_content` omits `mode`, and `fetch.allowedModes` controls which modes the tool exposes and accepts. Valid modes are `readable`, `raw`, `answer`, and `extract`. By default, the default mode is `readable` and `readable`, `raw`, and `answer` are allowed; `extract` is allowed only when listed and cannot be the default. The default must be included in the non-empty, duplicate-free allowed list. An explicitly requested disabled mode fails before fetching or invoking a model and is never replaced with another mode. Raw mode remains direct HTTP-only and never runs readability, specialized source handling, or hosted extraction fallbacks.
 
 `fetch.answerProvider` and `fetch.answerModel` are an optional pair that selects the model used by `fetch_content` answer mode when no per-call `answerModel` is supplied. Both values must be non-empty strings and must identify an enabled text-capable model available in Pi's model registry; invalid or partial configuration fails closed. This is opt-in: answering with the configured provider/model can send fetched page text outside the current session and may incur that provider's costs. A per-call `answerModel` override is resolved first and remains usable even when these configured defaults are malformed.
 

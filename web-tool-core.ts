@@ -13,6 +13,7 @@ import { normalizeFetchContentParams, type FetchContentParams } from "./fetch-pa
 import { resolveAuthFetchProfile, type AuthFetchProfile } from "./auth-fetch.ts";
 import { findContent, type FindMode } from "./content-find.ts";
 import { CLAIM_JUDGE_MODELS, judgeClaim, type ClaimJudgeModel } from "./claim-judge.ts";
+import { extractPageFields, formatPageExtraction, parseExtractFields } from "./field-extract.ts";
 import {
 	assertSearchProviderSelectionAllowed,
 	normalizeSearchProviderSelection,
@@ -145,14 +146,16 @@ export const DEFAULT_TOOL_NAMES: ToolNames = {
 	getSearchContent: "get_search_content",
 };
 const SEARCH_QUERY_CONCURRENCY = 3;
-const FETCH_MODES = ["readable", "raw", "answer"] as const;
+const FETCH_MODES = ["readable", "raw", "answer", "extract"] as const;
 export type FetchMode = typeof FETCH_MODES[number];
 export type FetchModeConfig = { defaultMode: FetchMode; allowedModes: FetchMode[] };
+// Extract sends page text to Cloudflare, so it is offered only when fetch.allowedModes lists it.
+const DEFAULT_FETCH_MODES: FetchMode[] = ["readable", "raw", "answer"];
 
 export function resolveFetchModeConfig(config: WebSearchConfig): FetchModeConfig {
-	const configuredModes = config.fetch?.allowedModes ?? FETCH_MODES;
+	const configuredModes = config.fetch?.allowedModes ?? DEFAULT_FETCH_MODES;
 	if (!Array.isArray(configuredModes) || configuredModes.length === 0 || configuredModes.some(mode => !FETCH_MODES.includes(mode as FetchMode))) {
-		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty array containing only "readable", "raw", or "answer"`);
+		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty array containing only "readable", "raw", "answer", or "extract"`);
 	}
 	const allowedModes = configuredModes as FetchMode[];
 	const duplicateMode = allowedModes.find((mode, index) => allowedModes.indexOf(mode) !== index);
@@ -160,6 +163,9 @@ export function resolveFetchModeConfig(config: WebSearchConfig): FetchModeConfig
 		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must not contain duplicates: "${duplicateMode}"`);
 	}
 	const defaultMode = config.fetch?.defaultMode ?? "readable";
+	if (defaultMode === "extract") {
+		throw new Error(`fetch.defaultMode in ${WEB_SEARCH_CONFIG_PATH} cannot be "extract", because extract needs fields on each call`);
+	}
 	if (!allowedModes.includes(defaultMode as FetchMode)) {
 		throw new Error(`fetch.defaultMode in ${WEB_SEARCH_CONFIG_PATH} must be one of fetch.allowedModes`);
 	}
@@ -1016,8 +1022,22 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			if (mode === "answer" && options.model) {
 				return { content: [{ type: "text", text: "Error: use answerModel, not model, with mode answer." }], details: { error: "model is incompatible with mode answer" } };
 			}
-			if (mode === "answer" && options.auth !== undefined) {
-				return { content: [{ type: "text", text: "Error: auth cannot be combined with mode answer." }], details: { error: "auth cannot be combined with mode answer" } };
+			// Authenticated page text never goes to a hosted model.
+			if ((mode === "answer" || mode === "extract") && options.auth !== undefined) {
+				return { content: [{ type: "text", text: `Error: auth cannot be combined with mode ${mode}.` }], details: { error: `auth cannot be combined with mode ${mode}` } };
+			}
+			if (mode !== "extract" && params.fields !== undefined) {
+				return { content: [{ type: "text", text: "Error: fields requires mode extract." }], details: { error: "fields requires mode extract" } };
+			}
+			let extractFields: ReturnType<typeof parseExtractFields> | undefined;
+			if (mode === "extract") {
+				try {
+					if (params.fields === undefined) throw new Error("mode extract requires fields");
+					extractFields = parseExtractFields(params.fields);
+				} catch (err) {
+					const error = err instanceof Error ? err.message : String(err);
+					return { content: [{ type: "text", text: `Error: ${error}.` }], details: { error } };
+				}
 			}
 			let authFetchProfile: AuthFetchProfile | undefined;
 			if (options.auth !== undefined) {
@@ -1069,7 +1089,14 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 						return { ...result, error: `Page answer failed: ${err instanceof Error ? err.message : String(err)}` };
 					}
 				}))
-				: fetchResults;
+				: mode === "extract"
+					? fetchResults.map(result => !result.error && (result.mimeType?.startsWith("image/") || result.frames?.length)
+						? { ...result, error: "Field extraction requires textual fetched content" }
+						: result)
+					: fetchResults;
+			const extractions = extractFields
+				? await Promise.all(presentedResults.map(result => result.error ? undefined : extractPageFields(result.content, extractFields!, { modelRegistry: ctx?.modelRegistry }, signal)))
+				: undefined;
 			const successful = presentedResults.filter((r) => !r.error).length;
 			const totalChars = presentedResults.reduce((sum, r) => sum + r.content.length, 0);
 
@@ -1082,6 +1109,34 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			} satisfies FetchedContentData;
 			const storedContent = storeFetchResult(responseId, data, authFetchProfile);
 			const structuredContent = fetchStructuredContent(storedContent ? responseId : null, presentedResults);
+
+			if (extractions) {
+				// A page that fetched but could not be extracted still counts as fetched: its content is stored.
+				let output = "## Extracted fields\n";
+				presentedResults.forEach((result, index) => {
+					output += `\n### ${result.title || result.url}\n`;
+					output += result.error ? `Error: ${result.error}\n` : formatPageExtraction(extractions[index]!);
+				});
+				// Extract rejects auth, so the pages are always stored.
+				output += getSearchContentEnabled
+					? `\n---\nThe fetched pages are stored as responseId "${responseId}". Use ${toolNames.getSearchContent}({ responseId: "${responseId}", urlIndex: 0 }) to read the first one; urlIndex follows the order above.`
+					: "\n---\nContent retrieval is not registered.";
+				return {
+					...(successful === 0 ? { isError: true } : {}),
+					content: [{ type: "text", text: output }],
+					structuredContent,
+					details: {
+						urls: urlList,
+						urlCount: urlList.length,
+						successful,
+						mode,
+						responseId,
+						// The TUI summarizes a single URL from these, as for the other modes.
+						...(urlList.length === 1 ? { title: presentedResults[0].title, totalChars: presentedResults[0].content.length, ...(presentedResults[0].error ? { error: presentedResults[0].error } : {}) } : {}),
+						extractions: presentedResults.map((result, index) => ({ url: result.url, ...(result.error ? { error: result.error } : extractions[index]) })),
+					},
+				};
+			}
 
 			if (urlList.length === 1) {
 				const result = presentedResults[0];

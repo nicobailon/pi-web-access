@@ -1,0 +1,172 @@
+[
+  {
+    "id": "x01",
+    "page": "# Tessel Cloud Pricing\n\nSimple plans that grow with your team. All prices in USD.\n\n## Starter\n\nFor side projects and small sites.\n\n- **$9/month** billed monthly\n- or $90/year billed annually\n- 3 projects\n- Community support\n\n## Pro\n\nFor professional developers shipping production apps.\n\n- **$24/month** billed monthly\n- **$20/month** billed annually ($240/year)\n- Unlimited projects\n- Email support with a 1 business day response\n- Preview deployments for every pull request\n\n## Team\n\nFor companies that need collaboration and control.\n\n- **$79/month** billed monthly, includes 5 seats\n- Additional seats: $12 per seat per month\n- SSO and audit logs\n- Role-based access control\n\n## Enterprise\n\nCustom contracts, dedicated support, and a 99.99% uptime SLA. Contact sales for a quote.\n\n## Compare plans\n\n| Feature | Starter | Pro | Team |\n| --- | --- | --- | --- |\n| Bandwidth included | 100 GB | 1 TB | 3 TB |\n| Build minutes / month | 300 | 3,000 | 10,000 |\n| Function invocations | 1M | 10M | 50M |\n| Concurrent builds | 1 | 3 | 10 |\n\nExtra bandwidth is billed at $0.08 per GB on all paid plans. Prices exclude VAT where applicable.\n\n## FAQ\n\n**Can I switch plans later?** Yes, upgrades take effect immediately and are prorated.\n\n**Do you offer discounts for nonprofits?** Yes, write to us from your organization's email address.\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "pro_monthly_price": { "type": "number", "instructions": "Pro plan price per month when billed monthly, in USD" },
+      "team_included_seats": { "type": "integer", "instructions": "Number of seats included in the Team plan" },
+      "enterprise_price": { "type": "number", "instructions": "Enterprise plan price per month in USD" },
+      "starter_bandwidth_gb": { "type": "number", "instructions": "Bandwidth included in the Starter plan, in GB" }
+    },
+    "expected": {
+      "pro_monthly_price": 24,
+      "team_included_seats": 5,
+      "enterprise_price": null,
+      "starter_bandwidth_gb": 100
+    }
+  },
+  {
+    "id": "x02",
+    "page": "# Kestrel.js Releases\n\n## v5.4.0-beta.2 (pre-release)\n\nReleased yesterday\n\n- Experimental WebSocket router\n- New `onError` hook for streaming responses\n- This is a beta. Do not use in production.\n\n## v5.3.1 (latest)\n\nReleased 2 days ago\n\n### Fixes\n\n- Fix a memory leak when a client disconnects during a streamed response\n- Correct the `Content-Length` header for compressed static files\n- Router: trailing slashes are now matched consistently\n\n## v5.3.0\n\nReleased 2026-09-15\n\n### Features\n\n- Route groups with shared middleware\n- `kestrel build --analyze` prints a bundle size report\n\n### Breaking changes\n\nNone.\n\n## v5.2.4\n\nReleased 2026-08-02\n\n- Security: reject request paths that contain encoded null bytes\n\n## v5.0.0\n\nReleased 2026-03-03\n\n- New router and streaming responses\n- Requires Node.js 20 or newer. Node.js 18 is no longer supported.\n- Drops the legacy `kestrel.config.js` format; use `kestrel.config.ts`\n\n## Supported versions\n\nThe current major version gets features and fixes. The previous major version gets security fixes for 6 months after a new major release.\n\nUpgrading from 4.x? Read the migration guide before you start.\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "latest_stable_version": { "type": "text", "instructions": "Version number of the latest stable (non-beta) release" },
+      "latest_stable_release_date": { "type": "date", "instructions": "Release date of the latest stable release" },
+      "minimum_node_version": { "type": "integer", "instructions": "Minimum Node.js major version required by Kestrel.js 5" },
+      "lts_end_date": { "type": "date", "instructions": "Date long-term support for version 5 ends" }
+    },
+    "expected": {
+      "latest_stable_version": "v5.3.1",
+      "latest_stable_release_date": "2026-10-22",
+      "minimum_node_version": 20,
+      "lts_end_date": null
+    }
+  },
+  {
+    "id": "x03",
+    "page": "# Larkspur Maps API: Rate limits\n\nEvery API key is limited by the plan of the account it belongs to. Limits apply per key, not per IP address.\n\n## Geocoding\n\n| Plan | Requests per minute | Daily cap |\n| --- | --- | --- |\n| Free | 60 | 2,500 |\n| Business | 600 | 250,000 |\n| Enterprise | Custom | Custom |\n\nThe forward and reverse geocoding endpoints share the same limit.\n\n### Batch geocoding\n\nSend up to 100 addresses in one request to `POST /v3/geocode/batch`. A batch counts as one request toward the per-minute limit but every address counts toward the daily cap.\n\n## Routing\n\nRouting requests are limited to 100 requests per minute on all paid plans. Matrix requests with more than 25 origins or destinations count as 5 requests.\n\n## Static tiles\n\nTile requests are served from the edge and are not rate limited, but they count toward your monthly tile quota.\n\n## What happens when you hit a limit\n\nThe API answers with HTTP 429 and a `Retry-After` header in seconds. Back off and retry after that delay. Repeated violations for more than 10 minutes may lead to a temporary suspension of the key.\n\n## Raising your limits\n\nBusiness customers can request a temporary increase for planned backfills from the dashboard under Settings → Limits.\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "business_geocoding_per_minute": { "type": "number", "instructions": "Geocoding requests per minute allowed on the Business plan" },
+      "free_daily_cap": { "type": "integer", "instructions": "Daily geocoding cap on the Free plan" },
+      "max_batch_size": { "type": "integer", "instructions": "Maximum number of addresses in one batch geocoding request" },
+      "websocket_connection_limit": { "type": "integer", "instructions": "Maximum number of concurrent WebSocket connections per key" }
+    },
+    "expected": {
+      "business_geocoding_per_minute": 600,
+      "free_daily_cap": 2500,
+      "max_batch_size": 100,
+      "websocket_connection_limit": null
+    }
+  },
+  {
+    "id": "x04",
+    "page": "# Vellum Pro 16 Notebook – Space Grey\n\n★★★★☆ 4,3 (812 Bewertungen)\n\n**Unser Preis: 1.299,00 €**\n\nUVP 1.549,00 € · Sie sparen 250,00 €\n\ninkl. MwSt., zzgl. Versandkosten (4,99 €)\n\n## Lieferung\n\nAuf Lager. Lieferung bis Donnerstag, 29. Oktober, wenn Sie innerhalb von 3 Std. 12 Min. bestellen.\n\n## Technische Daten\n\n| Merkmal | Wert |\n| --- | --- |\n| Display | 16 Zoll, 2560 × 1600, 120 Hz |\n| Prozessor | 12 Kerne, bis zu 4,8 GHz |\n| Arbeitsspeicher | 32 GB |\n| SSD | 1 TB |\n| Gewicht | 2,4 kg |\n| Akkulaufzeit | bis zu 14 Std. |\n| Garantie | 2 Jahre Herstellergarantie |\n\n## Beschreibung\n\nDas Vellum Pro 16 ist für kreative Profis gemacht: ein helles Display, ein leiser Lüfter und genug Leistung für Videoschnitt und 3D. Das Aluminiumgehäuse ist nur 16,8 mm dünn. Zwei Thunderbolt-Anschlüsse, ein HDMI-Ausgang und ein SD-Kartenleser sind eingebaut, sodass Sie für die meisten Aufgaben keinen Adapter brauchen.\n\n## Zubehör\n\n- Vellum USB-C Netzteil 140 W – 79,00 €\n- Vellum Sleeve 16 – 39,90 €\n\n## Kunden kauften auch\n\n- Vellum Pro 14 – 999,00 €\n- Vellum Dock – 189,00 €\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "price_eur": { "type": "number", "instructions": "Current selling price of the Vellum Pro 16 notebook in euros" },
+      "weight_kg": { "type": "number", "instructions": "Weight of the notebook in kilograms" },
+      "delivery_date": { "type": "date", "instructions": "Latest delivery date shown for an order placed now" },
+      "energy_label": { "type": "text", "instructions": "EU energy efficiency class" }
+    },
+    "expected": {
+      "price_eur": 1299,
+      "weight_kg": 2.4,
+      "delivery_date": "2026-10-29",
+      "energy_label": null
+    }
+  },
+  {
+    "id": "x05",
+    "page": "# Quillstack Status\n\nAll systems operational.\n\n## Past incidents\n\n### Degraded performance of the Public API and Webhooks\n\n**Resolved** – Oct 21, 2026\n\nStarted: October 21, 2026, 14:05 UTC\nResolved: October 21, 2026, 15:40 UTC\nDuration: 1 h 35 min\n\nAffected components: Public API, Webhooks\n\nBetween 14:05 and 15:40 UTC, about 18% of API requests failed with HTTP 503 and webhook deliveries were delayed by up to 50 minutes. The cause was a misconfigured connection pool limit rolled out to one database cluster. We rolled back the change and replayed all delayed webhooks. No data was lost.\n\n### Dashboard login errors\n\n**Resolved** – Oct 9, 2026\n\nStarted: October 9, 2026, 08:12 UTC\nResolved: October 9, 2026, 08:31 UTC\nDuration: 19 min\n\nAffected components: Dashboard\n\nSome users could not sign in with SSO because of an expired certificate on our identity provider integration.\n\n### Delayed exports\n\n**Resolved** – Sep 28, 2026\n\nBulk exports took up to 3 hours instead of the usual 10 minutes.\n\n## Uptime (last 90 days)\n\n| Component | Uptime |\n| --- | --- |\n| Public API | 99.93% |\n| Webhooks | 99.95% |\n| Dashboard | 99.98% |\n\nSubscribe to updates by email or RSS.\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "incident_start": { "type": "datetime", "instructions": "Start time (UTC) of the Public API and Webhooks incident" },
+      "incident_duration": { "type": "duration.minutes", "instructions": "How long the Public API and Webhooks incident lasted" },
+      "affected_components": { "type": "list", "instructions": "Components affected by the Public API and Webhooks incident" },
+      "next_maintenance_date": { "type": "date", "instructions": "Date of the next scheduled maintenance window" }
+    },
+    "expected": {
+      "incident_start": "2026-10-21T14:05",
+      "incident_duration": 95,
+      "affected_components": ["Public API", "Webhooks"],
+      "next_maintenance_date": null
+    }
+  },
+  {
+    "id": "x06",
+    "page": "# How we cut our cold starts by 60%\n\nBy **Mira Okonkwo** · October 3, 2026 · 7 min read\n\n*Updated October 10, 2026: added the arm64 numbers.*\n\nLast spring our p95 cold start on Tessel functions was 1.4 seconds. Customers noticed. This post walks through what we changed, in the order we changed it, and what each step was worth.\n\n## 1. Measure the right thing\n\nWe had been measuring the time to first byte from our own region. Real users were spread across three continents, so we started recording cold starts from synthetic checks in nine regions. That alone changed our priorities.\n\n## 2. Ship less code\n\nOur function bundle was 38 MB, mostly from a PDF library used by one endpoint. Splitting that endpoint into its own function cut the bundle to 6 MB and the cold start by 400 ms.\n\n## 3. Lazy-load the database client\n\nThe database driver opened a pool of 10 connections at import time. We now open one connection on the first query.\n\n## 4. Move to arm64\n\nOn arm64 our cold starts dropped another 15%, and the bill went down too.\n\n## Results\n\n| Change | p95 cold start |\n| --- | --- |\n| Before | 1,400 ms |\n| Smaller bundle | 1,000 ms |\n| Lazy DB client | 700 ms |\n| arm64 | 560 ms |\n\nThanks to Daniel Reyes for reviewing a draft of this post.\n\nTags: performance, serverless, arm64\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "author": { "type": "text", "instructions": "Name of the post's author" },
+      "published_date": { "type": "date", "instructions": "Original publication date of the post" },
+      "reading_time": { "type": "duration.minutes", "instructions": "Estimated reading time" },
+      "comment_count": { "type": "integer", "instructions": "Number of comments on the post" }
+    },
+    "expected": {
+      "author": "Mira Okonkwo",
+      "published_date": "2026-10-03",
+      "reading_time": 7,
+      "comment_count": null
+    }
+  },
+  {
+    "id": "x07",
+    "page": "# harborctl configuration reference\n\n`harborctl` reads `harbor.yaml` from the current directory. Every key is optional; the defaults are listed below.\n\n## server\n\n| Key | Default | Description |\n| --- | --- | --- |\n| `server.port` | `8443` | Port the gateway listens on |\n| `server.adminPort` | `9090` | Port for the metrics and health endpoints |\n| `server.readTimeout` | `30s` | Time allowed to read a full request |\n| `server.idleTimeout` | `120s` | Time an idle keep-alive connection stays open |\n\n## client\n\n| Key | Default | Description |\n| --- | --- | --- |\n| `client.maxRetries` | `5` | Retries for idempotent calls that fail with a retryable status |\n| `client.backoff` | `200ms` | Initial backoff, doubled after each retry |\n| `client.maxBackoff` | `10s` | Upper bound for the backoff |\n\n## tls\n\n| Key | Default | Description |\n| --- | --- | --- |\n| `tls.minVersion` | `1.2` | Lowest TLS version accepted |\n| `tls.requireClientCert` | `false` | Require mutual TLS |\n\n## Example\n\n```yaml\nserver:\n  port: 9443\n  readTimeout: 15s\nclient:\n  maxRetries: 3\n```\n\nThe example above overrides the defaults for a local test setup. Run `harborctl config check` to validate a file before deploying it.\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "default_port": { "type": "integer", "instructions": "Default port the gateway listens on" },
+      "default_read_timeout_seconds": { "type": "number", "instructions": "Default server read timeout in seconds" },
+      "default_max_retries": { "type": "integer", "instructions": "Default number of client retries" },
+      "min_python_version": { "type": "text", "instructions": "Minimum supported Python version" }
+    },
+    "expected": {
+      "default_port": 8443,
+      "default_read_timeout_seconds": 30,
+      "default_max_retries": 5,
+      "min_python_version": null
+    }
+  },
+  {
+    "id": "x08",
+    "page": "# Pylon Notes for iOS – What's New\n\n## Version 3.8\n\nSeptember 30, 2026\n\n- Widgets for the Lock Screen\n- Search now finds text inside scanned PDFs\n- Fixes a crash when importing very large Markdown files\n\n## Version 3.7.2\n\nAugust 12, 2026\n\n- Faster sync for accounts with more than 10,000 notes\n- Fixes dark mode colors in the share sheet\n\n## Version 3.7\n\nJune 3, 2026\n\n- Folders can now be nested up to 5 levels deep\n- New keyboard shortcuts on iPad\n\n## Version 3.6\n\nDecember 15, 2025\n\n- Shared notebooks\n- Requires iOS 17.0 or later (previously iOS 16.0)\n\n## Version 3.5\n\nSeptember 2, 2025\n\n- Apple Pencil handwriting search\n- Notes can be locked with Face ID\n- Fixes a sync conflict that duplicated edited checklists\n\n## Version 3.4\n\nMay 20, 2025\n\n- Templates for meeting notes, journals and reading lists\n- Export a notebook as a single PDF\n\n## Compatibility\n\nRequires iOS 17.0 or later. Works on iPhone, iPad and Mac with Apple silicon.\n\n## Coming soon\n\nVersion 3.9 is in beta on TestFlight with a redesigned editor. Join the beta from Settings → About.\n\nQuestions? Write to support from the app under Settings → Help.\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "latest_version": { "type": "text", "instructions": "Latest released version number (not beta)" },
+      "minimum_ios_version": { "type": "text", "instructions": "Minimum iOS version currently required" },
+      "release_dates_2026": { "type": "list.date", "instructions": "Release dates of all versions released in 2026, newest first" },
+      "app_size_mb": { "type": "number", "instructions": "Download size of the app in MB" }
+    },
+    "expected": {
+      "latest_version": "3.8",
+      "minimum_ios_version": "17.0",
+      "release_dates_2026": ["2026-09-30", "2026-08-12", "2026-06-03"],
+      "app_size_mb": null
+    }
+  },
+  {
+    "id": "x09",
+    "page": "# Sonora AI Pricing\n\nPay only for what you use. No minimums, no seat fees.\n\n## Speech\n\n| Product | Price |\n| --- | --- |\n| Transcription (batch) | $0.006 per minute of audio |\n| Transcription (real-time) | $0.009 per minute of audio |\n| Speaker labels | +$0.001 per minute |\n| Text to speech | $15 per 1M characters |\n\nEvery account gets 300 free minutes of batch transcription each month. Unused free minutes do not roll over.\n\n## Compute\n\nRun your own models on dedicated hardware.\n\n| GPU | Price |\n| --- | --- |\n| L4 | $0.80 per hour |\n| A100 40 GB | $1.20 per hour |\n| H100 80 GB | $3.10 per hour |\n\nCompute is billed per second with a 1-minute minimum. Storage for model weights costs $0.10 per GB per month.\n\n## Support and SLA\n\nAll paid usage comes with a 99.9% monthly uptime SLA. Enterprise contracts can add a 99.95% SLA and a named support engineer.\n\n## Volume discounts\n\nAbove 1 million transcription minutes a month, contact sales for committed-use pricing.\n\n## Billing\n\nYou are billed at the end of each calendar month by card or invoice. Prices are in USD and exclude taxes.\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "batch_transcription_per_minute": { "type": "number", "instructions": "Price per minute of audio for batch transcription, in USD" },
+      "a100_per_hour": { "type": "number", "instructions": "Price per hour for an A100 GPU, in USD" },
+      "free_minutes_per_month": { "type": "integer", "instructions": "Free batch transcription minutes included each month" },
+      "refund_window_days": { "type": "integer", "instructions": "Number of days within which a refund can be requested" }
+    },
+    "expected": {
+      "batch_transcription_per_minute": 0.006,
+      "a100_per_hour": 1.2,
+      "free_minutes_per_month": 300,
+      "refund_window_days": null
+    }
+  },
+  {
+    "id": "x10",
+    "page": "# EdgeConf 2026\n\n**November 18–20, 2026 · Porto, Portugal**\n\nThree days of talks and workshops about building for the edge: runtimes, databases, caching and observability.\n\n## Venue\n\nAlfândega Congress Centre, Rua Nova da Alfândega, Porto. The venue is a 10-minute walk from São Bento station.\n\n## Schedule highlights\n\n### Day 1 – Workshops (November 18)\n\nHands-on workshops from 10:00 to 17:00. Registration opens at 8:30 AM.\n\n### Day 2 – Main conference (November 19)\n\n- 9:30 AM – Opening keynote: \"The edge is just a computer\"\n- 11:00 AM – Track talks begin\n- 6:00 PM – Evening reception at the riverside terrace\n\n### Day 3 – Main conference (November 20)\n\n- 9:00 AM – Panel: Databases at the edge\n- 4:30 PM – Closing keynote\n\n## Tickets\n\n| Ticket | Price | Available until |\n| --- | --- | --- |\n| Early bird | €299 | September 30, 2026 |\n| Regular | €449 | November 10, 2026 |\n| Workshop add-on | €150 | While seats last |\n\nStudent tickets are 50% off the regular price with a valid student ID.\n\n## Code of conduct\n\nAll attendees, speakers and sponsors agree to our code of conduct.\n",
+    "referenceDate": "2026-10-24",
+    "fields": {
+      "opening_keynote_time": { "type": "time", "instructions": "Start time of the opening keynote" },
+      "early_bird_price_eur": { "type": "number", "instructions": "Price of an early bird ticket in euros" },
+      "last_conference_day": { "type": "date", "instructions": "Last day of the conference" },
+      "livestream_url": { "type": "text", "instructions": "URL of the conference livestream" }
+    },
+    "expected": {
+      "opening_keynote_time": "09:30",
+      "early_bird_price_eur": 299,
+      "last_conference_day": "2026-11-20",
+      "livestream_url": null
+    }
+  }
+]
