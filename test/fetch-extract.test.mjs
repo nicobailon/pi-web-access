@@ -147,7 +147,6 @@ test("invalid or misplaced fields, and auth with extract, fail before any page f
 		{ url: PAGE_A, mode: "extract" },
 		{ url: PAGE_A, mode: "readable", fields: { price: "number" } },
 		{ url: PAGE_A, mode: "extract", fields: { price: "number" }, auth: true },
-		{ url: "https://github.com/acme/private/issues/7", mode: "extract", fields: { price: "number" } },
 	]);
 	assert.equal(run.child.status, 0, run.child.stderr);
 	assert.deepEqual(run.results.map((result) => result.text), [
@@ -156,17 +155,19 @@ test("invalid or misplaced fields, and auth with extract, fail before any page f
 		"Error: mode extract requires fields.",
 		"Error: fields requires mode extract.",
 		"Error: auth cannot be combined with mode extract.",
-		"Error: mode extract does not read GitHub repositories, issues or pull requests (https://github.com/acme/private/issues/7), because they are read with your signed-in gh account.",
 	]);
 	assert.deepEqual([run.pageFetches, run.clairicRequests.length], [0, 0]);
 });
 
-test("extracted values are cut at maxInlineContentChars, and the full values stay in the details", () => {
+test("a long value is cut on its own, and the whole result is cut at maxInlineContentChars", () => {
 	const long = "word ".repeat(400).trim();
-	const run = runFetch({ ...extractConfig, maxInlineContentChars: 1000 }, [{ url: PAGE_A, mode: "extract", fields: { note: "text" } }], { a: clairic({ note: { type: "text", value: long, confidence: 0.99 } }) });
+	const reply = { a: clairic({ note: { type: "text", value: long, confidence: 0.99 }, total: { type: "number", value: 7, confidence: 0.99 } }) };
+	const run = runFetch(extractConfig, [{ url: PAGE_A, mode: "extract", fields: { note: "text", total: "number" } }], reply);
 	assert.equal(run.child.status, 0, run.child.stderr);
-	assert.match(run.results[0].text, /\[Field values cut at 1000 characters; the full values are in the tool details\.\]/);
+	assert.match(run.results[0].text, /\nnote: (word ){200}… \[1999 characters; the rest is in the stored page\] \(0\.99\)\ntotal: 7 \(0\.99\)\n/);
 	assert.equal(run.results[0].details.extractions[0].fields.note.value, long);
+	const capped = runFetch({ ...extractConfig, maxInlineContentChars: 1000 }, [{ url: PAGE_A, mode: "extract", fields: { note: "text", total: "number" } }], reply);
+	assert.match(capped.results[0].text, /\[Results cut at 1000 characters; ask for fewer fields or URLs, or read a stored page with get_search_content\.\]/);
 });
 
 test("a failed extraction is shown per page without the credential, and the fetched pages stay stored", () => {

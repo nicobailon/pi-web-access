@@ -8,8 +8,6 @@ import { existsSync, readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
 import pLimit from "p-limit";
-import { parseGitHubUrl } from "./github-extract.ts";
-import { parseGitHubIssuePrUrl } from "./github-issue-pr.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { normalizeFetchContentParams, type FetchContentParams } from "./fetch-params.ts";
 import { resolveAuthFetchProfile, type AuthFetchProfile } from "./auth-fetch.ts";
@@ -1040,12 +1038,6 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					const error = err instanceof Error ? err.message : String(err);
 					return { content: [{ type: "text", text: `Error: ${error}.` }], details: { error } };
 				}
-				// GitHub repositories, issues and PRs are read with the user's signed-in gh account, so they may be private.
-				const github = urlList.find((url) => parseGitHubIssuePrUrl(url) || parseGitHubUrl(url));
-				if (github) {
-					const error = `mode extract does not read GitHub repositories, issues or pull requests (${github}), because they are read with your signed-in gh account`;
-					return { content: [{ type: "text", text: `Error: ${error}.` }], details: { error } };
-				}
 			}
 			let authFetchProfile: AuthFetchProfile | undefined;
 			if (options.auth !== undefined) {
@@ -1128,7 +1120,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				});
 				// Extract rejects auth, so the pages are always stored.
 				const outputLimit = getMaxInlineContentChars();
-				if (output.length > outputLimit) output = `${output.slice(0, outputLimit)}\n\n[Field values cut at ${outputLimit} characters; the full values are in the tool details.]\n`;
+				if (output.length > outputLimit) output = `${output.slice(0, outputLimit)}\n\n[Results cut at ${outputLimit} characters; ask for fewer fields or URLs${getSearchContentEnabled ? `, or read a stored page with ${toolNames.getSearchContent}` : ""}.]\n`;
 				output += getSearchContentEnabled
 					? `\n---\nThe fetched pages are stored as responseId "${responseId}". Use ${toolNames.getSearchContent}({ responseId: "${responseId}", urlIndex: 0 }) to read the first one; urlIndex follows the order above.`
 					: "\n---\nContent retrieval is not registered.";

@@ -91,7 +91,7 @@ function fieldResult(spec: FieldSpec, answer: unknown): FieldResult {
 	// A null value is Clairic's "not on the page" verdict; the guess it still sends then is a fallback, not evidence.
 	if (value === null) return { status: "null" };
 	const confidence = typeof rawConfidence === "number" && rawConfidence >= 0 && rawConfidence <= 1 ? rawConfidence : undefined;
-	if (value !== null && confidence !== undefined && confidence >= EXTRACT_THRESHOLD && matchesType(spec, value)) return { status: "extracted", value, confidence };
+	if (confidence !== undefined && confidence >= EXTRACT_THRESHOLD && matchesType(spec, value)) return { status: "extracted", value, confidence };
 	return { status: "uncertain", guess: value, ...(confidence !== undefined ? { confidence } : {}) };
 }
 
@@ -172,7 +172,12 @@ export async function extractPageFields(
 	}
 }
 
-const shown = (value: unknown) => typeof value === "string" ? value : JSON.stringify(value);
+const MAX_SHOWN_VALUE_CHARS = 1_000;
+// One long value must not push the other fields and pages out of the text the model sees.
+const shown = (value: unknown) => {
+	const text = typeof value === "string" ? value : JSON.stringify(value);
+	return text.length > MAX_SHOWN_VALUE_CHARS ? `${text.slice(0, MAX_SHOWN_VALUE_CHARS)}… [${text.length} characters; the rest is in the stored page]` : text;
+};
 
 export function formatPageExtraction(extraction: PageExtraction): string {
 	if ("error" in extraction) return `Extraction failed: ${extraction.error}\n`;
