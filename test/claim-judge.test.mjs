@@ -1,66 +1,65 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
-import { judgeClaim } from "../claim-judge.ts";
+// The config path is fixed when the modules load, so point it at a temp dir first; each test rewrites the file.
+const agentDir = mkdtempSync(join(tmpdir(), "pi-web-access-claim-judge-"));
+process.env.PI_CODING_AGENT_DIR = agentDir;
+process.env.BRAVE_API_KEY = "brave-key";
+const { default: initializeExtension } = await import("../index.ts");
+const { judgeClaim } = await import("../claim-judge.ts");
+const { createStandaloneWebToolCore } = await import("../web-tool-core.ts");
 
-const indexUrl = new URL("../index.ts", import.meta.url).href;
-const CF_URL = "https://api.cloudflare.com/client/v4/accounts/acct-1/ai/run/@cf/cloudflare/clef";
-const CF_TOKEN = "cf-secret-token-123";
+const CLEF = "cloudflare-workers-ai/@cf/cloudflare/clef";
+const JEV_113 = "openrouter/typesafe/jev-1.13";
 
-// The config path is fixed per process, so each scenario runs source_check in its own child with its own config.
-function runSourceCheck(config, judgeReply) {
-	const agentDir = mkdtempSync(join(tmpdir(), "pi-web-access-claim-judge-"));
+globalThis.fetch = async (input) => {
+	assert.match(String(input instanceof Request ? input.url : input), /^https:\/\/api\.search\.brave\.com\//);
+	return Response.json({ web: { results: [
+		{ title: "A", url: "https://docs.example.com/a", description: "Responses can be streamed with stream: true." },
+		{ title: "B", url: "https://docs.example.com/b", description: "Pricing starts at five dollars." },
+	] } });
+};
+
+function withConfig(config) {
 	writeFileSync(join(agentDir, "web-search.json"), JSON.stringify(config) + "\n", "utf8");
-	const env = { ...process.env, PI_CODING_AGENT_DIR: agentDir, XDG_CONFIG_HOME: "", HOME: join(agentDir, "home"), USERPROFILE: join(agentDir, "home") };
-	Object.assign(env, { BRAVE_API_KEY: "brave-key", CLOUDFLARE_ACCOUNT_ID: "acct-1", CLOUDFLARE_API_TOKEN: CF_TOKEN, TYPESAFE_API_KEY: "ts-secret-key", JUDGE_REPLY: JSON.stringify(judgeReply ?? null) });
-	const child = spawnSync(process.execPath, ["--input-type=module"], {
-		input: `
-			import initializeExtension from ${JSON.stringify(indexUrl)};
-			const reply = JSON.parse(process.env.JUDGE_REPLY);
-			const judgeRequests = [];
-			globalThis.fetch = async (input, init) => {
-				const url = String(input instanceof Request ? input.url : input);
-				if (url.startsWith("https://api.search.brave.com/")) return Response.json({ web: { results: [
-					{ title: "A", url: "https://docs.example.com/a", description: "Responses can be streamed with stream: true." },
-					{ title: "B", url: "https://docs.example.com/b", description: "Pricing starts at five dollars." },
-				] } });
-				judgeRequests.push({ url, authorization: init.headers.Authorization, body: init.body });
-				return new Response(typeof reply.body === "string" ? reply.body : JSON.stringify(reply.body), { status: reply.status ?? 200 });
-			};
-			const tools = [];
-			initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
-			const result = await tools.find((tool) => tool.name === "source_check").execute("call", { claim: "The API supports streaming", provider: "brave" }, undefined, undefined, {});
-			console.log(JSON.stringify({ text: result.content[0].text, isError: result.isError, claim: result.details.artifact.claims[0], errors: result.details.artifact.errors, judgeRequests }));
-		`,
-		encoding: "utf8",
-		env,
-	});
-	return child.status === 0 ? { ...JSON.parse(child.stdout.trim().split("\n").at(-1)), child } : { child };
 }
 
-const answers = ([supported, contradicted, notAddressed], evidence) => ({
-	verdict: { type: "choice", choice: "supported", probabilities: { supported, contradicted, not_addressed: notAddressed } },
-	evidence: { type: "choice", choice: evidence },
-});
-const cloudflare = (verdict, evidence) => ({ body: { success: true, result: { model: "clef", answers: answers(verdict, evidence) } } });
-const clef = { sourceCheck: { judgeModel: "clef" } };
+// A stand-in for Pi's ctx.modelRegistry that records every lookup and classify call.
+function fakeRegistry(result, model = { id: "classifier" }) {
+	const calls = { find: [], classify: [] };
+	return {
+		calls,
+		findOfType(...args) { calls.find.push(args); return model; },
+		async classify(found, context, options) { calls.classify.push({ found, context, options }); return result; },
+	};
+}
 
-test("a clef verdict above its threshold reports supported with the cited passage and sends the measured questions", () => {
-	const run = runSourceCheck(clef, cloudflare([0.97, 0.01, 0.02], "p-1-0"));
-	assert.equal(run.claim.status, "supported");
-	assert.deepEqual(run.claim.supporting_passages, ["p-1-0"]);
-	assert.deepEqual(run.claim.contradicting_passages, []);
-	assert.equal(run.claim.confidence, 0.97);
-	assert.match(run.text, /\*\*Status:\*\* supported \(confidence 0\.97\)\n\*\*Rationale:\*\* Claim judge clef: supported 0\.97, contradicted 0\.01, not_addressed 0\.02; evidence p-1-0\.\n\*\*Supporting passages:\*\* p-1-0/);
-	assert.equal(run.judgeRequests.length, 1);
-	assert.equal(run.judgeRequests[0].url, CF_URL);
-	assert.equal(run.judgeRequests[0].authorization, `Bearer ${CF_TOKEN}`);
-	assert.equal(run.judgeRequests[0].body, JSON.stringify({
-		model: "clef",
+const stop = ([supported, contradicted, notAddressed], evidence) => ({
+	stopReason: "stop",
+	answers: {
+		verdict: { type: "choice", choice: "supported", probabilities: { supported, contradicted, not_addressed: notAddressed }, confidence: 0.9 },
+		evidence: { type: "choice", choice: evidence, probabilities: {}, confidence: 0.9 },
+	},
+});
+
+async function runSourceCheck(judgeModel, ctx) {
+	withConfig(judgeModel ? { sourceCheck: { judgeModel } } : {});
+	const tools = [];
+	initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
+	const result = await tools.find((tool) => tool.name === "source_check").execute("call", { claim: "The API supports streaming", provider: "brave" }, undefined, undefined, ctx);
+	return { result, claim: result.details.artifact.claims[0], errors: result.details.artifact.errors };
+}
+
+test("the judge looks up the reference in Pi's catalog and sends the measured state and questions", async () => {
+	const registry = fakeRegistry(stop([0.97, 0.01, 0.02], "p-1-0"));
+	const { result, claim } = await runSourceCheck(CLEF, { modelRegistry: registry });
+	assert.deepEqual(registry.calls.find, [["classifier", "cloudflare-workers-ai", "@cf/cloudflare/clef"]]);
+	assert.equal(registry.calls.classify[0].found.id, "classifier");
+	assert.ok(registry.calls.classify[0].options.signal instanceof AbortSignal);
+	assert.equal(JSON.stringify(registry.calls.classify[0].context), JSON.stringify({
 		state: { claim: "The API supports streaming", passages: [
 			{ id: "p-1-0", source: "A", text: "Responses can be streamed with stream: true." },
 			{ id: "p-2-0", source: "B", text: "Pricing starts at five dollars." },
@@ -70,70 +69,75 @@ test("a clef verdict above its threshold reports supported with the cited passag
 			evidence: { type: "choice", instructions: "Which passage id best justifies the verdict? Answer none if the verdict is not_addressed.", criteria: { "p-1-0": null, "p-2-0": null, none: null } },
 		},
 	}));
+	assert.deepEqual([claim.status, claim.supporting_passages, claim.confidence], ["supported", ["p-1-0"], 0.97]);
+	assert.match(result.content[0].text, /\*\*Status:\*\* supported \(confidence 0\.97\)\n\*\*Rationale:\*\* Claim judge cloudflare-workers-ai\/@cf\/cloudflare\/clef: supported 0\.97, contradicted 0\.01, not_addressed 0\.02; evidence p-1-0\.\n\*\*Supporting passages:\*\* p-1-0/);
 });
 
-test("a verdict below its threshold stays unclear without passage ids", () => {
-	const run = runSourceCheck(clef, cloudflare([0.84, 0.06, 0.10], "p-1-0"));
-	assert.equal(run.claim.status, "unclear");
-	assert.deepEqual([run.claim.supporting_passages, run.claim.contradicting_passages], [[], []]);
-	assert.equal(run.claim.confidence, 0.84);
-	assert.match(run.claim.rationale, /^Claim judge clef: supported 0\.84, contradicted 0\.06, not_addressed 0\.10; evidence p-1-0\. No verdict reached its threshold/);
-});
-
-test("a confident verdict without a cited passage stays unclear", () => {
-	const run = runSourceCheck(clef, cloudflare([0.97, 0.01, 0.02], "none"));
-	assert.equal(run.claim.status, "unclear");
-	assert.deepEqual(run.claim.supporting_passages, []);
-	assert.match(run.claim.rationale, /^Claim judge clef: supported 0\.97, .*; evidence none\. No verdict reached its threshold/);
-});
-
-test("each model applies its own contradicted threshold", () => {
-	const viaClef = runSourceCheck(clef, cloudflare([0.02, 0.88, 0.10], "p-1-0"));
-	assert.equal(viaClef.claim.status, "contradicted");
-	assert.deepEqual(viaClef.claim.contradicting_passages, ["p-1-0"]);
-	const viaJev = runSourceCheck({ sourceCheck: { judgeModel: "jev-1.13.0" } }, { body: { model: "jev-1.13.0", answers: answers([0.02, 0.88, 0.10], "p-1-0") } });
-	assert.equal(viaJev.judgeRequests[0].url, "https://api.typesafe.ai/v1/systemone");
-	assert.equal(viaJev.judgeRequests[0].authorization, "Bearer ts-secret-key");
-	assert.equal(JSON.parse(viaJev.judgeRequests[0].body).model, "jev-1.13.0");
+test("each reference applies its own thresholds", async () => {
+	const viaClef = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.02, 0.88, 0.10], "p-1-0")) });
+	assert.deepEqual([viaClef.claim.status, viaClef.claim.contradicting_passages], ["contradicted", ["p-1-0"]]);
+	const viaJev = await runSourceCheck(JEV_113, { modelRegistry: fakeRegistry(stop([0.02, 0.88, 0.10], "p-1-0")) });
 	assert.equal(viaJev.claim.status, "unclear");
 	assert.equal(viaJev.errors, undefined);
-	assert.match(viaJev.claim.rationale, /^Claim judge jev-1\.13\.0: supported 0\.02, contradicted 0\.88, not_addressed 0\.10; evidence p-1-0\. No verdict reached/);
+	assert.match(viaJev.claim.rationale, /^Claim judge openrouter\/typesafe\/jev-1\.13: supported 0\.02, contradicted 0\.88, not_addressed 0\.10; evidence p-1-0\. No verdict reached its threshold/);
+	const jevLatest = await runSourceCheck("typesafe/jev-latest", { modelRegistry: fakeRegistry(stop([0.87, 0.03, 0.10], "p-1-0")) });
+	assert.equal(jevLatest.claim.status, "unclear");
 });
 
-test("a judge failure is unclear, recorded in the artifact errors, and never shows the credential", () => {
-	const serverError = runSourceCheck(clef, { status: 500, body: `upstream rejected Bearer ${CF_TOKEN}` });
-	assert.equal(serverError.claim.status, "unclear");
-	assert.equal(serverError.isError, undefined);
-	assert.match(serverError.claim.rationale, /^Claim judge clef failed: Cloudflare Workers AI returned HTTP 500: upstream rejected Bearer \[redacted\]; review the passages\.$/);
-	assert.equal(serverError.errors.at(-1).query, "claim judge");
-	assert.ok(![serverError.text, JSON.stringify(serverError.claim), JSON.stringify(serverError.errors)].some((output) => output.includes(CF_TOKEN)));
-	// A token crossing the 200-character cut of the error body must not leave a partial copy.
-	const straddling = runSourceCheck(clef, { status: 500, body: `${"x".repeat(190)}${CF_TOKEN} tail` });
-	assert.equal(straddling.claim.status, "unclear");
-	assert.ok(![straddling.claim.rationale, JSON.stringify(straddling.errors)].some((output) => output.includes(CF_TOKEN.slice(0, 10))));
-	const badProbabilities = runSourceCheck(clef, cloudflare([0.9, 0.3, 0.1], "p-1-0"));
-	assert.equal(badProbabilities.claim.status, "unclear");
-	assert.match(badProbabilities.errors.at(-1).error, /verdict probabilities do not sum to 1/);
+test("a confident verdict without a cited passage stays unclear", async () => {
+	const { claim } = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.97, 0.01, 0.02], "none")) });
+	assert.deepEqual([claim.status, claim.supporting_passages], ["unclear", []]);
+	assert.match(claim.rationale, /; evidence none\. No verdict reached its threshold/);
 });
 
-test("without sourceCheck config no judge is called", () => {
-	const run = runSourceCheck({}, cloudflare([0.97, 0.01, 0.02], "p-1-0"));
-	assert.equal(run.judgeRequests.length, 0);
-	assert.equal(run.claim.status, "unclear");
-	assert.equal(run.claim.confidence, 0.3);
+test("a classifier error is unclear, recorded in the artifact errors, and does not flag the call as failed", async () => {
+	const { result, claim, errors } = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry({ stopReason: "error", errorMessage: "Cloudflare Workers AI returned 401", answers: {} }) });
+	assert.equal(claim.status, "unclear");
+	assert.equal(claim.rationale, `Claim judge ${CLEF} failed: Cloudflare Workers AI returned 401; review the passages.`);
+	assert.deepEqual(errors, [{ query: "claim judge", error: "Cloudflare Workers AI returned 401" }]);
+	assert.equal(result.isError, undefined);
+});
+
+test("an answer that does not check out is unclear with the reason", async () => {
+	const { claim, errors } = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.9, 0.3, 0.1], "p-1-0")) });
+	assert.equal(claim.status, "unclear");
+	assert.match(errors.at(-1).error, /verdict probabilities do not sum to 1/);
+});
+
+test("a reference missing from this Pi's catalog is unclear without a classify call", async () => {
+	const registry = fakeRegistry(stop([0.97, 0.01, 0.02], "p-1-0"), null);
+	const { claim } = await runSourceCheck(CLEF, { modelRegistry: registry });
+	assert.equal(claim.rationale, `Claim judge ${CLEF} failed: ${CLEF} is not in this Pi's classifier catalog; review the passages.`);
+	assert.equal(registry.calls.classify.length, 0);
+});
+
+test("without sourceCheck config no classifier is called", async () => {
+	const registry = fakeRegistry(stop([0.97, 0.01, 0.02], "p-1-0"));
+	const { claim } = await runSourceCheck(undefined, { modelRegistry: registry });
+	assert.deepEqual([registry.calls.find.length, claim.status, claim.confidence], [0, "unclear", 0.3]);
+});
+
+test("without Pi's model registry, as over MCP, the judge does not run", async () => {
+	withConfig({ sourceCheck: { judgeModel: CLEF } });
+	const result = await createStandaloneWebToolCore().sourceCheck({ claim: "The API supports streaming", provider: "brave" });
+	const { claims, errors } = result.details.artifact;
+	assert.equal(claims[0].status, "unclear");
+	assert.doesNotMatch(claims[0].rationale, /Claim judge/);
+	assert.equal(errors, undefined);
 });
 
 test("at most 48 passages are sent and the rationale counts the rest", async () => {
 	const passages = Array.from({ length: 60 }, (_, index) => ({ id: `p-${index + 1}-0`, source: "Docs", text: "short passage" }));
-	let sent;
-	globalThis.fetch = async (_url, init) => { sent = JSON.parse(init.body).state.passages; return Response.json({ answers: answers([0.02, 0.02, 0.96], "none") }); };
-	const { assessment } = await judgeClaim("jev-1.13.0", "claim", passages, { typesafeApiKey: "key" });
-	assert.equal(sent.length, 48);
+	const registry = fakeRegistry(stop([0.02, 0.02, 0.96], "none"));
+	const { assessment } = await judgeClaim(CLEF, "claim", passages, registry);
+	assert.equal(registry.calls.classify[0].context.state.passages.length, 48);
 	assert.match(assessment.rationale, / 12 passages were left out to fit the request limit\.$/);
 });
 
 test("an unknown judgeModel fails extension load naming the config path", () => {
-	const { child } = runSourceCheck({ sourceCheck: { judgeModel: "clef-flash" } });
-	assert.notEqual(child.status, 0);
-	assert.match(child.stderr, /sourceCheck\.judgeModel in .*web-search\.json must be "clef" or "jev-1\.13\.0"/);
+	withConfig({ sourceCheck: { judgeModel: "clef" } });
+	assert.throws(
+		() => initializeExtension({ registerTool() {}, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} }),
+		/sourceCheck\.judgeModel in .*web-search\.json must be one of "cloudflare-workers-ai\/@cf\/cloudflare\/clef", /,
+	);
 });

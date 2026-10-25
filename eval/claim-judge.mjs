@@ -1,12 +1,13 @@
-// Measures the source_check claim judge against the claim fixtures with real provider calls.
-// Usage: PI_WEB_ACCESS_REAL_SEMANTIC=1 node eval/claim-judge.mjs [--models clef,jev-1.13.0] [--repeat 1]
-// Credentials come only from CLOUDFLARE_ACCOUNT_ID + CLOUDFLARE_API_TOKEN (clef) and TYPESAFE_API_KEY (jev-1.13.0).
+// Measures the source_check claim judge against the claim fixtures with real classifier calls.
+// Usage: PI_WEB_ACCESS_REAL_SEMANTIC=1 node eval/claim-judge.mjs [--models <Pi reference>,...] [--repeat 1]
+// Calls go through Pi's model registry with your Pi credentials (env vars or /login).
+import { ModelRegistry, ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { CLAIM_JUDGE_MODELS, judgeClaim } from "../claim-judge.ts";
 
 if (process.env.PI_WEB_ACCESS_REAL_SEMANTIC !== "1") {
-	console.error("This harness sends the fixture claims to Cloudflare and TypeSafe and is billed to your accounts. Set PI_WEB_ACCESS_REAL_SEMANTIC=1 to run it.");
+	console.error("This harness sends the fixture claims to the classifier providers and is billed to your accounts. Set PI_WEB_ACCESS_REAL_SEMANTIC=1 to run it.");
 	process.exit(2);
 }
 
@@ -14,16 +15,10 @@ const { values } = parseArgs({ options: { models: { type: "string", default: Obj
 const models = values.models.split(",").map((model) => model.trim()).filter(Boolean);
 const repeat = Number(values.repeat);
 for (const model of models) {
-	if (!Object.hasOwn(CLAIM_JUDGE_MODELS, model)) throw new Error(`Unknown model ${model}; use ${Object.keys(CLAIM_JUDGE_MODELS).join(" or ")}`);
-	const missing = CLAIM_JUDGE_MODELS[model].provider === "cloudflare"
-		? ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"].filter((name) => !process.env[name]?.trim())
-		: ["TYPESAFE_API_KEY"].filter((name) => !process.env[name]?.trim());
-	if (missing.length) {
-		console.error(`${model} needs ${missing.join(" and ")} in the environment.`);
-		process.exit(2);
-	}
+	if (!Object.hasOwn(CLAIM_JUDGE_MODELS, model)) throw new Error(`Unknown model ${model}; use one of ${Object.keys(CLAIM_JUDGE_MODELS).join(", ")}`);
 }
 if (!Number.isInteger(repeat) || repeat < 1) throw new Error("--repeat must be a positive integer");
+const modelRegistry = new ModelRegistry(await ModelRuntime.create());
 
 const LABELS = ["supported", "contradicted", "not_addressed"];
 // Fixtures marked with a known limit are reported on their own and never count toward the pass or wrong numbers.
@@ -45,7 +40,7 @@ for (const model of models) {
 			for (const fixture of claims) {
 				const passages = fixture.passages.map((passage) => ({ id: passage.id, source: passage.source, text: passage.text }));
 				const started = performance.now();
-				const { assessment, error, probabilities } = await judgeClaim(model, fixture.claim, passages, {});
+				const { assessment, error, probabilities } = await judgeClaim(model, fixture.claim, passages, modelRegistry);
 				const ms = performance.now() - started;
 				runs.push({ round, fixture, assessment, error, ms, probabilities });
 			}

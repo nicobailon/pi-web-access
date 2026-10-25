@@ -87,9 +87,6 @@ export interface WebSearchConfig {
 	summaryInstructions?: unknown;
 	maxInlineContentChars?: unknown;
 	sourceCheck?: unknown;
-	cloudflareAccountId?: unknown;
-	cloudflareApiToken?: unknown;
-	typesafeApiKey?: unknown;
 	fetch?: {
 		defaultMode?: unknown;
 		allowedModes?: unknown;
@@ -175,7 +172,7 @@ export function resolveClaimJudgeModel(config: WebSearchConfig): ClaimJudgeModel
 		? (config.sourceCheck as { judgeModel?: unknown }).judgeModel
 		: undefined;
 	if (typeof judgeModel !== "string" || !Object.hasOwn(CLAIM_JUDGE_MODELS, judgeModel)) {
-		throw new Error(`sourceCheck.judgeModel in ${WEB_SEARCH_CONFIG_PATH} must be ${Object.keys(CLAIM_JUDGE_MODELS).map((model) => `"${model}"`).join(" or ")}`);
+		throw new Error(`sourceCheck.judgeModel in ${WEB_SEARCH_CONFIG_PATH} must be one of ${Object.keys(CLAIM_JUDGE_MODELS).map((model) => `"${model}"`).join(", ")}`);
 	}
 	return judgeModel as ClaimJudgeModel;
 }
@@ -965,10 +962,12 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			});
 			let artifact: ResearchArtifact;
 			const failedSearchCount = errors.length;
-			if (settings.claimJudgeModel && built.passages.length > 0 && !signal?.aborted) {
+			// The judge runs through Pi's model registry, so hosts without one (MCP) skip it.
+			const modelRegistry = ctx?.modelRegistry;
+			if (settings.claimJudgeModel && modelRegistry && built.passages.length > 0 && !signal?.aborted) {
 				const titles = new Map(built.sources.map((source) => [source.rank, source.title || source.url]));
 				const passages = built.passages.map((passage) => ({ id: passage.passage_id, source: titles.get(passage.source_rank) ?? passage.source_url, text: passage.text }));
-				const judgment = await judgeClaim(settings.claimJudgeModel, claim, passages, loadConfig(), signal);
+				const judgment = await judgeClaim(settings.claimJudgeModel, claim, passages, modelRegistry, signal);
 				artifact = { ...built, claims: [judgment.assessment] };
 				if (judgment.error) errors.push({ query: "claim judge", error: judgment.error });
 			} else {
