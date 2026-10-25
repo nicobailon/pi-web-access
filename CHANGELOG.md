@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `summaryModel` can be set to `"current"`, or `"current:<level>"` such as `"current:low"`, to write summaries with the model your Pi session is using instead of a fixed model. This keeps summaries on a local or self-hosted model when that is what the session runs on. Pi `enabledModels` still applies. A `summaryModel` value that is not `"current"`, `"current:<level>"`, or `provider/model-id[:<level>]` now stops the summary with an error naming the config file, instead of being ignored.
 - Exa search results show each source's published date and authors, and results from Exa's `publication` category (its research paper index) also show the citation count and DOI. The README now names `publication` as the Exa category for research papers. Exa uses it in place of `research paper`, which still works. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #596](https://github.com/nicobailon/pi-web-access/pull/596).
 
 ### Fixed

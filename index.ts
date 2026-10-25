@@ -78,7 +78,7 @@ import { isZaiAvailable } from "./zai.ts";
 import { isValyuAvailable } from "./valyu.ts";
 import { isXcrawlAvailable } from "./xcrawl.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
-import { findModelWithProviderRouting, isModelInScope, splitThinkingSuffix } from "./summary-model-scope.ts";
+import { findModelWithProviderRouting, isModelInScope, parseHelperModelSelector, resolveHelperModelSpec } from "./summary-model-scope.ts";
 import { registerCuratorRunLifecycle, resolveWebSearchWorkflow, type WebSearchWorkflow } from "./curator-run.ts";
 import { registerWebToolActivation } from "./tool-activation.ts";
 import {
@@ -297,6 +297,19 @@ export function getSummaryInstructions(): string | undefined {
 	if (typeof value !== "string") return undefined;
 	const trimmed = value.trim();
 	return trimmed.length > 0 ? trimmed : undefined;
+}
+
+export function getConfiguredSummaryModel(): string | undefined {
+	const value: unknown = loadConfig().summaryModel;
+	if (value === undefined) return undefined;
+	const message = `summaryModel in ${WEB_SEARCH_CONFIG_PATH} must be "current", "current:<level>", or "provider/model-id[:<level>]"`;
+	if (typeof value !== "string" || value.trim().length === 0) throw new Error(message);
+	try {
+		parseHelperModelSelector(value, "summary model");
+	} catch {
+		throw new Error(message);
+	}
+	return value.trim();
 }
 
 function shouldAutoOpenCuratorBrowser(config: WebSearchConfig): boolean {
@@ -1024,8 +1037,7 @@ export default function (pi: ExtensionAPI) {
 			addModel(summaryContext.model.provider, summaryContext.model.id);
 		}
 
-		const config = loadConfig();
-		const configuredSummaryModel = typeof config.summaryModel === "string" ? config.summaryModel.trim() : "";
+		const configuredSummaryModel = getConfiguredSummaryModel();
 		const preferredDefaults = [
 			{ provider: "anthropic", id: "claude-haiku-4-5" },
 			{ provider: "openai-codex", id: "gpt-5.6-luna" },
@@ -1036,26 +1048,23 @@ export default function (pi: ExtensionAPI) {
 		];
 
 		const resolveAvailableModelValue = (selector: string): string | null => {
-			const parsed = splitThinkingSuffix(selector);
-			const slashIndex = parsed.value.indexOf("/");
-			if (slashIndex <= 0 || slashIndex >= parsed.value.length - 1) return null;
-			const model = findModelWithProviderRouting(
-				summaryContext.modelRegistry,
-				parsed.value.slice(0, slashIndex),
-				parsed.value.slice(slashIndex + 1),
-			);
+			const spec = resolveHelperModelSpec(parseHelperModelSelector(selector, "summary model"), summaryContext.model);
+			if (!spec) return null;
+			const model = findModelWithProviderRouting(summaryContext.modelRegistry, spec.provider, spec.id);
 			if (!model) return null;
 			const value = `${model.provider}/${model.id}`;
 			if (!availableValues.has(value)) return null;
-			if (selector !== value && !seen.has(selector)) {
-				seen.add(selector);
-				summaryModels.push({ value: selector, label: selector });
+			// The curator groups choices by the text before "/", so `current` must become a concrete selector.
+			const concrete = `${spec.provider}/${spec.id}${spec.thinkingLevel ? `:${spec.thinkingLevel}` : ""}`;
+			if (concrete !== value && !seen.has(concrete)) {
+				seen.add(concrete);
+				summaryModels.push({ value: concrete, label: concrete });
 			}
-			return selector;
+			return concrete;
 		};
 
 		let defaultSummaryModel: string | null = null;
-		if (configuredSummaryModel.length > 0) {
+		if (configuredSummaryModel !== undefined) {
 			defaultSummaryModel = availableValues.has(configuredSummaryModel)
 				? configuredSummaryModel
 				: resolveAvailableModelValue(configuredSummaryModel);

@@ -52,3 +52,31 @@ export function splitThinkingSuffix(value: string): { value: string; thinkingLev
 		? { value: value.slice(0, index), thinkingLevel: suffix as SummaryThinkingLevel }
 		: { value };
 }
+
+export type HelperModelSelector =
+	| { kind: "current"; thinkingLevel?: SummaryThinkingLevel }
+	| { kind: "model"; provider: string; id: string; thinkingLevel?: SummaryThinkingLevel };
+
+/** `current` names the active Pi session model; it has no `/`, so it cannot collide with provider/model-id. */
+export function parseHelperModelSelector(value: string, label: string): HelperModelSelector {
+	const selector = splitThinkingSuffix(value.trim());
+	if (selector.value === "current") return { kind: "current", thinkingLevel: selector.thinkingLevel };
+	const slashIndex = selector.value.indexOf("/");
+	if (slashIndex <= 0 || slashIndex >= selector.value.length - 1) {
+		throw new Error(`Invalid ${label}: ${value}. Use provider/model-id or current.`);
+	}
+	return {
+		kind: "model",
+		provider: selector.value.slice(0, slashIndex),
+		id: selector.value.slice(slashIndex + 1),
+		thinkingLevel: selector.thinkingLevel,
+	};
+}
+
+export function resolveHelperModelSpec(
+	selector: HelperModelSelector,
+	currentModel?: ModelLike,
+): { provider: string; id: string; thinkingLevel?: SummaryThinkingLevel } | undefined {
+	if (selector.kind === "model") return { provider: selector.provider, id: selector.id, thinkingLevel: selector.thinkingLevel };
+	return currentModel ? { provider: currentModel.provider, id: currentModel.id, thinkingLevel: selector.thinkingLevel } : undefined;
+}
