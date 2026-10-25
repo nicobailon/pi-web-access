@@ -412,7 +412,23 @@ function formatSourceCheckResult(artifact: ResearchArtifact, getSearchContentToo
 	}
 	if (artifact.sources.length > 0) {
 		lines.push("## Sources");
-		for (const source of artifact.sources) lines.push(`${source.rank}. [${source.quality}] ${source.title}\n   ${source.url}`);
+		// Passages go inline so the caller can judge the claim without a second call; the cap keeps the result small.
+		let budget = 4_000;
+		let omitted = 0;
+		for (const source of artifact.sources) {
+			lines.push(`${source.rank}. [${source.quality}] ${source.title}\n   ${source.url}`);
+			for (const passage of artifact.passages.filter((candidate) => candidate.source_rank === source.rank)) {
+				const flat = passage.text.replace(/\s+/g, " ").trim();
+				const text = flat.length > 400 ? `${flat.slice(0, 400)}…` : flat;
+				if (text.length > budget) {
+					omitted++;
+					continue;
+				}
+				budget -= text.length;
+				lines.push(`   - ${passage.passage_id}: ${text}`);
+			}
+		}
+		if (omitted > 0) lines.push(`${omitted} more passage${omitted === 1 ? "" : "s"} in the artifact.`);
 		lines.push("");
 	}
 	if (artifact.errors?.length) lines.push(`Search errors: ${artifact.errors.map((entry) => `${entry.query}: ${entry.error}`).join("; ")}`);

@@ -50,6 +50,20 @@ test("fetched passages keep sentences whole across internal periods such as doma
   assert.equal(content.slice(passages[0].extraction_span.start, passages[0].extraction_span.end), expected);
 });
 
+test("fetched passages are picked by the claim, including short acronyms, even when a snippet exists", () => {
+  const content = "Pricing starts at five dollars a month. Every request requires a token. Connections to the API use TLS only. Rapid capital growth requires patience.";
+  const passages = buildPassages(
+    [{ rank: 1, url: "https://docs.example.com/api", title: "API", snippet: "Pricing starts at five dollars.", quality: "official_docs" }],
+    [{ url: "https://docs.example.com/api", title: "API", content, error: null }],
+    "API requires TLS",
+  );
+  assert.deepEqual(passages.slice(1).map((passage) => passage.text), [
+    "Connections to the API use TLS only.",
+    "Every request requires a token.",
+    "Rapid capital growth requires patience.",
+  ]);
+});
+
 test("artifact assembly handles omitted domain filters and failed fetches", () => {
   const artifact = buildResearchArtifact({
     query: "API claim",
@@ -214,6 +228,32 @@ test("source_check retains a rejected page fetch in the artifact", async () => {
     globalThis.fetch = previousFetch;
     if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = previousKey;
+  }
+});
+
+test("source_check shows each source's passages in its result, capped at 4,000 characters", async () => {
+  const previousFetch = globalThis.fetch;
+  const previousKey = process.env.BRAVE_API_KEY;
+  process.env.BRAVE_API_KEY = "source-check-test-key";
+  const results = Array.from({ length: 20 }, (_, index) => ({
+    title: `Doc ${index + 1}`,
+    url: `https://docs.example.com/${index + 1}`,
+    description: (index === 0 ? "L" : String.fromCharCode(97 + index)).repeat(index === 0 ? 600 : 300),
+  }));
+  globalThis.fetch = async () => Response.json({ web: { results } });
+  try {
+    const { tool } = registerSourceCheck();
+    const response = await tool.execute("call", { claim: "API supports streaming", provider: "brave", numResults: 20 }, undefined, undefined, { modelRegistry: {} });
+    const text = response.content[0].text;
+    assert.match(text, /1\. \[official_docs\] Doc 1\n {3}https:\/\/docs\.example\.com\/1\n {3}- p-1-0: L{400}…\n2\./);
+    assert.match(text, new RegExp(`- p-12-0: ${"l".repeat(300)}\\n`));
+    assert.doesNotMatch(text, /p-13-0/);
+    assert.match(text, /\n8 more passages in the artifact\.\n/);
+    assert.equal(response.details.artifact.passages[0].text.length, 600);
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env.BRAVE_API_KEY;
+    else process.env.BRAVE_API_KEY = previousKey;
   }
 });
 

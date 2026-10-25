@@ -100,10 +100,21 @@ export function hashContent(text: string): string {
 interface Span { text: string; start: number; end: number }
 
 function tokenize(value: string): string[] {
-	return [...new Set(value.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 3))];
+	// Short words are mostly noise ("the", "for"), but short acronyms and numbers ("API", "TLS", "429") carry meaning.
+	return [...new Set(value.split(/[^A-Za-z0-9]+/)
+		.filter((term) => term.length > 3 || (term.length > 1 && /^[A-Z0-9]+$/.test(term)))
+		.map((term) => term.toLowerCase()))];
 }
 
-function extractRelevantSpans(content: string, hint: string): Span[] {
+/** Long terms match inside words ("stream" in "streaming"); short ones only as whole words, so "api" skips "rapid". */
+function countMatches(terms: string[], text: string): number {
+	const lower = text.toLowerCase();
+	const words = new Set(lower.split(/[^a-z0-9]+/));
+	return terms.filter((term) => term.length > 3 ? lower.includes(term) : words.has(term)).length;
+}
+
+/** Ranks sentences by the claim's terms first and the search snippet's terms second. */
+function extractRelevantSpans(content: string, claim: string, snippet: string): Span[] {
 	const sentences: Span[] = [];
 	// A sentence ends at punctuation (plus closing quotes, brackets, emphasis or a [n] citation) followed by
 	// whitespace or the end, so "example.com" stays inside its sentence. The lookbehind starts each attempt only at
@@ -121,12 +132,13 @@ function extractRelevantSpans(content: string, hint: string): Span[] {
 	};
 	for (const match of content.matchAll(boundary)) addSentence(match.index + match[0].length);
 	addSentence(content.length);
-	const terms = tokenize(hint);
-	if (terms.length === 0) return [];
+	const claimTerms = tokenize(claim);
+	const snippetTerms = tokenize(snippet);
+	if (claimTerms.length === 0 && snippetTerms.length === 0) return [];
 	return sentences
-		.map((sentence, index) => ({ sentence, index, score: terms.filter((term) => sentence.text.toLowerCase().includes(term)).length }))
-		.filter((item) => item.score > 0)
-		.sort((a, b) => b.score - a.score || a.index - b.index)
+		.map((sentence, index) => ({ sentence, index, claim: countMatches(claimTerms, sentence.text), snippet: countMatches(snippetTerms, sentence.text) }))
+		.filter((item) => item.claim + item.snippet > 0)
+		.sort((a, b) => b.claim - a.claim || b.snippet - a.snippet || a.index - b.index)
 		.slice(0, 3)
 		.map(({ sentence }) => sentence);
 }
@@ -135,7 +147,7 @@ function passageId(sourceRank: number, index: number): string {
 	return `p-${sourceRank}-${index}`;
 }
 
-export function buildPassages(sources: ResearchSource[], fetched: ExtractedContent[] = [], hint = ""): ResearchPassage[] {
+export function buildPassages(sources: ResearchSource[], fetched: ExtractedContent[] = [], claim = ""): ResearchPassage[] {
 	const passages: ResearchPassage[] = [];
 	const fetchedByUrl = new Map(fetched.map((item) => [item.url, item]));
 	for (const source of sources) {
@@ -150,8 +162,7 @@ export function buildPassages(sources: ResearchSource[], fetched: ExtractedConte
 		}
 		const page = fetchedByUrl.get(source.url);
 		if (page && !page.error && page.content) {
-			const passageHint = source.snippet?.trim() || hint;
-			for (const [index, span] of extractRelevantSpans(page.content, passageHint).entries()) {
+			for (const [index, span] of extractRelevantSpans(page.content, claim, source.snippet ?? "").entries()) {
 				passages.push({
 					passage_id: passageId(source.rank, index + 1),
 					source_url: source.url,
