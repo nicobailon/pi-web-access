@@ -13,14 +13,14 @@ The claim judge is an opt-in replacement that asks a small classification model 
 | `clef` | Cloudflare Workers AI, on your own Cloudflare account | `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`, or `cloudflareAccountId` and `cloudflareApiToken` |
 | `jev-1.13.0` | TypeSafe | `TYPESAFE_API_KEY`, or `typesafeApiKey` |
 
-Config values accept the same `$ENV_NAME` and `!command` forms as other keys.
+Config values accept the same `$ENV_NAME` and `!command` forms as other keys. Any other `sourceCheck` value stops the extension from loading, like other config errors.
 
 ## What you get
 
 The judge makes one call with the claim and the passages and asks two questions: does a passage support the claim, contradict it, or neither, and which passage shows it. The result is:
 
 - `supported` or `contradicted` only when the model's probability for that answer reaches that model's threshold **and** it names one of the passages. That passage id is listed under supporting or contradicting passages, and the rationale shows all three probabilities.
-- `unclear` in every other case: the model was not confident enough, cited no passage, or the call failed. A failure (missing credentials, network error, timeout after 10 seconds, or an answer that doesn't check out) is described in the rationale and in the artifact's `errors`, and never becomes a verdict.
+- `unclear` in every other case: the model is sure the passages don't settle the claim, was not confident enough, cited no passage, or the call failed. A judged `unclear` shows the model's highest probability as its confidence, whichever answer that was; the rationale lists all three. A failure (missing credentials, network error, timeout after 10 seconds, or an answer that doesn't check out) is described in the rationale and in the artifact's `errors`, and never becomes a verdict.
 
 At most 48 passages and 24 KB are sent; passages beyond that are left out from the lowest-ranked end, and the rationale says how many.
 

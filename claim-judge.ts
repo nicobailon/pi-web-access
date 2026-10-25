@@ -133,9 +133,9 @@ export async function judgeClaim(
 ): Promise<ClaimJudgment> {
 	const sent: Array<{ id: string; text: string }> = [];
 	for (const passage of passages.slice(0, MAX_PASSAGES)) {
-		const next = [...sent, { id: passage.passage_id, text: passage.text }];
-		if (Buffer.byteLength(JSON.stringify({ claim, passages: next }), "utf8") > MAX_STATE_BYTES) break;
-		sent.push(next[next.length - 1]);
+		const entry = { id: passage.passage_id, text: passage.text };
+		if (Buffer.byteLength(JSON.stringify({ claim, passages: [...sent, entry] }), "utf8") > MAX_STATE_BYTES) break;
+		sent.push(entry);
 	}
 	const omitted = passages.length - sent.length;
 	const failed = (reason: string): ClaimJudgment => ({
@@ -178,32 +178,17 @@ export async function judgeClaim(
 	}
 
 	const thresholds = CLAIM_JUDGE_MODELS[model].thresholds;
-	const evidenceId = evidenceChoice === "none" ? null : evidenceChoice;
-	const status = evidenceId === null ? undefined : (["supported", "contradicted"] as const).find((label) => probabilities[label] >= thresholds[label]);
+	const verdict = evidenceChoice === "none" ? undefined : (["supported", "contradicted"] as const).find((label) => probabilities[label] >= thresholds[label]);
 	const scores = LABELS.map((label) => `${label} ${probabilities[label].toFixed(2)}`).join(", ");
 	const leftOut = omitted > 0 ? ` ${omitted} passage${omitted === 1 ? " was" : "s were"} left out to fit the request limit.` : "";
-	if (status && evidenceId) {
-		return {
-			assessment: {
-				claim,
-				status,
-				supporting_passages: status === "supported" ? [evidenceId] : [],
-				contradicting_passages: status === "contradicted" ? [evidenceId] : [],
-				rationale: `Claim judge ${model}: ${scores}; evidence ${evidenceId}.${leftOut}`,
-				confidence: probabilities[status],
-			},
-			probabilities,
-			evidence: evidenceChoice,
-		};
-	}
 	return {
 		assessment: {
 			claim,
-			status: "unclear",
-			supporting_passages: [],
-			contradicting_passages: [],
-			rationale: `Claim judge ${model}: ${scores}; evidence ${evidenceChoice}. No verdict reached its threshold with a cited passage; review the passages.${leftOut}`,
-			confidence: Math.max(...LABELS.map((label) => probabilities[label])),
+			status: verdict ?? "unclear",
+			supporting_passages: verdict === "supported" ? [evidenceChoice] : [],
+			contradicting_passages: verdict === "contradicted" ? [evidenceChoice] : [],
+			rationale: `Claim judge ${model}: ${scores}; evidence ${evidenceChoice}.${verdict ? "" : " No verdict reached its threshold with a cited passage; review the passages."}${leftOut}`,
+			confidence: verdict ? probabilities[verdict] : Math.max(...LABELS.map((label) => probabilities[label])),
 		},
 		probabilities,
 		evidence: evidenceChoice,

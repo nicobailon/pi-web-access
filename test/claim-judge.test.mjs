@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 
+import { judgeClaim } from "../claim-judge.ts";
+
 const indexUrl = new URL("../index.ts", import.meta.url).href;
 const CF_URL = "https://api.cloudflare.com/client/v4/accounts/acct-1/ai/run/@cf/cloudflare/clef";
 const CF_TOKEN = "cf-secret-token-123";
@@ -26,7 +28,7 @@ function runSourceCheck(config, judgeReply) {
 					{ title: "A", url: "https://docs.example.com/a", description: "Responses can be streamed with stream: true." },
 					{ title: "B", url: "https://docs.example.com/b", description: "Pricing starts at five dollars." },
 				] } });
-				judgeRequests.push({ url, authorization: init.headers.Authorization, body: JSON.parse(init.body) });
+				judgeRequests.push({ url, authorization: init.headers.Authorization, body: init.body });
 				return new Response(typeof reply.body === "string" ? reply.body : JSON.stringify(reply.body), { status: reply.status ?? 200 });
 			};
 			const tools = [];
@@ -57,7 +59,7 @@ test("a clef verdict above its threshold reports supported with the cited passag
 	assert.equal(run.judgeRequests.length, 1);
 	assert.equal(run.judgeRequests[0].url, CF_URL);
 	assert.equal(run.judgeRequests[0].authorization, `Bearer ${CF_TOKEN}`);
-	assert.deepEqual(run.judgeRequests[0].body, {
+	assert.equal(run.judgeRequests[0].body, JSON.stringify({
 		model: "clef",
 		state: { claim: "The API supports streaming", passages: [
 			{ id: "p-1-0", text: "Responses can be streamed with stream: true." },
@@ -67,7 +69,7 @@ test("a clef verdict above its threshold reports supported with the cited passag
 			verdict: { type: "choice", instructions: "Judge only from the passages. supported: a passage clearly states the claim or something that directly implies it. contradicted: a passage clearly states the opposite or an incompatible fact. not_addressed: anything else, including passages on the topic that do not settle the claim, weaker or stronger statements, another product or version, and rumors.", criteria: { supported: null, contradicted: null, not_addressed: null } },
 			evidence: { type: "choice", instructions: "Which passage id best justifies the verdict? Answer none if the verdict is not_addressed.", criteria: { "p-1-0": null, "p-2-0": null, none: null } },
 		},
-	});
+	}));
 });
 
 test("a verdict below its threshold stays unclear without passage ids", () => {
@@ -92,7 +94,7 @@ test("each model applies its own contradicted threshold", () => {
 	const viaJev = runSourceCheck({ sourceCheck: { judgeModel: "jev-1.13.0" } }, { body: { model: "jev-1.13.0", answers: answers([0.02, 0.88, 0.10], "p-1-0") } });
 	assert.equal(viaJev.judgeRequests[0].url, "https://api.typesafe.ai/v1/systemone");
 	assert.equal(viaJev.judgeRequests[0].authorization, "Bearer ts-secret-key");
-	assert.equal(viaJev.judgeRequests[0].body.model, "jev-1.13.0");
+	assert.equal(JSON.parse(viaJev.judgeRequests[0].body).model, "jev-1.13.0");
 	assert.equal(viaJev.claim.status, "unclear");
 	assert.equal(viaJev.errors, undefined);
 	assert.match(viaJev.claim.rationale, /^Claim judge jev-1\.13\.0: supported 0\.02, contradicted 0\.88, not_addressed 0\.10; evidence p-1-0\. No verdict reached/);
@@ -118,6 +120,15 @@ test("without sourceCheck config no judge is called", () => {
 	assert.equal(run.judgeRequests.length, 0);
 	assert.equal(run.claim.status, "unclear");
 	assert.equal(run.claim.confidence, 0.3);
+});
+
+test("at most 48 passages are sent and the rationale counts the rest", async () => {
+	const passages = Array.from({ length: 60 }, (_, index) => ({ passage_id: `p-${index + 1}-0`, text: "short passage", source_url: "u", source_rank: index + 1 }));
+	let sent;
+	globalThis.fetch = async (_url, init) => { sent = JSON.parse(init.body).state.passages; return Response.json({ answers: answers([0.02, 0.02, 0.96], "none") }); };
+	const { assessment } = await judgeClaim("jev-1.13.0", "claim", passages, { typesafeApiKey: "key" });
+	assert.equal(sent.length, 48);
+	assert.match(assessment.rationale, / 12 passages were left out to fit the request limit\.$/);
 });
 
 test("an unknown judgeModel fails extension load naming the config path", () => {
