@@ -17,14 +17,16 @@ Config values accept the same `$ENV_NAME` and `!command` forms as other keys. An
 
 ## What you get
 
-The judge makes one call with the claim and the passages and asks two questions: does a passage support the claim, contradict it, or neither, and which passage shows it. The result is:
+The judge makes one call with the claim and the passages, each labeled with the title of the page it came from (or its URL when the page has no title), and asks two questions: does a passage support the claim, contradict it, or neither, and which passage shows it. The result is:
 
 - `supported` or `contradicted` only when the model's probability for that answer reaches that model's threshold **and** it names one of the passages. That passage id is listed under supporting or contradicting passages, and the rationale shows all three probabilities.
 - `unclear` in every other case: the model is sure the passages don't settle the claim, was not confident enough, cited no passage, or the call failed. A judged `unclear` shows the model's highest probability as its confidence, whichever answer that was; the rationale lists all three. A failure (missing credentials, network error, timeout after 10 seconds, or an answer that doesn't check out) is described in the rationale and in the artifact's `errors`, and never becomes a verdict.
 
-At most 48 passages and 24 KB are sent; passages beyond that are left out from the lowest-ranked end, and the rationale says how many.
+At most 48 passages and 24 KB, titles included, are sent; passages beyond that are left out from the lowest-ranked end, and the rationale says how many.
 
-**Privacy:** when the judge is on, the claim and its passages are sent to Cloudflare or TypeSafe on every `source_check` call that finds passages. Nothing is sent when `sourceCheck` is not configured.
+**Known limit:** when two products share a brand name, for example a claim about "Acme Agent" and a page about "Acme Dashboard", both models can wrongly answer `supported` with high confidence. Check the title of the cited passage's source before relying on a verdict.
+
+**Privacy:** when the judge is on, the claim, its passages and their page titles are sent to Cloudflare or TypeSafe on every `source_check` call that finds passages. Nothing is sent when `sourceCheck` is not configured.
 
 ## How the thresholds were chosen
 

@@ -966,7 +966,9 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			let artifact: ResearchArtifact;
 			const failedSearchCount = errors.length;
 			if (settings.claimJudgeModel && built.passages.length > 0 && !signal?.aborted) {
-				const judgment = await judgeClaim(settings.claimJudgeModel, claim, built.passages, loadConfig(), signal);
+				const titles = new Map(built.sources.map((source) => [source.rank, source.title || source.url]));
+				const passages = built.passages.map((passage) => ({ id: passage.passage_id, source: titles.get(passage.source_rank) ?? passage.source_url, text: passage.text }));
+				const judgment = await judgeClaim(settings.claimJudgeModel, claim, passages, loadConfig(), signal);
 				artifact = { ...built, claims: [judgment.assessment] };
 				if (judgment.error) errors.push({ query: "claim judge", error: judgment.error });
 			} else {

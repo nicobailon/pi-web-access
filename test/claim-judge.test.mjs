@@ -62,8 +62,8 @@ test("a clef verdict above its threshold reports supported with the cited passag
 	assert.equal(run.judgeRequests[0].body, JSON.stringify({
 		model: "clef",
 		state: { claim: "The API supports streaming", passages: [
-			{ id: "p-1-0", text: "Responses can be streamed with stream: true." },
-			{ id: "p-2-0", text: "Pricing starts at five dollars." },
+			{ id: "p-1-0", source: "A", text: "Responses can be streamed with stream: true." },
+			{ id: "p-2-0", source: "B", text: "Pricing starts at five dollars." },
 		] },
 		questions: {
 			verdict: { type: "choice", instructions: "Judge only from the passages. supported: a passage clearly states the claim or something that directly implies it. contradicted: a passage clearly states the opposite or an incompatible fact. not_addressed: anything else, including passages on the topic that do not settle the claim, weaker or stronger statements, another product or version, and rumors.", criteria: { supported: null, contradicted: null, not_addressed: null } },
@@ -124,7 +124,7 @@ test("without sourceCheck config no judge is called", () => {
 });
 
 test("at most 48 passages are sent and the rationale counts the rest", async () => {
-	const passages = Array.from({ length: 60 }, (_, index) => ({ passage_id: `p-${index + 1}-0`, text: "short passage", source_url: "u", source_rank: index + 1 }));
+	const passages = Array.from({ length: 60 }, (_, index) => ({ id: `p-${index + 1}-0`, source: "Docs", text: "short passage" }));
 	let sent;
 	globalThis.fetch = async (_url, init) => { sent = JSON.parse(init.body).state.passages; return Response.json({ answers: answers([0.02, 0.02, 0.96], "none") }); };
 	const { assessment } = await judgeClaim("jev-1.13.0", "claim", passages, { typesafeApiKey: "key" });

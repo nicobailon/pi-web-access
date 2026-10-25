@@ -1,6 +1,6 @@
 // Optional claim verdicts for source_check from a small classification model (Cloudflare Clef or TypeSafe Jev).
 import { redactCredential, resolveCredential } from "./credential-source.ts";
-import type { ClaimAssessment, ResearchPassage } from "./source-check.ts";
+import type { ClaimAssessment } from "./source-check.ts";
 import { fetchWithCredentialRedirects, getWebSearchConfigPath } from "./utils.ts";
 
 const LABELS = ["supported", "contradicted", "not_addressed"] as const;
@@ -23,6 +23,13 @@ const MAX_STATE_BYTES = 24 * 1024;
 const PROBABILITY_SUM_TOLERANCE = 0.02;
 // Confidence of an unjudged "unclear" assessment, matching assessClaim.
 const UNJUDGED_CONFIDENCE = 0.3;
+
+/** A passage as the judge sees it; `source` is the title of the page it came from. */
+export interface JudgePassage {
+	id: string;
+	source: string;
+	text: string;
+}
 
 export interface ClaimJudgeCredentialConfig {
 	cloudflareAccountId?: unknown;
@@ -127,13 +134,13 @@ async function requestJudge(
 export async function judgeClaim(
 	model: ClaimJudgeModel,
 	claim: string,
-	passages: ResearchPassage[],
+	passages: JudgePassage[],
 	config: ClaimJudgeCredentialConfig,
 	signal?: AbortSignal,
 ): Promise<ClaimJudgment> {
-	const sent: Array<{ id: string; text: string }> = [];
+	const sent: JudgePassage[] = [];
 	for (const passage of passages.slice(0, MAX_PASSAGES)) {
-		const entry = { id: passage.passage_id, text: passage.text };
+		const entry = { id: passage.id, source: passage.source, text: passage.text };
 		if (Buffer.byteLength(JSON.stringify({ claim, passages: [...sent, entry] }), "utf8") > MAX_STATE_BYTES) break;
 		sent.push(entry);
 	}
