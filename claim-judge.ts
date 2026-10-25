@@ -34,6 +34,9 @@ export interface ClaimJudgment {
 	assessment: ClaimAssessment;
 	/** Why the judge could not give a verdict; the assessment is then "unclear". */
 	error?: string;
+	/** The provider's verdict probabilities and cited evidence, present whenever it gave a valid answer. */
+	probabilities?: Record<Label, number>;
+	evidence?: string;
 }
 
 const choice = (instructions: string, labels: readonly string[]) => ({
@@ -97,7 +100,11 @@ async function requestJudge(
 			signal,
 		}, ["Authorization"]);
 		const text = await response.text();
-		if (!response.ok) throw new Error(`${providerName} returned HTTP ${response.status}${text.trim() ? `: ${text.trim().slice(0, 200)}` : ""}`);
+		if (!response.ok) {
+			// Redact before cutting, so a token straddling the cut can't leave a partial copy behind.
+			const detail = redactCredential(text, token).trim().slice(0, 200);
+			throw new Error(`${providerName} returned HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+		}
 		let parsed: unknown;
 		try {
 			parsed = JSON.parse(text);
@@ -185,6 +192,8 @@ export async function judgeClaim(
 				rationale: `Claim judge ${model}: ${scores}; evidence ${evidenceId}.${leftOut}`,
 				confidence: probabilities[status],
 			},
+			probabilities,
+			evidence: evidenceChoice,
 		};
 	}
 	return {
@@ -196,5 +205,7 @@ export async function judgeClaim(
 			rationale: `Claim judge ${model}: ${scores}; evidence ${evidenceChoice}. No verdict reached its threshold with a cited passage; review the passages.${leftOut}`,
 			confidence: Math.max(...LABELS.map((label) => probabilities[label])),
 		},
+		probabilities,
+		evidence: evidenceChoice,
 	};
 }

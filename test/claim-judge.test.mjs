@@ -94,6 +94,8 @@ test("each model applies its own contradicted threshold", () => {
 	assert.equal(viaJev.judgeRequests[0].authorization, "Bearer ts-secret-key");
 	assert.equal(viaJev.judgeRequests[0].body.model, "jev-1.13.0");
 	assert.equal(viaJev.claim.status, "unclear");
+	assert.equal(viaJev.errors, undefined);
+	assert.match(viaJev.claim.rationale, /^Claim judge jev-1\.13\.0: supported 0\.02, contradicted 0\.88, not_addressed 0\.10; evidence p-1-0\. No verdict reached/);
 });
 
 test("a judge failure is unclear, recorded in the artifact errors, and never shows the credential", () => {
@@ -102,6 +104,10 @@ test("a judge failure is unclear, recorded in the artifact errors, and never sho
 	assert.match(serverError.claim.rationale, /^Claim judge clef failed: Cloudflare Workers AI returned HTTP 500: upstream rejected Bearer \[redacted\]; review the passages\.$/);
 	assert.equal(serverError.errors.at(-1).query, "claim judge");
 	assert.ok(![serverError.text, JSON.stringify(serverError.claim), JSON.stringify(serverError.errors)].some((output) => output.includes(CF_TOKEN)));
+	// A token crossing the 200-character cut of the error body must not leave a partial copy.
+	const straddling = runSourceCheck(clef, { status: 500, body: `${"x".repeat(190)}${CF_TOKEN} tail` });
+	assert.equal(straddling.claim.status, "unclear");
+	assert.ok(![straddling.claim.rationale, JSON.stringify(straddling.errors)].some((output) => output.includes(CF_TOKEN.slice(0, 10))));
 	const badProbabilities = runSourceCheck(clef, cloudflare([0.9, 0.3, 0.1], "p-1-0"));
 	assert.equal(badProbabilities.claim.status, "unclear");
 	assert.match(badProbabilities.errors.at(-1).error, /verdict probabilities do not sum to 1/);

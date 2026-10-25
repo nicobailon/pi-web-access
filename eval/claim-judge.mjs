@@ -26,9 +26,6 @@ for (const model of models) {
 if (!Number.isInteger(repeat) || repeat < 1) throw new Error("--repeat must be a positive integer");
 
 const LABELS = ["supported", "contradicted", "not_addressed"];
-// judgeClaim reports the three probabilities (2 decimals) in its rationale.
-const SCORES = /^Claim judge \S+: supported (\d\.\d\d), contradicted (\d\.\d\d), not_addressed (\d\.\d\d); evidence (\S+?)\./;
-
 const fixtureSets = ["calibration", "holdout"].map((name) => ({
 	name,
 	claims: JSON.parse(readFileSync(new URL(`./fixtures/claims-${name}.json`, import.meta.url), "utf8")),
@@ -43,11 +40,9 @@ for (const model of models) {
 			for (const fixture of claims) {
 				const passages = fixture.passages.map((passage, index) => ({ passage_id: passage.id, text: passage.text, source_url: `fixture:${fixture.id}`, source_rank: index + 1 }));
 				const started = performance.now();
-				const { assessment, error } = await judgeClaim(model, fixture.claim, passages, {});
+				const { assessment, error, probabilities } = await judgeClaim(model, fixture.claim, passages, {});
 				const ms = performance.now() - started;
-				const match = error ? null : assessment.rationale.match(SCORES);
-				if (!error && !match) throw new Error(`Unexpected rationale for ${fixture.id}: ${assessment.rationale}`);
-				runs.push({ round, fixture, assessment, error, ms, probabilities: match && Object.fromEntries(LABELS.map((label, i) => [label, Number(match[i + 1])])) });
+				runs.push({ round, fixture, assessment, error, ms, probabilities });
 			}
 		}
 

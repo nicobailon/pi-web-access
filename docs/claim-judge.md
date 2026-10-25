@@ -58,4 +58,4 @@ PI_WEB_ACCESS_REAL_SEMANTIC=1 CLOUDFLARE_ACCOUNT_ID=... CLOUDFLARE_API_TOKEN=...
   node eval/claim-judge.mjs --models clef,jev-1.13.0 --repeat 3
 ```
 
-It calls the same judge code `source_check` uses, makes real billed requests, and refuses to run without `PI_WEB_ACCESS_REAL_SEMANTIC=1`. For each model and fixture set it prints the pass count, wrong `supported` and `contradicted` verdicts, the highest wrong probability for each, how many verdicts cited an expected passage, and latency. Probabilities come from the rationale, rounded to two decimals.
+It calls the same judge code `source_check` uses, makes real billed requests, and refuses to run without `PI_WEB_ACCESS_REAL_SEMANTIC=1`. For each model and fixture set it prints the pass count, wrong `supported` and `contradicted` verdicts, the highest wrong probability for each, how many verdicts cited an expected passage, and latency.
