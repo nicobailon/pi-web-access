@@ -5,7 +5,7 @@ import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
+import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
 
 const TAVILY_API_BASE_URL = "https://api.tavily.com";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -14,7 +14,6 @@ const SEARCH_TIMEOUT_MS = 60_000;
 interface WebSearchConfig {
 	tavilyApiKey?: unknown;
 	tavilyBaseUrl?: unknown;
-	tavilyAllowHttp?: unknown;
 }
 
 interface TavilyResult {
@@ -78,8 +77,6 @@ function getApiUrl(): string {
 	return `${resolveApiBaseUrl({
 		configKey: "tavilyBaseUrl",
 		configuredValue: loadConfig().tavilyBaseUrl,
-		allowHttp: loadConfig().tavilyAllowHttp,
-		allowHttpEnvironmentValue: process.env.TAVILY_ALLOW_HTTP,
 		defaultValue: TAVILY_API_BASE_URL,
 		environmentKey: "TAVILY_BASE_URL",
 		environmentValue: process.env.TAVILY_BASE_URL,
@@ -235,7 +232,7 @@ async function tavilyRequest(apiUrl: string, apiKey: string, body: Record<string
 			},
 			body: JSON.stringify(body),
 			signal,
-		}, ["Authorization"], [], resolveProviderAllowHttp("tavily", loadConfig().tavilyAllowHttp));
+		}, ["Authorization"]);
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);

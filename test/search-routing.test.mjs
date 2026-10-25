@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,41 +58,6 @@ test("configured routing follows order after a selected network failure and retu
 	assert.equal(output.answer, "Tavily route answer");
 	assert.deepEqual(output.calls, ["https://api.search.brave.com/res/v1/web/search?q=ordered+route&count=5", "https://api.tavily.com/search"]);
 });
-
-for (const value of ["yes", "", "2"]) {
-	test(`configured routing treats invalid HTTP flag ${JSON.stringify(value)} as config without requests or fallback`, async (t) => {
-		const home = await createConfig({
-			braveApiKey: "brave-test-key",
-			braveAllowHttp: true,
-			tavilyApiKey: "tavily-test-key",
-			searchRouting: { providers: ["brave", "tavily"], fallbackOn: ["transient", "quota", "network", "invalid-response", "unsupported"] },
-		});
-		t.after(() => rm(home, { recursive: true, force: true }));
-		const child = runChild(`
-			const calls = [];
-			globalThis.fetch = async (url) => {
-				calls.push(String(url));
-				throw new Error("HTTP must not run for invalid configuration");
-			};
-			const { search } = await import(${JSON.stringify(searchModuleUrl)});
-			let failure;
-			try { await search("invalid HTTP flag", { provider: "auto" }); }
-			catch (error) { failure = { provider: error.provider, kind: error.kind, message: error.message }; }
-			console.log(JSON.stringify({ failure, calls }));
-		`, {
-			PI_CODING_AGENT_DIR: home,
-			BRAVE_BASE_URL: "http://gateway.example.com/brave/res/v1",
-			BRAVE_ALLOW_HTTP: value,
-		});
-
-		assert.equal(child.status, 0, child.stderr);
-		const output = JSON.parse(child.stdout.trim());
-		assert.equal(output.failure?.provider, "brave");
-		assert.equal(output.failure?.kind, "config");
-		assert.match(output.failure.message, /Invalid configuration: BRAVE_ALLOW_HTTP must be true, false, 1, or 0/);
-		assert.deepEqual(output.calls, []);
-	});
-}
 
 test("configured routing fails closed on quota errors not selected by fallbackOn", async () => {
 	const home = await createConfig({

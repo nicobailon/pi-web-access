@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `"allowHttpBaseUrls": true` (or `PI_WEB_ACCESS_ALLOW_HTTP_BASE_URLS=true`) lets provider gateway base URLs such as `braveBaseUrl` use plain `http://` on any host, for example an internal Kubernetes Service. Without it, gateway URLs must still use HTTPS unless they point at your own machine. HTTP sends API keys unencrypted, so use it only on a trusted network.
+
 ## [0.44.0] - 2026-10-20
 
 ### Highlights

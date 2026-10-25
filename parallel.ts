@@ -4,7 +4,7 @@ import { normalizeDomain } from "./domain-filter-normalization.ts";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const PARALLEL_API_BASE_URL = "https://api.parallel.ai";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -30,7 +30,6 @@ const PLACEHOLDER_API_KEY_DENYLIST = new Set([
 interface WebSearchConfig {
 	parallelApiKey?: unknown;
 	parallelBaseUrl?: unknown;
-	parallelAllowHttp?: unknown;
 }
 
 interface V1WebSearchResult {
@@ -294,14 +293,14 @@ async function fetchAndMapExtractResult(
 	body: Record<string, unknown>,
 	signal?: AbortSignal,
 ): Promise<{ mapped: ExtractedContent | null; result: V1ExtractResult | undefined }> {
-	const data = await parallelFetch(resolveProviderApiUrl("parallel", `${PARALLEL_API_BASE_URL}/v1/extract`, loadConfig().parallelBaseUrl, loadConfig().parallelAllowHttp), body, signal);
+	const data = await parallelFetch(resolveProviderApiUrl("parallel", `${PARALLEL_API_BASE_URL}/v1/extract`, loadConfig().parallelBaseUrl), body, signal);
 	if (hasExtractUrlError(data.errors, url)) return { mapped: null, result: undefined };
 	const result = findExtractResult(data.results as V1ExtractResult[] | undefined, url);
 	return { mapped: mapExtractResult(result), result };
 }
 
 export async function searchWithParallel(query: string, options: ParallelSearchOptions = {}): Promise<SearchResponse> {
-	const data = await parallelFetch(resolveProviderApiUrl("parallel", `${PARALLEL_API_BASE_URL}/v1/search`, loadConfig().parallelBaseUrl, loadConfig().parallelAllowHttp), buildSearchRequestBody(query, options), options.signal);
+	const data = await parallelFetch(resolveProviderApiUrl("parallel", `${PARALLEL_API_BASE_URL}/v1/search`, loadConfig().parallelBaseUrl), buildSearchRequestBody(query, options), options.signal);
 	const results = data.results as V1WebSearchResult[] | undefined;
 	const response: SearchResponse = {
 		answer: buildAnswerFromExcerpts(results),
@@ -344,7 +343,7 @@ async function parallelFetch(
 			},
 			body: JSON.stringify(body),
 			signal: requestSignal(signal),
-		}, ["x-api-key"], [], resolveProviderAllowHttp("parallel", loadConfig().parallelAllowHttp));
+		}, ["x-api-key"]);
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);

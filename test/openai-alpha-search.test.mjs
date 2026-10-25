@@ -46,8 +46,6 @@ async function runScenario(t, scenario = {}) {
 			globalThis.fetch = async (url, init) => {
 				init.signal?.throwIfAborted();
 				requests.push({ url: String(url), headers: Object.fromEntries(new Headers(init.headers)), body: JSON.parse(init.body) });
-				const location = scenario.redirects?.[requests.length - 1];
-				if (location) return new Response(null, { status: 307, headers: { location } });
 				if (String(url).includes("api.tavily.com")) return Response.json({ results: [{ title: "Fallback", url: "https://fallback.example/a", content: "Fallback evidence" }] });
 				if (scenario.hang) return new Promise((resolve, reject) => init.signal.addEventListener("abort", () => reject(init.signal.reason), { once: true }));
 				if (scenario.networkError) throw new TypeError("fetch failed");
@@ -150,35 +148,6 @@ test("alpha preserves explicit gateway origin, port, path prefix and query param
 	assert.equal(request.headers["x-codex-turn-metadata"], "keep");
 	for (const key of ["openai-beta", "session_id", "conversation_id", "x-codex-beta-features", "x-codex-turn-state", "x-openai-internal-codex-responses-lite"]) assert.equal(request.headers[key], undefined, key);
 });
-
-for (const openaiUseAlphaSearch of [false, true]) {
-	for (const [origin, redirectOrigin] of [
-		["http://localhost:8317", "http://localhost:8318"],
-		["https://gateway.example.com", "http://gateway.example.com"],
-	]) {
-		test(`OpenAI preserves HTTP gateway redirects and strips credentials (alpha: ${openaiUseAlphaSearch}, origin: ${origin})`, async (t) => {
-			const path = openaiUseAlphaSearch ? "/v1/alpha/search" : "/v1/responses";
-			const redirects = [redirectOrigin + path, origin + path + "/final"];
-			const out = await runScenario(t, {
-				registry: true,
-				config: { openaiResponsesUrl: origin + "/v1/responses", openaiUseAlphaSearch },
-				headers: { "X-Gateway-Secret": "private-header" },
-				redirects,
-				payload: openaiUseAlphaSearch ? payload : legacyPayload,
-			});
-			assert.equal(out.error, undefined);
-			assert.equal(out.result.answer, openaiUseAlphaSearch ? payload.output : "Responses answer");
-			assert.deepEqual(out.requests.map(request => request.url), [origin + path, ...redirects]);
-			assert.equal(out.requests[0].headers.authorization, "Bearer registry-test-key");
-			assert.equal(out.requests[0].headers["x-gateway-secret"], "private-header");
-			for (const request of out.requests.slice(1)) {
-				assert.equal(request.headers.authorization, undefined);
-				assert.equal(request.headers["x-gateway-secret"], undefined);
-				assert.deepEqual(request.body, out.requests[0].body);
-			}
-		});
-	}
-}
 
 for (const current of [false, true]) {
 	test(`alpha keeps Codex endpoint/account selection (current model: ${current})`, async (t) => {

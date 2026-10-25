@@ -1,7 +1,7 @@
 import { lookup as dnsLookup } from "node:dns/promises";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import net from "node:net";
-import { assertApiHttpAllowed, getActiveProxy, getWebSearchConfigPath, hasScopedProxyDecision, isProxyBypassedUrl, loadConfiguredProxy, normalizeProxyUrl } from "./utils.ts";
+import { getActiveProxy, getWebSearchConfigPath, hasScopedProxyDecision, isProxyBypassedUrl, loadConfiguredProxy, normalizeProxyUrl } from "./utils.ts";
 
 const DEFAULT_MAX_REDIRECTS = 5;
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
@@ -202,8 +202,6 @@ interface RedirectRequestInitArgs {
 }
 
 interface FetchRemoteOptions extends ValidationOptions {
-	/** When set for a provider API, enforce its HTTP opt-in on the entire redirect chain. */
-	apiAllowHttp?: boolean;
 	fetch?: Fetch;
 	maxRedirects?: number;
 	onRedirect?: (args: RedirectRequestInitArgs) => RequestInit;
@@ -275,7 +273,6 @@ export async function fetchRemoteUrl(
 	const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
 	let current = await validateRemoteUrl(url, options);
 	const configuredOrigin = current.origin;
-	if (options.apiAllowHttp !== undefined) assertApiHttpAllowed(current, configuredOrigin, options.apiAllowHttp);
 	let requestInit = init;
 
 	for (let redirects = 0; redirects <= maxRedirects; redirects++) {
@@ -288,7 +285,6 @@ export async function fetchRemoteUrl(
 
 		const from = current;
 		const next = new URL(location, current);
-		if (options.apiAllowHttp !== undefined) assertApiHttpAllowed(next, configuredOrigin, options.apiAllowHttp);
 		if (options.redirects === "same-origin" && next.origin !== configuredOrigin) {
 			throw new Error(`Refused cross-origin redirect by fetch_content redirect policy: ${configuredOrigin} -> ${next.origin}`);
 		}

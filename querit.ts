@@ -6,7 +6,7 @@ import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const QUERIT_SEARCH_URL = "https://api.querit.ai/v1/search";
 const QUERIT_CONTENTS_URL = "https://api.querit.ai/v1/contents";
@@ -17,7 +17,6 @@ const MAX_CONTENT_URLS = 10;
 
 interface WebSearchConfig {
 	queritBaseUrl?: unknown;
-	queritAllowHttp?: unknown;
 	queritApiKey?: unknown;
 }
 
@@ -195,7 +194,7 @@ async function queritJsonRequest<T>(
 ): Promise<T> {
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("querit", url, loadConfig().queritBaseUrl, loadConfig().queritAllowHttp), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("querit", url, loadConfig().queritBaseUrl), {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
@@ -204,7 +203,7 @@ async function queritJsonRequest<T>(
 			},
 			body: JSON.stringify(body),
 			signal: requestSignal(signal, timeoutMs),
-		}, ["Authorization"], [], resolveProviderAllowHttp("querit", loadConfig().queritAllowHttp));
+		}, ["Authorization"]);
 	} catch (err) {
 		const message = errorMessage(err);
 		const isRequestAbort = err instanceof Error

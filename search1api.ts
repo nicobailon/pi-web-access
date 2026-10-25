@@ -6,7 +6,7 @@ import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
-import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const SEARCH1API_SEARCH_URL = "https://api.search1api.com/search";
 const SEARCH1API_CRAWL_URL = "https://api.search1api.com/crawl";
@@ -16,7 +16,6 @@ const CRAWL_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	search1apiBaseUrl?: unknown;
-	search1apiAllowHttp?: unknown;
 	search1apiApiKey?: unknown;
 }
 
@@ -142,7 +141,7 @@ async function search1APIJsonRequest<T>(
 ): Promise<T> {
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("search1api", url, loadConfig().search1apiBaseUrl, loadConfig().search1apiAllowHttp), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("search1api", url, loadConfig().search1apiBaseUrl), {
 			method: "POST",
 			headers: {
 				Authorization: `Bearer ${apiKey}`,
@@ -150,7 +149,7 @@ async function search1APIJsonRequest<T>(
 			},
 			body: JSON.stringify(body),
 			signal: requestSignal(signal, timeoutMs),
-		}, ["Authorization"], [], resolveProviderAllowHttp("search1api", loadConfig().search1apiAllowHttp));
+		}, ["Authorization"]);
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);

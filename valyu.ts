@@ -6,7 +6,7 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const VALYU_SEARCH_URL = "https://api.valyu.ai/v1/search";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -16,7 +16,6 @@ const MAX_CONTENT_CHARS = 4_000;
 
 interface WebSearchConfig {
 	valyuBaseUrl?: unknown;
-	valyuAllowHttp?: unknown;
 	valyuApiKey?: unknown;
 }
 
@@ -125,12 +124,12 @@ export async function searchWithValyu(query: string, options: SearchOptions & { 
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("valyu", VALYU_SEARCH_URL, loadConfig().valyuBaseUrl, loadConfig().valyuAllowHttp), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("valyu", VALYU_SEARCH_URL, loadConfig().valyuBaseUrl), {
 			method: "POST",
 			headers: { "x-api-key": apiKey, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ query, max_num_results: numResults, ...mapDomainFilter(options.domainFilter), ...(startDate ? { start_date: startDate } : {}) }),
 			signal: options.signal ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal]) : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, ["x-api-key"], [], resolveProviderAllowHttp("valyu", loadConfig().valyuAllowHttp));
+		}, ["x-api-key"]);
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);

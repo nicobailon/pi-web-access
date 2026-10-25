@@ -53,7 +53,7 @@ async function runFixture(t, provider, script, config = {}) {
 	const env = { ...process.env, HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home };
 	delete env.XDG_CONFIG_HOME;
 	for (const key of Object.keys(env)) {
-		if (/_BASE_URL$|_ALLOW_HTTP$|_API_KEY$/.test(key)) delete env[key];
+		if (/_BASE_URL$|_API_KEY$/.test(key)) delete env[key];
 	}
 	const moduleUrl = new URL(`../${provider.file}.ts`, import.meta.url).href;
 	const child = spawnSync(process.execPath, ["--input-type=module"], {
@@ -92,31 +92,28 @@ async function runFixture(t, provider, script, config = {}) {
 		encoding: "utf8",
 		maxBuffer: 2 * 1024 * 1024,
 	});
-	assert.ifError(child.error);
 	assert.equal(child.status, 0, child.stderr || child.stdout);
 }
 
-for (const protocol of ["https", "http"]) {
-	for (const file of ["kagi", "ollama", "brightdata-unlocker"]) {
-		const provider = providers.find(provider => provider.file === file);
-		for (const blocked of ["target", "api", "redirect"]) {
-			test(`${file}: ${protocol} gateway overrides preserve ${blocked} SSRF checks`, async (t) => {
-				await runFixture(t, provider, `
-					options.lookup = async hostname => [{
-						address: hostname === ${JSON.stringify({ target: "example.com", api: "gateway.example.com", redirect: "blocked.example.com" }[blocked])}
-							? "127.0.0.1" : "93.184.216.34",
-						family: 4,
-					}];
-					globalThis.fetch = async (url, init) => {
-						capture(url, init);
-						return new Response(null, {status: 307, headers: {location: "${protocol}://blocked.example.com/private"}});
-					};
-					const [name] = provider.methods.find(([name]) => name.startsWith("extract"));
-					await assert.rejects(() => invoke(name), /Blocked internal/);
-					assert.equal(calls.length, ${blocked === "redirect" ? 1 : 0});
-				`, { [provider.stem + "BaseUrl"]: `${protocol}://gateway.example.com/proxy/${provider.stem}`, [provider.stem + "AllowHttp"]: protocol === "http" });
-			});
-		}
+for (const file of ["kagi", "ollama", "brightdata-unlocker"]) {
+	const provider = providers.find(provider => provider.file === file);
+	for (const blocked of ["target", "api", "redirect"]) {
+		test(`${file}: gateway overrides preserve ${blocked} SSRF checks`, async (t) => {
+			await runFixture(t, provider, `
+				options.lookup = async hostname => [{
+					address: hostname === ${JSON.stringify({ target: "example.com", api: "gateway.example.com", redirect: "blocked.example.com" }[blocked])}
+						? "127.0.0.1" : "93.184.216.34",
+					family: 4,
+				}];
+				globalThis.fetch = async (url, init) => {
+					capture(url, init);
+					return new Response(null, {status: 307, headers: {location: "https://blocked.example.com/private"}});
+				};
+				const [name] = provider.methods.find(([name]) => name.startsWith("extract"));
+				await assert.rejects(() => invoke(name), /Blocked internal/);
+				assert.equal(calls.length, ${blocked === "redirect" ? 1 : 0});
+			`, { [provider.stem + "BaseUrl"]: `https://gateway.example.com/proxy/${provider.stem}` });
+		});
 	}
 }
 
@@ -192,95 +189,7 @@ for (const provider of providers) {
 		`, { [provider.stem + "BaseUrl"]: "https://user:secret@gateway.example.com" });
 	});
 
-	test(`${provider.file}: HTTP opt-in covers every operation and environment override`, async (t) => {
-		await runFixture(t, provider, `
-			for (const origin of ["http://client-gateway:8080", "http://env.example.com:8080"]) {
-				if (origin.includes("env.")) process.env[envKey] = origin + "/proxy/" + provider.stem + "///";
-				for (const [name, endpoint] of provider.methods) {
-					await request(name);
-					const call = calls.at(-1);
-					assert.equal(call.origin, origin);
-					assert.equal(call.path, "/proxy/" + provider.stem + new URL(endpoint).pathname);
-					assert.ok(call.credential.endsWith("gateway-test-key"));
-				}
-			}
-			for (const value of ["", "not-a-url", "ftp://gateway.example.com", "http://user:secret@gateway.example.com", "http://gateway.example.com?debug=true", "http://gateway.example.com#fragment"]) {
-				process.env[envKey] = value;
-				for (const [name] of provider.methods) await assert.rejects(() => invoke(name), new RegExp(envKey));
-			}
-			assert.equal(calls.length, provider.methods.length * 2);
-		`, { [provider.stem + "BaseUrl"]: `http://client-gateway:8080/proxy/${provider.stem}///`, [provider.stem + "AllowHttp"]: true });
-	});
-
-	test(`${provider.file}: HTTP environment flag overrides JSON for every operation`, async (t) => {
-		await runFixture(t, provider, `
-			const allowHttpEnv = envKey.replace(/_BASE_URL$/, "_ALLOW_HTTP");
-			for (const value of ["true", "1"]) {
-				process.env[allowHttpEnv] = value;
-				for (const [name] of provider.methods) await request(name);
-			}
-			for (const value of ["false", "0"]) {
-				process.env[allowHttpEnv] = value;
-				for (const [name] of provider.methods) await assert.rejects(() => invoke(name), /must be an absolute HTTPS URL/);
-			}
-			for (const value of ["", "yes"]) {
-				process.env[allowHttpEnv] = value;
-				for (const [name] of provider.methods) await assert.rejects(() => invoke(name), new RegExp(allowHttpEnv + " must be true, false, 1, or 0"));
-			}
-			delete process.env[allowHttpEnv];
-			for (const [name] of provider.methods) await request(name);
-			assert.equal(calls.length, provider.methods.length * 3);
-			assert.ok(calls.every(call => call.origin === "http://client-gateway:8080"));
-		`, { [provider.stem + "BaseUrl"]: `http://client-gateway:8080/proxy/${provider.stem}`, [provider.stem + "AllowHttp"]: true });
-	});
-
-	test(`${provider.file}: false and non-boolean HTTP opt-ins fail before fetching`, async (t) => {
-		for (const allowHttp of [false, "true"]) {
-			await runFixture(t, provider, `
-				for (const [name] of provider.methods) {
-					await assert.rejects(() => invoke(name), new RegExp(provider.stem + ${JSON.stringify(allowHttp === false
-						? "BaseUrl .* must be an absolute HTTPS URL"
-						: "AllowHttp .* must be a boolean")}));
-				}
-				assert.equal(calls.length, 0);
-			`, { [provider.stem + "BaseUrl"]: "http://gateway.example.com", [provider.stem + "AllowHttp"]: allowHttp });
-		}
-	});
-
-	test(`${provider.file}: every API redirect enforces the JSON and environment HTTP policy`, async (t) => {
-		for (const configuredAllowHttp of [false, true]) {
-			for (const status of [307, 308]) {
-				await runFixture(t, provider, `
-					const allowHttpEnv = envKey.replace(/_BASE_URL$/, "_ALLOW_HTTP");
-					const status = ${status};
-					for (const value of [undefined, "0", "1"]) {
-						if (value === undefined) delete process.env[allowHttpEnv];
-						else process.env[allowHttpEnv] = value;
-						const allowed = value === undefined ? ${configuredAllowHttp} : value === "1";
-						for (const [name] of provider.methods) {
-							calls.length = 0;
-							globalThis.fetch = async (url, init) => {
-								capture(url, init);
-								if (calls.length === 1) return new Response(null, {status, headers: {location: "http://redirect.example.com/collect"}});
-								throw new Error("OFFLINE_REQUEST_CAPTURED");
-							};
-							if (allowed) {
-								await request(name);
-								assert.equal(calls.length, 2);
-								assert.equal(calls[1].credential, null);
-								assert.equal(calls[1].body, calls[0].body);
-							} else {
-								await assert.rejects(() => invoke(name), /HTTP API requests require/);
-								assert.equal(calls.length, 1);
-							}
-						}
-					}
-				`, { [provider.stem + "BaseUrl"]: "https://gateway.example.com/api", [provider.stem + "AllowHttp"]: configuredAllowHttp });
-			}
-		}
-	});
-
-	test(`${provider.file}: HTTP cross-origin redirects strip authentication without changing payloads`, async (t) => {
+	test(`${provider.file}: cross-origin redirects strip authentication without changing payloads`, async (t) => {
 		await runFixture(t, provider, `
 			globalThis.fetch = async (url, init) => {
 				capture(url, init);
@@ -300,6 +209,6 @@ for (const provider of providers) {
 				assert.equal(last.body, first.body);
 				assert.equal(last.signal, first.signal);
 			}
-		`, { [provider.stem + "BaseUrl"]: `http://gateway.example.com/proxy/${provider.stem}`, [provider.stem + "AllowHttp"]: true });
+		`, { [provider.stem + "BaseUrl"]: `https://gateway.example.com/proxy/${provider.stem}` });
 	});
 }

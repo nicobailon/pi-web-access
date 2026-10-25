@@ -5,7 +5,7 @@ import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { resolveProviderAllowHttp, getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const BRIGHTDATA_API_URL = "https://api.brightdata.com/request";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -31,7 +31,6 @@ const RECENCY_TBS: Record<string, string> = {
 
 interface WebSearchConfig {
 	brightdataBaseUrl?: unknown;
-	brightdataAllowHttp?: unknown;
 	brightdataApiKey?: unknown;
 	brightdataSerpZone?: unknown;
 }
@@ -468,7 +467,7 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 	const activityId = activityMonitor.logStart({ type: "api", query: searchQuery });
 	let response: Response;
 	try {
-		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("brightdata", BRIGHTDATA_API_URL, loadConfig().brightdataBaseUrl, loadConfig().brightdataAllowHttp), {
+		response = await fetchWithCredentialRedirects(resolveProviderApiUrl("brightdata", BRIGHTDATA_API_URL, loadConfig().brightdataBaseUrl), {
 			method: "POST",
 			headers: {
 				"Authorization": `Bearer ${apiKey}`,
@@ -476,7 +475,7 @@ export async function searchWithBrightData(query: string, options: BrightDataSea
 			},
 			body: JSON.stringify(body),
 			signal: requestSignal(options.signal),
-		}, ["Authorization"], [], resolveProviderAllowHttp("brightdata", loadConfig().brightdataAllowHttp));
+		}, ["Authorization"]);
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);

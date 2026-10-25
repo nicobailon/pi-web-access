@@ -464,7 +464,6 @@ Config defaults to `~/.pi/agent/web-search.json` when neither `PI_CODING_AGENT_D
   "openaiResponsesUrl": "https://gateway.example.com/v1/responses",
   "braveApiKey": "BSA_...",
   "braveBaseUrl": "https://gateway.example.com/brave/res/v1",
-  "braveAllowHttp": false,
   "exaApiKey": "exa-...",
   "exaBaseUrl": "https://gateway.example.com/exa",
   "parallelApiKey": "...",
@@ -678,25 +677,7 @@ These providers accept an API base URL for compatible gateways. Environment vari
 
 Defaults remain the providers' official API roots. Overrides require HTTPS, except HTTP is allowed on loopback hosts (`localhost`, `127.0.0.0/8`, and `::1`). URLs with credentials, query parameters, or fragments are rejected before a request is sent; invalid overrides never fall back to an official endpoint. Cross-origin redirects remove credential headers and the `api_key` query parameter used by SerpApi and SerpBase. `exaBaseUrl` applies only to keyed direct API calls; zero-config Exa MCP search continues to use Exa's hosted MCP endpoint. `parallelBaseUrl` does not change the separate Parallel MCP provider.
 
-To use HTTP on a non-loopback gateway, set the matching `<prefix>AllowHttp` boolean in `web-search.json`: replace `BaseUrl` in any config key above with `AllowHttp`, for example `braveAllowHttp`, `exaAllowHttp`, `jinaSearchAllowHttp`, or `mistralSearchAllowHttp`. Each flag defaults to `false` and applies only to that provider's explicitly configured base URL, whether supplied in JSON or by its base URL environment variable. JSON values must be `true` or `false`. Enabling a flag permits HTTP without rewriting HTTPS URLs or changing the official default endpoint.
-
-```json
-{
-  "braveBaseUrl": "http://client-gateway:8080/brave/res/v1",
-  "braveAllowHttp": true,
-  "parallelBaseUrl": "http://10.0.0.1:8080/parallel",
-  "parallelAllowHttp": true
-}
-```
-
-Every flag also has an environment-variable equivalent: replace `_BASE_URL` in the table above with `_ALLOW_HTTP`, for example `BRAVE_ALLOW_HTTP`, `EXA_ALLOW_HTTP`, `JINA_SEARCH_ALLOW_HTTP`, or `MISTRAL_SEARCH_ALLOW_HTTP`. Ollama and DeepSeek use `PI_OLLAMA_ALLOW_HTTP` and `PI_DEEPSEEK_ALLOW_HTTP`; the bare names are ignored. Environment values take precedence over the corresponding JSON flag, accept `true` / `1` to enable or `false` / `0` to disable (case-insensitive, surrounding whitespace ignored), and are read on each request. An unset variable falls back to JSON; an empty or invalid value raises a configuration error instead of falling back.
-
-```sh
-export BRAVE_BASE_URL="http://client-gateway:8080/brave/res/v1"
-export BRAVE_ALLOW_HTTP=true
-```
-
-The flag covers both search and extraction where they share a root, including every redirect hop. With HTTP disabled, redirects to non-loopback HTTP are refused before sending the request or its body. The implicit loopback HTTP exception is restricted to the original configured origin; redirect targets using HTTP on any other origin need the explicit HTTP opt-in. `brightdataAllowHttp` is shared by Bright Data SERP and Web Unlocker. **HTTP sends API credentials and request data in plaintext over the network**; configure only trusted gateways. URL validation, cross-origin credential stripping, SSRF checks, and target-domain policies still apply when HTTP is enabled.
+To use a plain-HTTP gateway on another host, such as a Kubernetes Service (`"braveBaseUrl": "http://search-gateway:8080/brave/res/v1"`), set `"allowHttpBaseUrls": true` in `web-search.json` or `PI_WEB_ACCESS_ALLOW_HTTP_BASE_URLS=true`. The environment variable wins over config and accepts `true`, `false`, `1`, or `0`; any other value, or a non-boolean config value, is a configuration error. The switch defaults to `false` and lets every base URL above use `http://`; it never changes the official default endpoints. **HTTP sends API keys and request data in plaintext**, so enable it only for gateways on a trusted network. The other URL checks, SSRF and target-domain checks, and credential removal on cross-origin redirects still apply.
 
 These settings change API destinations, not provider protocols, credentials, pricing options, or activation. Search and extraction use the same root where listed. Existing SSRF and target-domain checks still apply to extraction; in particular, Kagi, Ollama, and Bright Data Web Unlocker gateway addresses remain subject to their API transport's SSRF checks. For a loopback gateway on those extraction transports, use a literal address (`http://127.0.0.1:8080` or `http://[::1]:8080`) and add its matching range (`127.0.0.1/32` or `::1/128`) to `ssrf.allowRanges`. These transports reject `localhost` even when allowed ranges are configured.
 

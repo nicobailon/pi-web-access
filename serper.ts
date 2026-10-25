@@ -5,7 +5,7 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { resolveProviderAllowHttp, fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
+import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
 const SERPER_API_BASE_URL = "https://google.serper.dev";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -20,7 +20,6 @@ const RECENCY_TBS: Record<NonNullable<SearchOptions["recencyFilter"]>, string> =
 interface WebSearchConfig {
 	serperApiKey?: unknown;
 	serperBaseUrl?: unknown;
-	serperAllowHttp?: unknown;
 }
 
 interface SerperResult {
@@ -131,7 +130,7 @@ export function isSerperAvailable(): boolean {
 }
 
 export async function searchWithSerper(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
-	const apiUrl = resolveProviderApiUrl("serper", `${SERPER_API_BASE_URL}/search`, loadConfig().serperBaseUrl, loadConfig().serperAllowHttp);
+	const apiUrl = resolveProviderApiUrl("serper", `${SERPER_API_BASE_URL}/search`, loadConfig().serperBaseUrl);
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
@@ -144,7 +143,7 @@ export async function searchWithSerper(query: string, options: SearchOptions = {
 			headers: { "X-API-KEY": apiKey, "Content-Type": "application/json", Accept: "application/json" },
 			body: JSON.stringify({ q: buildQuery(query, filters), num: requestCount, ...(options.recencyFilter ? { tbs: RECENCY_TBS[options.recencyFilter] } : {}) }),
 			signal: options.signal ? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal]) : AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, ["X-API-KEY"], [], resolveProviderAllowHttp("serper", loadConfig().serperAllowHttp));
+		}, ["X-API-KEY"]);
 	} catch (err) {
 		const message = errorMessage(err);
 		const redactedMessage = redactCredential(message, apiKey);
