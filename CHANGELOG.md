@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Highlights
+
+- Pull exact facts off a web page, such as a price, a release date, or a rate limit, instead of reading the whole page. It is opt-in and runs on your own Cloudflare account.
+- Check a claim against the sources found for it: a classifier model says whether they support or contradict it and points to the passage, or says it can't tell. Also opt-in.
+- The web tools take up about 60% less of every request to the model, about 1,100 tokens instead of 2,800.
+- Search through Azure OpenAI with Bing results, choose the search model for a single search, and keep summaries on the model your Pi session already runs.
+- When a search provider finds nothing useful, search can move on to the next one, and a whole search can be given a time limit.
+- DuckDuckGo searches no longer get your IP address blocked by arriving too fast.
+
 ### Added
 
 - Search routing can move on to the next provider when one answers with no results, or with no results from the domains you asked for. Turn it on by adding `"empty"` or `"domain-miss"` to `searchRouting.fallbackOn`. If every provider answers that way, you get the first answer. A routed search can also be given a total time limit with `searchRouting.timeoutMs` (1 to 600000 milliseconds), which includes the time spent checking whether each provider is set up and signed in; when it runs out, you get the first answer passed over, or an error that says the route ran out of time. Thanks to [@isjiajia01](https://github.com/isjiajia01) for [PR #594](https://github.com/nicobailon/pi-web-access/pull/594).
