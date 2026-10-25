@@ -12,7 +12,7 @@ const EVIDENCE_INSTRUCTIONS = "Which passage id best justifies the verdict? Answ
 
 /** Only models with both thresholds measured on the claim fixtures belong here. */
 export const CLAIM_JUDGE_MODELS = {
-	clef: { provider: "cloudflare", thresholds: { supported: 0.85, contradicted: 0.85 } },
+	clef: { provider: "cloudflare", thresholds: { supported: 0.85, contradicted: 0.87 } },
 	"jev-1.13.0": { provider: "typesafe", thresholds: { supported: 0.85, contradicted: 0.90 } },
 } as const;
 export type ClaimJudgeModel = keyof typeof CLAIM_JUDGE_MODELS;

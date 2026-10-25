@@ -30,25 +30,33 @@ At most 48 passages and 24 KB, titles included, are sent; passages beyond that a
 
 ## How the thresholds were chosen
 
-Two sets of claims, each with 3–8 short passages and an expected answer:
+Two sets of claims, each with 3–8 short passages labeled with their page titles and an expected answer:
 
-- **Calibration**: 25 claims written while building the judge ([`eval/fixtures/claims-calibration.json`](../eval/fixtures/claims-calibration.json)).
-- **Held-out**: 24 claims written blind by a separate agent that never saw the calibration set or any model output ([`eval/fixtures/claims-holdout.json`](../eval/fixtures/claims-holdout.json)). They cover negation, wrong numbers, wrong product or version, claims stronger than the evidence, word-overlap decoys, paraphrases with no shared words, old vs. new statements, and forum rumors.
+- **Calibration**: 33 claims written while building the judge ([`eval/fixtures/claims-calibration.json`](../eval/fixtures/claims-calibration.json)).
+- **Held-out**: 32 claims written blind by a separate agent that never saw the calibration set or any model output ([`eval/fixtures/claims-holdout.json`](../eval/fixtures/claims-holdout.json)). They cover negation, wrong numbers, wrong product or version, claims stronger than the evidence, word-overlap decoys, paraphrases with no shared words, old vs. new statements, and forum rumors.
+
+Each set has 8 cases where the page title matters: 2 about versions, 2 about plans or editions, 2 about sibling products, and 2 where only the title names the subject. The 2 sibling-product cases in each set are a known limit (see below) and are reported apart from the scores, so 31 calibration and 30 held-out claims are scored.
 
 A claim passes when the judge returns its expected answer; for claims the passages don't settle, the expected answer is `unclear`.
 
-Each threshold is `max(0.85, highest probability the model gave that answer when it was wrong + 0.05)`. For Clef both thresholds stay at 0.85. For Jev, `supported` stays at 0.85, but `contradicted` is 0.90: Jev's answers vary a little between identical calls, and on one held-out claim (h18: "available in every region", where a passage only lists three regions) its wrong `contradicted` ranged from 0.76 to 0.85 over 10 runs.
+Each threshold is `max(0.85, highest probability the model gave that answer when it was wrong + 0.05)`, rounded up. For Clef, `supported` is 0.85 and `contradicted` is 0.87 (its highest wrong `contradicted` was 0.81). For Jev, `supported` is 0.85 and `contradicted` is 0.90: Jev's answers vary a little between identical calls, and on one held-out claim (h18: "available in every region", where a passage only lists three regions) its wrong `contradicted` ranged from 0.76 to 0.85 over 10 runs.
 
 ## Results
 
-| Model | Calibration | Held-out | Wrong verdicts | Same answer every run | Latency p50 / p95 |
-| --- | --- | --- | --- | --- | --- |
-| `clef` | 25/25 | 23/24 | 0 | yes (10 runs) | 350–440 ms / 610–1,020 ms |
-| `jev-1.13.0` | 25/25 | 23/24 | 0 | no (±0.10) | 85–100 ms / 175–185 ms |
+Three rounds per model:
 
-Both models missed the same held-out claim (h11): an old passage and a newer one disagree, and the right answer is that the newer one contradicts the claim. Both returned `unclear`, so the miss is a missing verdict, not a wrong one. Every verdict they did give cited the right passage.
+| Model | Calibration | Held-out | Wrong verdicts | Highest wrong (supported / contradicted) | Same answer every round | Latency p50 / p95 |
+| --- | --- | --- | --- | --- | --- | --- |
+| `clef` | 31/31 | 29/30 | 0 | 0.30 / 0.81 | yes | ~330 ms / ~800 ms |
+| `jev-1.13.0` | 31/31 | 29/30 | 0 | 0.69 / 0.80 | no (up to ±0.09) | ~85 ms / ~450 ms |
 
-Two options were measured and rejected:
+Both models missed the same held-out claim (h11): an old page and a newer one disagree, and the right answer is that the newer one contradicts the claim. Both returned `unclear`, so the miss is a missing verdict, not a wrong one.
+
+**Page titles matter.** Without them, Clef answered `supported` at 0.88 for a v1 claim backed by a v2 docs page. With them, the version and plan cases are answered correctly.
+
+**Known limit: sibling products.** The 4 sibling-product fixture cases came back `unclear` from both models. But in a separate test, the claim "Kestrel Agent runs on Windows." with the passage "Runs on Windows, macOS and Linux." from the page "Kestrel Dashboard — System requirements" got `supported` at about 0.98 from both, with or without extra instructions. Treat products that share a brand name as a known miss and check the cited passage's source.
+
+Two options were measured on the first, title-free fixture sets and rejected:
 
 - **`clef-flash`**, Cloudflare's faster model: 22/24 on the held-out set, with one wrong `supported` at 0.88 (h21, a feature of one product credited to another).
 - **Asking about each passage separately** instead of all passages at once: on h11, Clef judged the old passage alone as supporting the claim at 0.98, a confident wrong `supported`. Judging all passages together returns `unclear` there for every model.
