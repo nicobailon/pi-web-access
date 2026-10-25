@@ -214,7 +214,8 @@ async function resolveThinkingLevel(model: Model<Api>, requested?: SummaryThinki
 
 async function resolveSummaryModelCandidates(
 	ctx: SummaryGenerationContext,
-	modelOverride?: string,
+	modelOverride: string | undefined,
+	preferredFallback: boolean,
 ): Promise<{ candidates: Array<{ model: Model<Api>; apiKey?: string; headers?: ProviderHeaders; thinkingLevel?: SummaryThinkingLevel }>; errors: string[] }> {
 	const specs: Array<{ provider: string; id: string; thinkingLevel?: SummaryThinkingLevel }> = [];
 	const errors: string[] = [];
@@ -224,7 +225,7 @@ async function resolveSummaryModelCandidates(
 		if (spec) specs.push(spec);
 		else errors.push("Summary model not found: current (no active Pi session model)");
 	}
-	specs.push(...PREFERRED_SUMMARY_MODELS);
+	if (preferredFallback) specs.push(...PREFERRED_SUMMARY_MODELS);
 
 	const candidates: Array<{ model: Model<Api>; apiKey?: string; headers?: ProviderHeaders; thinkingLevel?: SummaryThinkingLevel }> = [];
 	const seen = new Set<string>();
@@ -298,6 +299,7 @@ export async function generateSummaryDraft(
 	completeFn?: CompleteFunction,
 	deadlineMs = SUMMARY_GENERATION_DEADLINE_MS,
 	instructions?: string,
+	options: { preferredFallback?: boolean } = {},
 ): Promise<{ summary: string; meta: SummaryMeta }> {
 	if (!ctx || !ctx.modelRegistry) {
 		throw new Error("Summary generation context unavailable");
@@ -365,7 +367,7 @@ export async function generateSummaryDraft(
 				piAiCompat = await raceSummaryOperation(import("@earendil-works/pi-ai/compat"));
 			}
 			if (!usesRegistryStreamSimple) completeFn ??= usesRegistryComplete ? registry.complete!.bind(registry) as CompleteFunction : piAiCompat!.complete;
-			resolved = await raceSummaryOperation(resolveSummaryModelCandidates(ctx, modelOverride));
+			resolved = await raceSummaryOperation(resolveSummaryModelCandidates(ctx, modelOverride, options.preferredFallback ?? true));
 		} catch (err) {
 			checkSummaryDeadline();
 			const message = err instanceof Error ? err.message : String(err);

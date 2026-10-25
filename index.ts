@@ -985,16 +985,18 @@ export default function (pi: ExtensionAPI) {
 		if (selectedResults.length === 0) {
 			throw new Error("No selected results available for summary generation");
 		}
+		const configuredSummaryModel = getConfiguredSummaryModel();
 		try {
 			return await generateSummaryDraft(
 				selectedResults,
 				summaryContext,
 				signal,
-				modelOverride,
+				modelOverride?.trim() || configuredSummaryModel,
 				feedback,
 				undefined,
 				getSummaryGenerationDeadlineMs(),
 				getSummaryInstructions(),
+				{ preferredFallback: configuredSummaryModel === undefined },
 			);
 		} catch (err) {
 			const isEmptyResponse = err instanceof Error && err.message.includes("Summary model returned empty response");
@@ -1012,7 +1014,7 @@ export default function (pi: ExtensionAPI) {
 
 	async function loadSummaryModelChoices(
 		summaryContext: SummaryGenerationContext,
-	): Promise<{ summaryModels: Array<{ value: string; label: string }>; defaultSummaryModel: string | null }> {
+	): Promise<{ summaryModels: Array<{ value: string; label: string }>; defaultSummaryModel: string | null; preferredFallback: boolean }> {
 		const summaryModels: Array<{ value: string; label: string }> = [];
 		const seen = new Set<string>();
 		const availableValues = new Set<string>();
@@ -1047,29 +1049,17 @@ export default function (pi: ExtensionAPI) {
 			{ provider: "deepseek", id: "deepseek-v4-flash" },
 		];
 
-		const resolveAvailableModelValue = (selector: string): string | null => {
-			const spec = resolveHelperModelSpec(parseHelperModelSelector(selector, "summary model"), summaryContext.model);
-			if (!spec) return null;
-			const model = findModelWithProviderRouting(summaryContext.modelRegistry, spec.provider, spec.id);
-			if (!model) return null;
-			const value = `${model.provider}/${model.id}`;
-			if (!availableValues.has(value)) return null;
-			// The curator groups choices by the text before "/", so `current` must become a concrete selector.
-			const concrete = `${spec.provider}/${spec.id}${spec.thinkingLevel ? `:${spec.thinkingLevel}` : ""}`;
-			if (concrete !== value && !seen.has(concrete)) {
-				seen.add(concrete);
-				summaryModels.push({ value: concrete, label: concrete });
-			}
-			return concrete;
-		};
-
 		let defaultSummaryModel: string | null = null;
 		if (configuredSummaryModel !== undefined) {
-			defaultSummaryModel = availableValues.has(configuredSummaryModel)
-				? configuredSummaryModel
-				: resolveAvailableModelValue(configuredSummaryModel);
-		}
-		if (!defaultSummaryModel) {
+			const spec = resolveHelperModelSpec(parseHelperModelSelector(configuredSummaryModel, "summary model"), summaryContext.model);
+			// The curator groups choices by the text before "/", so `current` must become a concrete selector.
+			// An unavailable configured model stays preselected so its failure is visible instead of another provider being used.
+			defaultSummaryModel = spec ? `${spec.provider}/${spec.id}${spec.thinkingLevel ? `:${spec.thinkingLevel}` : ""}` : configuredSummaryModel;
+			if (spec && !seen.has(defaultSummaryModel)) {
+				seen.add(defaultSummaryModel);
+				summaryModels.push({ value: defaultSummaryModel, label: defaultSummaryModel });
+			}
+		} else {
 			for (const preferred of preferredDefaults) {
 				const model = findModelWithProviderRouting(summaryContext.modelRegistry, preferred.provider, preferred.id);
 				const value = model ? `${model.provider}/${model.id}` : null;
@@ -1079,7 +1069,7 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 		}
-		return { summaryModels, defaultSummaryModel };
+		return { summaryModels, defaultSummaryModel, preferredFallback: configuredSummaryModel === undefined };
 	}
 
 	function resolveSummaryForSubmit(
@@ -1716,6 +1706,7 @@ export default function (pi: ExtensionAPI) {
 						undefined,
 						getSummaryGenerationDeadlineMs(),
 						getSummaryInstructions(),
+						{ preferredFallback: summaryModelChoices.preferredFallback },
 					);
 					return { approvedSummary: generated.summary, summaryMeta: generated.meta };
 				};

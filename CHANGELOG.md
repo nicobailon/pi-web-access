@@ -9,6 +9,10 @@ All notable changes to this project will be documented in this file.
 - `summaryModel` can be set to `"current"`, or `"current:<level>"` such as `"current:low"`, to write summaries with the model your Pi session is using instead of a fixed model. This keeps summaries on a local or self-hosted model when that is what the session runs on. Pi `enabledModels` still applies. A `summaryModel` value that is not `"current"`, `"current:<level>"`, or `provider/model-id[:<level>]` now stops the summary with an error naming the config file, instead of being ignored.
 - Exa search results show each source's published date and authors, and results from Exa's `publication` category (its research paper index) also show the citation count and DOI. The README now names `publication` as the Exa category for research papers. Exa uses it in place of `research paper`, which still works. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #596](https://github.com/nicobailon/pi-web-access/pull/596).
 
+### Changed
+
+- When `summaryModel` is set, summaries use only that model. Before, if it was missing, signed out, or failed, the summary quietly moved on to a built-in cloud model such as Claude Haiku, which could bill a provider you did not choose. Now you get the plain summary built from the search results, with a reason that names your configured model. The curator also preselects your configured model even when it is unavailable, so the problem is visible. If `summaryModel` is not set, nothing changes.
+
 ### Fixed
 
 - DuckDuckGo search no longer locks itself out. Several searches at once, such as a `queries` list, used to trigger DuckDuckGo's bot check for the whole IP address for 10 to 15 minutes, and every retry kept the block in place. DuckDuckGo searches now run one at a time, at least 2 seconds apart. After a bot check the provider stops sending requests for 5 minutes, doubling up to 1 hour, and fails at once with a `quota` error, so search routing can fall back right away.

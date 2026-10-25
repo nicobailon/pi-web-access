@@ -27,13 +27,14 @@ const local = { provider: "strata", id: "strata", api: "fixture-api", reasoning:
 const haiku = { provider: "anthropic", id: "claude-haiku-4-5", api: "fixture-api", reasoning: true, contextWindow: 32000, input: ["text"] };
 const results = [{ query: "q", answer: "A.", results: [{ title: "S", url: "https://example.com" }], error: null, provider: "test" }];
 
-function registry(models, calls) {
+function registry(models, calls, failing) {
 	return {
 		find: (provider, id) => models.find(model => model.provider === provider && model.id === id),
 		getAvailable: () => models,
 		getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key" }),
 		complete: async (model, _request, options) => {
 			calls.push({ model: `${model.provider}/${model.id}`, reasoning: options.reasoning });
+			if (model === failing) throw new Error("local server down");
 			return { stopReason: "stop", content: [{ type: "text", text: "SUMMARY" }] };
 		},
 	};
@@ -61,6 +62,20 @@ test("summary model current resolves the session model and honors enabled models
 	assert.deepEqual(calls, [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }]);
 });
 
+test("without preferredFallback only the configured summary model is tried", async () => {
+	const draft = async (override, { scopedModels = [], failing, options } = {}) => {
+		const calls = [];
+		const ctx = { model: local, modelRegistry: registry([haiku, local], calls, failing), scopedModels };
+		const { meta } = await generateSummaryDraft(results, ctx, undefined, override, undefined, undefined, 1000, undefined, options);
+		return { calls: calls.map(call => call.model), reason: meta.fallbackReason };
+	};
+	const strict = { preferredFallback: false };
+	assert.deepEqual(await draft("ollama/missing", { options: strict }), { calls: [], reason: "summary-model-unavailable: Summary model not found: ollama/missing" });
+	assert.deepEqual(await draft("strata/strata", { failing: local, options: strict }), { calls: ["strata/strata"], reason: "summary-model-unavailable: local server down" });
+	assert.deepEqual(await draft("current", { scopedModels: [{ model: haiku }], options: strict }), { calls: [], reason: "summary-model-unavailable: Summary model is not enabled: strata/strata" });
+	assert.deepEqual(await draft("ollama/missing"), { calls: ["anthropic/claude-haiku-4-5"], reason: undefined });
+});
+
 async function autoSummary(summaryModel) {
 	await writeFile(configPath, JSON.stringify({ workflow: "none", ...(summaryModel === undefined ? {} : { summaryModel }) }));
 	const tools = [];
@@ -69,13 +84,17 @@ async function autoSummary(summaryModel) {
 	const calls = [];
 	const ctx = { model: local, scopedModels: [], modelRegistry: registry([haiku, local], calls) };
 	const search = tools.find(tool => tool.name === "web_search");
-	await search.execute("s", { query: "q", provider: "brave", workflow: "auto-summary" }, undefined, undefined, ctx);
-	return calls;
+	const result = await search.execute("s", { query: "q", provider: "brave", workflow: "auto-summary" }, undefined, undefined, ctx);
+	return { calls, fallbackReason: result.details.summary.fallbackReason };
 }
 
 test("auto-summary uses the session model for summaryModel current and keeps the default chain when unset", async () => {
-	assert.deepEqual(await autoSummary("current:low"), [{ model: "strata/strata", reasoning: "low" }]);
-	assert.deepEqual(await autoSummary(undefined), [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }]);
+	assert.deepEqual((await autoSummary("current:low")).calls, [{ model: "strata/strata", reasoning: "low" }]);
+	assert.deepEqual((await autoSummary(undefined)).calls, [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }]);
+});
+
+test("auto-summary with an unavailable summaryModel calls no other model", async () => {
+	assert.deepEqual(await autoSummary("ollama/missing"), { calls: [], fallbackReason: "summary-model-unavailable: Summary model not found: ollama/missing" });
 });
 
 test("malformed summaryModel fails auto-summary with the config path", async () => {
