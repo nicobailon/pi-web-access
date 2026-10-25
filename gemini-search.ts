@@ -707,11 +707,17 @@ async function searchWithConfiguredRouting(
 		: callerOptions;
 	const timedOut = () => deadline?.aborted === true && callerOptions.signal?.aborted !== true;
 	// Availability checks, Pi auth, and cookie scans ignore the signal, so race each step against it (caller abort or deadline); abandoned work finishes in the background and is ignored.
-	const untilDeadline = <T>(work: Promise<T>): Promise<T> => !deadline ? work : Promise.race([work, new Promise<never>((_, reject) => {
+	const untilDeadline = <T>(work: Promise<T>): Promise<T> => {
+		if (!deadline) return work;
 		const signal = options.signal!;
-		if (signal.aborted) reject(signal.reason);
-		else signal.addEventListener("abort", () => reject(signal.reason), { once: true });
-	})]);
+		let onAbort = () => {};
+		const aborted = new Promise<never>((_, reject) => {
+			onAbort = () => reject(signal.reason);
+			if (signal.aborted) onAbort();
+			else signal.addEventListener("abort", onAbort, { once: true });
+		});
+		return Promise.race([work, aborted]).finally(() => signal.removeEventListener("abort", onAbort));
+	};
 	const diagnostics: string[] = [];
 	let firstWeak: AttributedSearchResponse | undefined;
 	for (const provider of routing.providers) {
