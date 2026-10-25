@@ -113,7 +113,6 @@ function countMatches(terms: string[], text: string): number {
 	return terms.filter((term) => term.length > 3 ? lower.includes(term) : words.has(term)).length;
 }
 
-/** Ranks sentences by the claim's terms first and the search snippet's terms second. */
 function extractRelevantSpans(content: string, claim: string, snippet: string): Span[] {
 	const sentences: Span[] = [];
 	// A sentence ends at punctuation (plus closing quotes, brackets, emphasis or a [n] citation) followed by
@@ -134,7 +133,6 @@ function extractRelevantSpans(content: string, claim: string, snippet: string): 
 	addSentence(content.length);
 	const claimTerms = tokenize(claim);
 	const snippetTerms = tokenize(snippet);
-	if (claimTerms.length === 0 && snippetTerms.length === 0) return [];
 	return sentences
 		.map((sentence, index) => ({ sentence, index, claim: countMatches(claimTerms, sentence.text), snippet: countMatches(snippetTerms, sentence.text) }))
 		.filter((item) => item.claim + item.snippet > 0)

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { awaitWithAbort } from "./abortable.ts";
 import { activityMonitor } from "./activity.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
 import { getApiKey, getVersionedApiBase, fetchGeminiApi, isGatewayConfigured, isGeminiApiAvailable, redactGeminiApiResponse } from "./gemini-api.ts";
@@ -76,13 +77,10 @@ export type SearchProviderErrorKind =
 export interface SearchRoutingConfig {
 	providers: ResolvedSearchProvider[];
 	useCurrentModel?: boolean;
-	fallbackOn: Array<Extract<SearchProviderErrorKind, "transient" | "quota" | "network" | "invalid-response" | "unsupported"> | WeakResultKind>;
+	fallbackOn: Array<typeof VALID_ROUTING_KINDS[number]>;
 	/** Total budget for one routed search across every candidate, in milliseconds. */
 	timeoutMs?: number;
 }
-
-/** A successful response a route may still move past: no results and no answer (`empty`), or no result on a requested domain (`domain-miss`; an empty response also counts when a domain was requested). */
-export type WeakResultKind = "empty" | "domain-miss";
 
 export class SearchProviderError extends Error {
 	readonly provider: ResolvedSearchProvider;
@@ -287,13 +285,12 @@ export function parseProviderArgument(value: unknown): SearchProviderSelection |
 	if (normalized === "") return undefined;
 	let names: string[];
 	if (normalized.startsWith("[")) {
-		let parsed: unknown;
+		let parsed: unknown[];
 		try {
 			parsed = JSON.parse(normalized);
 		} catch {
 			throw new Error("provider must be a provider name or comma-separated names; the given value is not valid JSON");
 		}
-		if (!Array.isArray(parsed) || parsed.length === 0) return normalizeResolvedProviderList(parsed, "provider");
 		names = parsed.map(entry => String(entry).trim());
 	} else {
 		names = normalized.split(",").map(name => name.trim()).filter(Boolean);
@@ -303,7 +300,7 @@ export function parseProviderArgument(value: unknown): SearchProviderSelection |
 		}
 	}
 	if (names.some(name => name === "auto" || name === "all")) {
-		throw new Error('Search providers "auto" and "all" can\'t be combined with other names; pass one of them alone, or list only provider names');
+		throw new Error('"auto" and "all" cannot be combined with provider names');
 	}
 	const invalid = names.find(name => !RESOLVED_SEARCH_PROVIDERS.includes(name as ResolvedSearchProvider));
 	if (invalid !== undefined) throw unknown(invalid);
@@ -311,17 +308,17 @@ export function parseProviderArgument(value: unknown): SearchProviderSelection |
 }
 
 /** Validate the original arguments, before config can supply an implicit provider. */
-export function validateSearchModelOverride(provider: unknown, model: unknown, providerFromConfig = false): string | undefined {
+export function validateSearchModelOverride(provider: unknown, model: unknown): string | undefined {
 	if (model === undefined) return undefined;
 	if (typeof model !== "string" || !model.trim()) {
-		throw new Error("web_search model must be a non-empty string containing an exact server model ID");
+		throw new Error("model must be a non-empty model ID");
 	}
 	const selected = parseProviderArgument(provider);
-	if (providerFromConfig || selected === undefined || Array.isArray(selected) || selected === "auto" || selected === "all") {
-		throw new Error("web_search model requires an explicit single provider: openai, xai, mistral, or gemini (API only); omitted, auto, all, and provider lists are ambiguous");
+	if (selected === undefined || Array.isArray(selected) || selected === "auto" || selected === "all") {
+		throw new Error("model requires one explicit provider: openai, xai, mistral, or gemini (API only); omitted, auto, all, and provider lists are ambiguous");
 	}
 	if (!["openai", "xai", "mistral", "gemini"].includes(selected)) {
-		throw new Error(`web_search model is not supported for provider ${JSON.stringify(selected)}; use openai, xai, mistral, or gemini (API only)`);
+		throw new Error(`model is not supported for provider ${JSON.stringify(selected)}; use openai, xai, mistral, or gemini (API only)`);
 	}
 	assertSearchProviderSelectionAllowed(selected, "Requested provider");
 	return model.trim();
@@ -369,7 +366,7 @@ async function searchWithGemini(
 	if (options.model !== undefined) {
 		const result = await searchWithGeminiApi(query, options);
 		if (result) return result;
-		throw new Error("Gemini API search unavailable: an explicit model requires API-path authentication (API key, ADC, or gateway); browser cookies cannot honor it");
+		throw new Error("Gemini API search unavailable: an explicit model requires API-path authentication (API key, ADC, or gateway), not browser cookies");
 	}
 	const errors: string[] = [];
 
@@ -712,21 +709,17 @@ async function searchWithProviders(
 	};
 }
 
-/** Describes a successful response a route may move past; `fallback` says which fallbackOn kinds apply. */
-function weakResult(response: SearchResponse, domainFilter: string[] | undefined): { kind: WeakResultKind; empty: boolean; domainMiss: boolean } {
+/** A successful response a route may still move past: no results and no answer (`empty`), or no result on a requested domain (`domain-miss`). */
+function weakResult(response: SearchResponse, domainFilter: string[] | undefined): { empty: boolean; domainMiss: boolean } {
 	const empty = response.results.length === 0 && !response.answer.trim();
 	const wanted = (domainFilter ?? [])
 		.filter((domain) => !domain.trim().startsWith("-"))
 		.flatMap((domain) => normalizeDomain(domain) ?? []);
 	const domainMiss = wanted.length > 0 && !response.results.some((result) => {
-		try {
-			const host = new URL(result.url).hostname.toLowerCase();
-			return wanted.some((domain) => host === domain || host.endsWith(`.${domain}`));
-		} catch {
-			return false;
-		}
+		const host = URL.parse(result.url)?.hostname;
+		return host !== undefined && wanted.some((domain) => host === domain || host.endsWith(`.${domain}`));
 	});
-	return { kind: empty ? "empty" : "domain-miss", empty, domainMiss };
+	return { empty, domainMiss };
 }
 
 async function searchWithConfiguredRouting(
@@ -735,22 +728,11 @@ async function searchWithConfiguredRouting(
 	routing: SearchRoutingConfig,
 ): Promise<AttributedSearchResponse> {
 	const deadline = routing.timeoutMs ? AbortSignal.timeout(routing.timeoutMs) : undefined;
-	const options: FullSearchOptions = deadline
-		? { ...callerOptions, signal: callerOptions.signal ? AbortSignal.any([callerOptions.signal, deadline]) : deadline }
-		: callerOptions;
+	const signal = deadline && (callerOptions.signal ? AbortSignal.any([callerOptions.signal, deadline]) : deadline);
+	const options: FullSearchOptions = signal ? { ...callerOptions, signal } : callerOptions;
 	const timedOut = () => deadline?.aborted === true && callerOptions.signal?.aborted !== true;
 	// Availability checks, Pi auth, and cookie scans ignore the signal, so race each step against it (caller abort or deadline); abandoned work finishes in the background and is ignored.
-	const untilDeadline = <T>(work: Promise<T>): Promise<T> => {
-		if (!deadline) return work;
-		const signal = options.signal!;
-		let onAbort = () => {};
-		const aborted = new Promise<never>((_, reject) => {
-			onAbort = () => reject(signal.reason);
-			if (signal.aborted) onAbort();
-			else signal.addEventListener("abort", onAbort, { once: true });
-		});
-		return Promise.race([work, aborted]).finally(() => signal.removeEventListener("abort", onAbort));
-	};
+	const untilDeadline = <T>(work: Promise<T>): Promise<T> => awaitWithAbort(work, signal);
 	const diagnostics: string[] = [];
 	let firstWeak: AttributedSearchResponse | undefined;
 	for (const provider of routing.providers) {
@@ -776,7 +758,7 @@ async function searchWithConfiguredRouting(
 			const weak = weakResult(response, options.domainFilter);
 			const moveOn = (weak.empty && routing.fallbackOn.includes("empty")) || (weak.domainMiss && routing.fallbackOn.includes("domain-miss"));
 			if (!moveOn) return response;
-			diagnostics.push(`${provider} [${weak.kind}]`);
+			diagnostics.push(`${provider} [${weak.empty ? "empty" : "domain-miss"}]`);
 			firstWeak ??= response;
 		} catch (err) {
 			if (timedOut()) {
@@ -796,8 +778,6 @@ async function searchWithConfiguredRouting(
 }
 
 export async function search(query: string, options: FullSearchOptions = {}): Promise<AttributedSearchResponse> {
-	const model = validateSearchModelOverride(options.provider, options.model, options.providerFromConfig);
-	if (model !== undefined) options = { ...options, model };
 	const config = getSearchConfig();
 	const provider = options.provider === undefined || options.provider === "auto"
 		? config.searchProvider

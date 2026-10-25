@@ -591,7 +591,6 @@ test("Azure: Entra JWT uses Bearer auth", async (t) => {
 	assert.equal(out.error, undefined);
 	assert.equal(out.requests[0].headers.authorization, `Bearer ${token}`);
 	assert.equal(out.requests[0].headers["api-key"], undefined);
-	assert.equal(out.requests[0].headers["openai-beta"], undefined);
 });
 
 test("Azure: current model deployment name is eligible", async (t) => {

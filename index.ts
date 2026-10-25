@@ -1008,8 +1008,7 @@ export default function (pi: ExtensionAPI) {
 		const seen = new Set<string>();
 		const availableValues = new Set<string>();
 
-		const addModel = (provider: string, id: string) => {
-			const value = `${provider}/${id}`;
+		const addModel = (value: string) => {
 			if (seen.has(value)) return;
 			seen.add(value);
 			summaryModels.push({ value, label: value });
@@ -1018,14 +1017,11 @@ export default function (pi: ExtensionAPI) {
 		for (const model of summaryContext.modelRegistry.getAvailable()) {
 			if (!isModelInScope(model, summaryContext.scopedModels)) continue;
 			availableValues.add(`${model.provider}/${model.id}`);
-			addModel(model.provider, model.id);
+			addModel(`${model.provider}/${model.id}`);
 		}
 
-		const currentModelValue = summaryContext.model
-			? `${summaryContext.model.provider}/${summaryContext.model.id}`
-			: null;
-		if (summaryContext.model && currentModelValue && !seen.has(currentModelValue) && isModelInScope(summaryContext.model, summaryContext.scopedModels)) {
-			addModel(summaryContext.model.provider, summaryContext.model.id);
+		if (summaryContext.model && isModelInScope(summaryContext.model, summaryContext.scopedModels)) {
+			addModel(`${summaryContext.model.provider}/${summaryContext.model.id}`);
 		}
 
 		const configuredSummaryModel = readHelperModelKey("summaryModel");
@@ -1045,10 +1041,7 @@ export default function (pi: ExtensionAPI) {
 			if (!spec) return { summaryModels: [], defaultSummaryModel: configuredSummaryModel, preferredFallback: false };
 			// The curator groups choices by provider, so `current` must be concrete. Unavailable models stay listed so failures are visible.
 			defaultSummaryModel = `${spec.provider}/${spec.id}${spec.thinkingLevel ? `:${spec.thinkingLevel}` : ""}`;
-			if (!seen.has(defaultSummaryModel)) {
-				seen.add(defaultSummaryModel);
-				summaryModels.push({ value: defaultSummaryModel, label: defaultSummaryModel });
-			}
+			addModel(defaultSummaryModel);
 		} else {
 			for (const preferred of preferredDefaults) {
 				const model = findModelWithProviderRouting(summaryContext.modelRegistry, preferred.provider, preferred.id);

@@ -1,6 +1,5 @@
-import type { ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { complete, Api, Model, ProviderHeaders } from "@earendil-works/pi-ai/compat";
-import type { SummaryGenerationContext } from "./summary-review.ts";
+import { resolveThinkingLevel, type SummaryGenerationContext } from "./summary-review.ts";
 import { awaitWithAbort } from "./abortable.ts";
 import { findModelWithProviderRouting, isModelInScope, resolveHelperModelSelector, type SummaryThinkingLevel } from "./summary-model-scope.ts";
 
@@ -52,10 +51,8 @@ export async function rewriteSearchQuery(
 	if (signal.aborted) throw new Error("Aborted");
 	const compat = usesRegistryStreamSimple || usesRegistryComplete ? undefined : await awaitWithAbort(import("@earendil-works/pi-ai/compat"), signal);
 	if (signal.aborted) throw new Error("Aborted");
-	const requestedThinkingLevel = thinkingLevel
-		? (await awaitWithAbort(import("@earendil-works/pi-ai"), signal)).clampThinkingLevel(model, thinkingLevel as ModelThinkingLevel)
-		: undefined;
-	const reasoning = requestedThinkingLevel && requestedThinkingLevel !== "off" ? requestedThinkingLevel as ThinkingLevel : undefined;
+	const requestedThinkingLevel = await awaitWithAbort(resolveThinkingLevel(model, thinkingLevel), signal);
+	const reasoning = requestedThinkingLevel !== "off" ? requestedThinkingLevel : undefined;
 	const context = {
 		messages: [{
 			role: "user" as const,

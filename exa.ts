@@ -3,7 +3,7 @@ import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
+import { fetchWithCredentialRedirects, getWebSearchConfigPath, isRecord, resolveApiBaseUrl } from "./utils.ts";
 
 const EXA_API_BASE_URL = "https://api.exa.ai";
 const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
@@ -49,12 +49,6 @@ export interface ExaSearchOptions extends SearchOptions {
 }
 
 type McpParsedResult = { title: string; url: string; content: string; publishedDate?: string; author?: string };
-
-interface ResultMetadata {
-	publishedDate?: unknown;
-	author?: unknown;
-	entities?: unknown;
-}
 
 const MAX_LISTED_AUTHORS = 3;
 
@@ -168,10 +162,8 @@ function nonEmptyString(value: unknown): string | null {
 }
 
 function publicationProperties(entities: unknown): Record<string, unknown> | null {
-	if (!Array.isArray(entities)) return null;
-	const entity = entities.find(item => item && typeof item === "object" && (item as { type?: unknown }).type === "publication");
-	const properties = (entity as { properties?: unknown } | undefined)?.properties;
-	return properties && typeof properties === "object" ? properties as Record<string, unknown> : null;
+	const entity: unknown = Array.isArray(entities) ? entities.find(item => isRecord(item) && item.type === "publication") : undefined;
+	return isRecord(entity) && isRecord(entity.properties) ? entity.properties : null;
 }
 
 function listAuthors(names: string[]): string | null {
@@ -180,32 +172,16 @@ function listAuthors(names: string[]): string | null {
 	return names.length > MAX_LISTED_AUTHORS ? `${listed} et al.` : listed;
 }
 
-function publicationAuthors(properties: Record<string, unknown> | null): string | null {
-	if (!Array.isArray(properties?.authors)) return null;
-	return listAuthors(properties.authors
-		.map(author => nonEmptyString((author as { name?: unknown } | null)?.name))
-		.filter((name): name is string => name !== null));
-}
-
-// Exa's top-level `author` joins every paper author with ", ".
-function shortenAuthorField(value: unknown): string | null {
-	const author = nonEmptyString(value);
-	return author ? listAuthors(author.split(", ").map(name => name.trim()).filter(Boolean)) : null;
-}
-
-/**
- * One line of the date, author and, for Exa's `publication` category, the paper's
- * citation count and DOI. Exa returns these alongside each result; without them an
- * agent cannot tell a 1974 paper from a 2024 one or judge how established it is.
- */
-function formatResultMetadata(item: ResultMetadata): string {
+/** One line of the date, authors and, for Exa's `publication` category, the citation count and DOI. */
+function formatResultMetadata(item: { publishedDate?: string; author?: string; entities?: unknown }): string {
 	const paper = publicationProperties(item.entities);
 	const parts: string[] = [];
-	const date = nonEmptyString(item.publishedDate)?.slice(0, 10)
-		?? nonEmptyString(paper?.date)?.slice(0, 10)
+	const date = (nonEmptyString(item.publishedDate) ?? nonEmptyString(paper?.date))?.slice(0, 10)
 		?? (typeof paper?.year === "number" ? String(paper.year) : null);
 	if (date) parts.push(`Published: ${date}`);
-	const authors = publicationAuthors(paper) ?? shortenAuthorField(item.author);
+	const paperAuthors = Array.isArray(paper?.authors) ? paper.authors.flatMap(author => nonEmptyString(isRecord(author) ? author.name : null) ?? []) : [];
+	// Exa's top-level `author` joins every paper author with ", ".
+	const authors = listAuthors(paperAuthors) ?? listAuthors(nonEmptyString(item.author)?.split(", ").map(name => name.trim()).filter(Boolean) ?? []);
 	if (authors) parts.push(`Authors: ${authors}`);
 	if (typeof paper?.citationCount === "number") parts.push(`Citations: ${paper.citationCount}`);
 	const doi = nonEmptyString(paper?.doi);

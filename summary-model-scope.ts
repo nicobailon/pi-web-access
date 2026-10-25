@@ -44,7 +44,7 @@ export function isModelInScope(model: ModelLike, scopedModels: ReadonlyArray<{ m
 	return scopedModels.length === 0 || scopedModels.some(scoped => scoped.model.provider === model.provider && scoped.model.id === model.id);
 }
 
-export function splitThinkingSuffix(value: string): { value: string; thinkingLevel?: SummaryThinkingLevel } {
+function splitThinkingSuffix(value: string): { value: string; thinkingLevel?: SummaryThinkingLevel } {
 	const index = value.lastIndexOf(":");
 	if (index < 0) return { value };
 	const suffix = value.slice(index + 1);

@@ -2,6 +2,7 @@
 import type { ClassifierContext } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import type { ClaimAssessment } from "./source-check.ts";
+import { isRecord } from "./utils.ts";
 
 const LABELS = ["supported", "contradicted", "not_addressed"] as const;
 type Label = typeof LABELS[number];
@@ -10,7 +11,7 @@ type Label = typeof LABELS[number];
 const VERDICT_INSTRUCTIONS = "Judge only from the passages. supported: a passage clearly states the claim or something that directly implies it. contradicted: a passage clearly states the opposite or an incompatible fact. not_addressed: anything else, including passages on the topic that do not settle the claim, weaker or stronger statements, another product or version, and rumors.";
 const EVIDENCE_INSTRUCTIONS = "Which passage id best justifies the verdict? Answer none if the verdict is not_addressed.";
 
-/** Pi classifier references whose two thresholds were measured on the claim fixtures; only these are accepted. */
+/** The only Pi classifier references accepted. */
 export const CLAIM_JUDGE_MODELS = {
 	"cloudflare-workers-ai/@cf/cloudflare/clef": { supported: 0.85, contradicted: 0.87 },
 	"openrouter/cloudflare/clef": { supported: 0.85, contradicted: 0.87 },
@@ -49,10 +50,6 @@ const choice = (instructions: string, labels: readonly string[]) => ({
 	criteria: Object.fromEntries(labels.map((label) => [label, null])) as unknown as Record<string, string>,
 });
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function invalid(reason: string): never {
 	throw new Error(`the response is invalid: ${reason}`);
 }
@@ -68,8 +65,8 @@ function verdictProbabilities(answer: Record<string, unknown>): Record<Label, nu
 	const keys = Object.keys(probabilities);
 	if (keys.length !== LABELS.length || !LABELS.every((label) => keys.includes(label))) invalid("verdict probabilities do not match the labels");
 	const values = LABELS.map((label) => probabilities[label]);
-	if (!values.every((value) => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1)) invalid("verdict probabilities must be numbers from 0 to 1");
-	const sum = (values as number[]).reduce((total, value) => total + value, 0);
+	if (!values.every((value): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1)) invalid("verdict probabilities must be numbers from 0 to 1");
+	const sum = values.reduce((total, value) => total + value, 0);
 	if (Math.abs(sum - 1) > PROBABILITY_SUM_TOLERANCE) invalid("verdict probabilities do not sum to 1");
 	return probabilities as Record<Label, number>;
 }
@@ -88,9 +85,8 @@ export async function judgeClaim(
 ): Promise<ClaimJudgment> {
 	const sent: JudgePassage[] = [];
 	for (const passage of passages.slice(0, MAX_PASSAGES)) {
-		const entry = { id: passage.id, source: passage.source, text: passage.text };
-		if (Buffer.byteLength(JSON.stringify({ claim, passages: [...sent, entry] }), "utf8") > MAX_STATE_BYTES) break;
-		sent.push(entry);
+		if (Buffer.byteLength(JSON.stringify({ claim, passages: [...sent, passage] }), "utf8") > MAX_STATE_BYTES) break;
+		sent.push(passage);
 	}
 	const omitted = passages.length - sent.length;
 	const failed = (reason: string): ClaimJudgment => ({
@@ -140,8 +136,7 @@ export async function judgeClaim(
 		clearTimeout(timer);
 	}
 
-	const thresholds = CLAIM_JUDGE_MODELS[model];
-	const verdict = evidenceChoice === "none" ? undefined : (["supported", "contradicted"] as const).find((label) => probabilities[label] >= thresholds[label]);
+	const verdict = evidenceChoice === "none" ? undefined : (["supported", "contradicted"] as const).find((label) => probabilities[label] >= CLAIM_JUDGE_MODELS[model][label]);
 	const scores = LABELS.map((label) => `${label} ${probabilities[label].toFixed(2)}`).join(", ");
 	const leftOut = omitted > 0 ? ` ${omitted} passage${omitted === 1 ? " was" : "s were"} left out to fit the request limit.` : "";
 	return {

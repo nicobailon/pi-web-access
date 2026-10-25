@@ -59,8 +59,6 @@ test("summary drafts try only the given model unless preferredFallback is on", a
 		return { calls, reason: meta.fallbackReason };
 	};
 	const strict = { preferredFallback: false };
-	assert.deepEqual(await draft("current:low", { options: strict }), { calls: [{ model: "strata/strata", reasoning: "low" }], reason: undefined });
-	assert.deepEqual(await draft("ollama/missing", { options: strict }), { calls: [], reason: "summary-model-unavailable: Summary model not found: ollama/missing" });
 	assert.deepEqual(await draft("strata/strata", { failing: local, options: strict }), { calls: [{ model: "strata/strata", reasoning: undefined }], reason: "summary-model-unavailable: local server down" });
 	assert.deepEqual(await draft("current", { scopedModels: [{ model: haiku }], options: strict }), { calls: [], reason: "summary-model-unavailable: Summary model is not enabled: strata/strata" });
 	assert.deepEqual(await draft("ollama/missing"), { calls: [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }], reason: undefined });

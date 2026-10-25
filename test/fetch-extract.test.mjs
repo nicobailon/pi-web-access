@@ -19,7 +19,7 @@ const extractConfig = { fetch: { allowedModes: ["readable", "extract"] } };
 // The config path is fixed per process, so each scenario runs in its own child. Pages /a and /b are plain text and
 // /fees.pdf is a PDF; the Clairic reply is picked by which page is in the request.
 // Pi supplies the Cloudflare credential through ctx.modelRegistry; `setUp: false` fakes a Pi without it.
-function runFetch(config, calls, replies = {}, { setUp = true } = {}) {
+function runFetch(config, calls, replies = {}, { setUp = true, fails = false } = {}) {
 	const agentDir = mkdtempSync(join(tmpdir(), "pi-web-access-fetch-extract-"));
 	if (config !== undefined) writeFileSync(join(agentDir, "web-search.json"), JSON.stringify(config) + "\n", "utf8");
 	const env = { ...process.env, PI_CODING_AGENT_DIR: agentDir, TMPDIR: agentDir, XDG_CONFIG_HOME: "", HOME: join(agentDir, "home"), USERPROFILE: join(agentDir, "home"), CALLS: JSON.stringify(calls), REPLIES: JSON.stringify(replies), CF_SET_UP: setUp ? "1" : "" };
@@ -67,7 +67,9 @@ function runFetch(config, calls, replies = {}, { setUp = true } = {}) {
 		encoding: "utf8",
 		env,
 	});
-	return child.status === 0 ? { ...JSON.parse(child.stdout.trim().split("\n").at(-1)), child } : { child };
+	if (fails) return child;
+	assert.equal(child.status, 0, child.stderr);
+	return JSON.parse(child.stdout.trim().split("\n").at(-1));
 }
 
 const clairic = (answers) => ({ body: { success: true, result: { model: "clairic", answers, truncated: false } } });
@@ -82,7 +84,6 @@ test("extract sends the page and mapped fields to Clairic and shows confident ty
 			dates: { type: "list", value: ["2026-10-27"], confidence: 0.9 },
 		}),
 	});
-	assert.equal(run.child.status, 0, run.child.stderr);
 	assert.ok(run.properties.includes("fields"));
 	assert.ok(run.modes.includes("extract"));
 	assert.equal(run.clairicRequests.length, 1);
@@ -121,7 +122,6 @@ test("low confidence, a wrong type, an impossible date or time, an empty or nega
 			coupon: { type: "text", value: null, guess: "SAVE10", confidence: 0.99, p_null: 0.99 },
 		}),
 	});
-	assert.equal(run.child.status, 0, run.child.stderr);
 	assert.match(run.results[0].text, /\ninvoice: uncertain \(guess INV-1, 0\.55\)\ndue: uncertain \(guess Oct 27, 0\.99\)\nitems: uncertain \(guess 2\.5, 0\.99\)\nshipped: uncertain \(guess 2026-13-45, 0\.99\)\ncloses: uncertain \(guess 25:00, 0\.99\)\nstarts: uncertain \(guess 2026-02-30T10:00, 0\.99\)\nnote: uncertain \(guess  , 0\.99\)\nwait: uncertain \(guess -5, 0\.99\)\ngate: uncertain \(guess B12\)\ncoupon: not on the page\n/);
 });
 
@@ -129,7 +129,6 @@ test("a PDF is extracted from its text, not from the saved-file notice", () => {
 	const run = runFetch({ ...extractConfig, pdf: { provider: "unpdf" }, fetchRouting: { providers: ["http"] } }, [{ url: PAGE_PDF, mode: "extract", fields: { fee: "number" } }], {
 		pdf: clairic({ fee: { type: "number", value: 42, confidence: 0.99 } }),
 	});
-	assert.equal(run.child.status, 0, run.child.stderr);
 	const { state } = JSON.parse(run.clairicRequests[0].body);
 	assert.match(state, /The annual fee is 42 dollars\./);
 	assert.doesNotMatch(state, /PDF extracted and saved/);
@@ -148,7 +147,6 @@ test("invalid or misplaced fields, and auth with extract, fail before any page f
 		{ url: PAGE_A, mode: "readable", fields: { price: "number" } },
 		{ url: PAGE_A, mode: "extract", fields: { price: "number" }, auth: true },
 	]);
-	assert.equal(run.child.status, 0, run.child.stderr);
 	assert.deepEqual(run.results.map((result) => result.text), [
 		'Error: field name "bad name" must be 1 to 64 letters, digits, or underscores.',
 		'Error: field price has unknown type "money"; use text, number, integer, date, time, datetime, duration, duration.<seconds|minutes|hours|days|weeks|months|years>, list, list.number, or list.date.',
@@ -163,11 +161,10 @@ test("a long value is cut on its own, and the whole result is cut at maxInlineCo
 	const long = "word ".repeat(400).trim();
 	const reply = { a: clairic({ note: { type: "text", value: long, confidence: 0.99 }, total: { type: "number", value: 7, confidence: 0.99 } }) };
 	const run = runFetch(extractConfig, [{ url: PAGE_A, mode: "extract", fields: { note: "text", total: "number" } }], reply);
-	assert.equal(run.child.status, 0, run.child.stderr);
 	assert.match(run.results[0].text, /\nnote: (word ){200}… \[1999 characters; the rest is in the stored page\] \(0\.99\)\ntotal: 7 \(0\.99\)\n/);
 	assert.equal(run.results[0].details.extractions[0].fields.note.value, long);
 	const capped = runFetch({ ...extractConfig, maxInlineContentChars: 1000 }, [{ url: PAGE_A, mode: "extract", fields: { note: "text", total: "number" } }], reply);
-	assert.match(capped.results[0].text, /\[Results cut at 1000 characters; ask for fewer fields or URLs, or read a stored page with get_search_content\.\]/);
+	assert.match(capped.results[0].text, /\[Results cut at 1000 characters; ask for fewer fields or URLs\.\]/);
 });
 
 test("a failed extraction is shown per page without the credential, and the fetched pages stay stored", () => {
@@ -175,7 +172,6 @@ test("a failed extraction is shown per page without the credential, and the fetc
 		a: { status: 500, body: `${"x".repeat(190)}${CF_TOKEN} tail` },
 		b: clairic({ total: { type: "number", value: null, guess: null, confidence: 0.99 } }),
 	});
-	assert.equal(run.child.status, 0, run.child.stderr);
 	const [result] = run.results;
 	assert.match(result.text, /\nExtraction failed: Cloudflare Workers AI returned HTTP 500: x{190}\[redacted\]\n/);
 	assert.match(result.text, /\ntotal: not on the page\n/);
@@ -187,7 +183,6 @@ test("a failed extraction is shown per page without the credential, and the fetc
 
 test("without Cloudflare set up in Pi each page reports it and Clairic is not called", () => {
 	const run = runFetch(extractConfig, [{ url: PAGE_A, mode: "extract", fields: { total: "number" } }], {}, { setUp: false });
-	assert.equal(run.child.status, 0, run.child.stderr);
 	const [result] = run.results;
 	assert.match(result.text, /\nExtraction failed: Cloudflare Workers AI is not set up in Pi; set CLOUDFLARE_API_KEY and CLOUDFLARE_ACCOUNT_ID\n/);
 	assert.deepEqual([run.pageFetches, run.clairicRequests.length], [1, 0]);
@@ -197,13 +192,12 @@ test("without Cloudflare set up in Pi each page reports it and Clairic is not ca
 
 test("extract is offered only when fetch.allowedModes lists it, and cannot be the default mode", () => {
 	const byDefault = runFetch(undefined, [{ url: PAGE_A, mode: "extract", fields: { total: "number" } }]);
-	assert.equal(byDefault.child.status, 0, byDefault.child.stderr);
 	assert.ok(!byDefault.properties.includes("fields"));
 	assert.match(byDefault.results[0].text, /Fetch mode "extract" is disabled by fetch\.allowedModes/);
 	assert.deepEqual([byDefault.pageFetches, byDefault.clairicRequests.length], [0, 0]);
-	const asDefault = runFetch({ fetch: { allowedModes: ["extract"], defaultMode: "extract" } }, []);
-	assert.notEqual(asDefault.child.status, 0);
-	assert.match(asDefault.child.stderr, /fetch\.defaultMode in .*web-search\.json cannot be "extract"/);
+	const asDefault = runFetch({ fetch: { allowedModes: ["extract"], defaultMode: "extract" } }, [], {}, { fails: true });
+	assert.notEqual(asDefault.status, 0);
+	assert.match(asDefault.stderr, /fetch\.defaultMode in .*web-search\.json cannot be "extract"/);
 });
 
 const setUpRegistry = { async getProviderAuth() { return { auth: { apiKey: CF_TOKEN }, env: { CLOUDFLARE_ACCOUNT_ID: "acct-1" } }; } };
@@ -234,8 +228,8 @@ test("with an AI Gateway id in Pi, Clairic is called through that gateway", asyn
 		gateways.push(init.headers["cf-aig-gateway-id"]);
 		return Response.json({ success: true, result: { answers: { total: { type: "number", value: 1, confidence: 0.99 } } } });
 	});
-	const withGateway = { async getProviderAuth(provider) { return provider === "cloudflare-ai-gateway" ? { auth: {}, env: { CLOUDFLARE_ACCOUNT_ID: "acct-1", CLOUDFLARE_GATEWAY_ID: "team-gw" } } : setUpRegistry.getProviderAuth(); } };
+	const withGateway = { async getProviderAuth(provider) { return provider === "cloudflare-ai-gateway" ? { auth: {}, env: { CLOUDFLARE_GATEWAY_ID: "team-gw" } } : setUpRegistry.getProviderAuth(); } };
 	await extractPageFields("Alpha", { total: { type: "number" } }, { modelRegistry: withGateway });
-	await extractPageFields("Alpha", { total: { type: "number" } }, { modelRegistry: { async getProviderAuth(provider) { return provider === "cloudflare-ai-gateway" ? undefined : setUpRegistry.getProviderAuth(); } } });
+	await extractPageFields("Alpha", { total: { type: "number" } }, { modelRegistry: setUpRegistry });
 	assert.deepEqual(gateways, ["team-gw", undefined]);
 });

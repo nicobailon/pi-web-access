@@ -113,17 +113,10 @@ export function isOpenAISubscriptionModelSelected(ctx?: Pick<ExtensionContext, "
 export function isCurrentModelHostedSearchEligible(ctx?: Pick<ExtensionContext, "model">): boolean {
 	const model = ctx?.model;
 	if (!model) return false;
-	if (!/^gpt-/iu.test(model.id)) {
-		// Azure model IDs are deployment names, which need not use a GPT prefix.
-		try {
-			if (!isAzureResponsesUrl(new URL(model.baseUrl))) return false;
-		} catch {
-			return false;
-		}
-	}
 	try {
 		resolveCurrentModelSearchTarget(model);
-		return true;
+		// Azure model IDs are deployment names, which need not use a GPT prefix.
+		return /^gpt-/iu.test(model.id) || isAzureResponsesUrl(new URL(model.baseUrl));
 	} catch {
 		return false;
 	}
@@ -773,11 +766,7 @@ async function runOpenAISearch(
 	);
 
 	if (isAzure) {
-		requestHeaders.delete("Authorization");
-		requestHeaders.delete("api-key");
-		requestHeaders.delete("OpenAI-Beta");
-		requestHeaders.delete("chatgpt-account-id");
-		requestHeaders.delete("originator");
+		for (const name of ["Authorization", "api-key", "OpenAI-Beta", "chatgpt-account-id", "originator"]) requestHeaders.delete(name);
 		if (decodeJwtPayload(auth.apiKey)) {
 			requestHeaders.set("Authorization", `Bearer ${auth.apiKey}`);
 		} else {

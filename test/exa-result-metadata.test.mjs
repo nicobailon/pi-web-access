@@ -1,34 +1,23 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { afterEach, test } from "node:test";
 
-const exaModuleUrl = new URL("../exa.ts", import.meta.url).href;
+process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "pi-web-access-exa-metadata-"));
+delete process.env.EXA_BASE_URL;
+delete process.env.EXA_API_KEY;
+const { searchWithExa } = await import(new URL("../exa.ts", import.meta.url).href);
+const originalFetch = globalThis.fetch;
+afterEach(() => {
+	globalThis.fetch = originalFetch;
+	delete process.env.EXA_API_KEY;
+});
 
-async function searchWith(responseBody, { keyed = true, args = ["query", {}] } = {}) {
-	const home = await mkdtemp(join(tmpdir(), "pi-web-access-exa-metadata-"));
-	try {
-		const env = { ...process.env, HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home };
-		delete env.EXA_BASE_URL;
-		delete env.XDG_CONFIG_HOME;
-		if (keyed) env.EXA_API_KEY = "exa-metadata-key";
-		else delete env.EXA_API_KEY;
-		const child = spawnSync(process.execPath, ["--input-type=module"], {
-			input: `
-				globalThis.fetch = async () => new Response(${JSON.stringify(responseBody)}, { status: 200, headers: { "content-type": "application/json" } });
-				const { searchWithExa } = await import(${JSON.stringify(exaModuleUrl)});
-				console.log(JSON.stringify(await searchWithExa(...${JSON.stringify(args)})));
-			`,
-			encoding: "utf8",
-			env,
-		});
-		assert.equal(child.status, 0, child.stderr);
-		return JSON.parse(child.stdout.trim());
-	} finally {
-		await rm(home, { recursive: true, force: true });
-	}
+function searchWith(responseBody, { keyed = true, args = ["query", {}] } = {}) {
+	if (keyed) process.env.EXA_API_KEY = "exa-metadata-key";
+	globalThis.fetch = async () => new Response(responseBody, { status: 200, headers: { "content-type": "application/json" } });
+	return searchWithExa(...args);
 }
 
 const paper = {

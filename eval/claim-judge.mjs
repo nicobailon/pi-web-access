@@ -22,7 +22,6 @@ const modelRegistry = new ModelRegistry(await ModelRuntime.create());
 
 const LABELS = ["supported", "contradicted", "not_addressed"];
 // Fixtures marked with a known limit are reported on their own and never count toward the pass or wrong numbers.
-const LIMIT_NAMES = { "sibling-product": "sibling products" };
 const fixtureSets = ["calibration", "holdout"].map((name) => ({
 	name,
 	claims: JSON.parse(readFileSync(new URL(`./fixtures/claims-${name}.json`, import.meta.url), "utf8")),
@@ -38,9 +37,8 @@ for (const model of models) {
 		const runs = [];
 		for (let round = 0; round < repeat; round++) {
 			for (const fixture of claims) {
-				const passages = fixture.passages.map((passage) => ({ id: passage.id, source: passage.source, text: passage.text }));
 				const started = performance.now();
-				const { assessment, error, probabilities } = await judgeClaim(model, fixture.claim, passages, modelRegistry);
+				const { assessment, error, probabilities } = await judgeClaim(model, fixture.claim, fixture.passages, modelRegistry);
 				const ms = performance.now() - started;
 				runs.push({ round, fixture, assessment, error, ms, probabilities });
 			}
@@ -75,9 +73,8 @@ for (const model of models) {
 		}
 		const latency = runs.map((run) => run.ms).sort((a, b) => a - b);
 		const errors = runs.filter((run) => run.error).length;
-		const scoredClaims = claims.filter((fixture) => !fixture.limit).length;
 
-		console.log(`\n${model} · ${name} (${scoredClaims} scored claims × ${repeat} rounds)`);
+		console.log(`\n${model} · ${name} (${scored.length / repeat} scored claims × ${repeat} rounds)`);
 		console.log(`  pass ${passed}/${scored.length}  wrong supported ${wrongSupported}  wrong contradicted ${wrongContradicted}  errors ${errors}`);
 		console.log(`  highest wrong probability: supported ${highestWrong.supported.toFixed(2)}, contradicted ${highestWrong.contradicted.toFixed(2)}`);
 		console.log(`  evidence matched ${evidenceMatched}/${verdicts}${repeat > 1 ? `  largest change across repeats ${drift.toFixed(2)}` : ""}`);
@@ -85,7 +82,7 @@ for (const model of models) {
 		for (const failure of failures) console.log(`  FAIL ${failure}`);
 		for (const limit of new Set(runs.map((run) => run.fixture.limit).filter(Boolean))) {
 			const limited = runs.filter((run) => run.fixture.limit === limit);
-			console.log(`  KNOWN LIMIT: ${LIMIT_NAMES[limit] ?? limit} (${limited.length} results, not counted above)`);
+			console.log(`  KNOWN LIMIT: ${limit} (${limited.length} results, not counted above)`);
 			for (const run of limited) {
 				const want = wanted(run.fixture);
 				console.log(`    ${run.assessment.status === want ? "ok  " : "MISS"} ${describe(run, want)}`);

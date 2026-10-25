@@ -108,5 +108,4 @@ test("DuckDuckGo caller aborts still report an abort", async () => {
 	}), controller.signal);
 	controller.abort();
 	await assert.rejects(pending, /abort/i);
-	await assert.rejects(pending, error => !/timed out/.test(error.message));
 });

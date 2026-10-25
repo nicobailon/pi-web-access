@@ -33,7 +33,7 @@ test("provider tool arguments accept names, lists, and JSON arrays, and reject a
 		{ value: null }, { value: null },
 	]);
 	assert.match(output[10].error, /^Unknown search provider "bogus"\. Use auto, all, or one or more comma-separated names: openai, brave, .*kagi.*, linkup$/);
-	const combined = { error: 'Search providers "auto" and "all" can\'t be combined with other names; pass one of them alone, or list only provider names' };
+	const combined = { error: '"auto" and "all" cannot be combined with provider names' };
 	assert.deepEqual(output[11], combined);
 	assert.deepEqual(output[12], { error: "provider must not contain duplicates: brave" });
 	assert.deepEqual(output[13], { error: "provider must be a provider name or comma-separated names; the given value is not valid JSON" });

@@ -1,5 +1,5 @@
 // Some models send array arguments as a JSON string, for example
-// `provider: "[\"parallel-mcp\"]"`, which fails schema validation before the tool
+// `queries: "[\"a\", \"b\"]"`, which fails schema validation before the tool
 // runs. Parse such strings back into arrays of strings, reject strings that start
 // with "[" but are not valid JSON, and leave anything else as is.
 export function parseStringifiedArrays(args: unknown, keys: readonly string[]): unknown {

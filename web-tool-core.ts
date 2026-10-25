@@ -25,7 +25,7 @@ import {
 } from "./gemini-search.ts";
 import { isOpenAISearchAvailable } from "./openai-search.ts";
 import type { SearchResult } from "./perplexity.ts";
-import { getWebSearchConfigPath, runWithProxy } from "./utils.ts";
+import { getWebSearchConfigPath, isRecord, runWithProxy } from "./utils.ts";
 import { deleteResult, generateId, getResult, storeResult, type QueryResultData, type StoredSearchData } from "./storage.ts";
 import {
 	buildResearchArtifact,
@@ -174,9 +174,7 @@ export function resolveFetchModeConfig(config: WebSearchConfig): FetchModeConfig
 
 export function resolveClaimJudgeModel(config: WebSearchConfig): ClaimJudgeModel | undefined {
 	if (config.sourceCheck === undefined) return undefined;
-	const judgeModel = config.sourceCheck && typeof config.sourceCheck === "object" && !Array.isArray(config.sourceCheck)
-		? (config.sourceCheck as { judgeModel?: unknown }).judgeModel
-		: undefined;
+	const judgeModel = isRecord(config.sourceCheck) ? config.sourceCheck.judgeModel : undefined;
 	if (typeof judgeModel !== "string" || !Object.hasOwn(CLAIM_JUDGE_MODELS, judgeModel)) {
 		throw new Error(`sourceCheck.judgeModel in ${WEB_SEARCH_CONFIG_PATH} must be one of ${Object.keys(CLAIM_JUDGE_MODELS).map((model) => `"${model}"`).join(", ")}`);
 	}
@@ -431,7 +429,6 @@ function formatSourceCheckResult(artifact: ResearchArtifact, getSearchContentToo
 	}
 	if (artifact.sources.length > 0) {
 		lines.push("## Sources");
-		// Passages go inline so the caller can judge the claim without a second call; the cap keeps the result small.
 		let budget = 4_000;
 		let omitted = 0;
 		for (const source of artifact.sources) {
@@ -440,12 +437,11 @@ function formatSourceCheckResult(artifact: ResearchArtifact, getSearchContentToo
 				const flat = passage.text.replace(/\s+/g, " ").trim();
 				// Drop a trailing high surrogate so the cut never splits an emoji.
 				const text = flat.length > 400 ? `${flat.slice(0, 400).replace(/[\uD800-\uDBFF]$/, "")}…` : flat;
-				if (text.length > budget) {
-					omitted++;
-					continue;
+				if (text.length > budget) omitted++;
+				else {
+					budget -= text.length;
+					lines.push(`   - ${passage.passage_id}: ${text}`);
 				}
-				budget -= text.length;
-				lines.push(`   - ${passage.passage_id}: ${text}`);
 			}
 		}
 		if (omitted > 0) lines.push(`${omitted} more passage${omitted === 1 ? "" : "s"} in the artifact.`);
@@ -1067,15 +1063,16 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				...(authFetchProfile ? { authFetchProfile } : {}),
 			};
 			const fetchResults = await fetchAllContent(urlList, signal, fetchOptions(requestOptions, options.proxy));
+			// Reject image-as-payload results (direct images, video frames — they set mimeType and/or frames).
+			// A text result that merely attaches a thumbnail (YouTube analysis) stays answerable.
+			const textResults = mode === "answer" || mode === "extract"
+				? fetchResults.map(result => !result.error && (result.mimeType?.startsWith("image/") || result.frames?.length)
+					? { ...result, error: `${mode === "answer" ? "Page answer" : "Field extraction"} requires textual fetched content` }
+					: result)
+				: fetchResults;
 			const presentedResults = mode === "answer"
-				? await Promise.all(fetchResults.map(async result => {
+				? await Promise.all(textResults.map(async result => {
 					if (result.error) return result;
-					// Reject image-as-payload results (direct images, video frames — they
-					// set mimeType and/or frames). A text result that merely attaches a
-					// thumbnail (YouTube analysis) stays answerable.
-					if (result.mimeType?.startsWith("image/") || result.frames?.length) {
-						return { ...result, error: "Page answer requires textual fetched content" };
-					}
 					try {
 						if (!host.answerFromPage) throw new Error("this host cannot answer from fetched pages");
 						const answer = await host.answerFromPage({
@@ -1089,11 +1086,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 						return { ...result, error: `Page answer failed: ${err instanceof Error ? err.message : String(err)}` };
 					}
 				}))
-				: mode === "extract"
-					? fetchResults.map(result => !result.error && (result.mimeType?.startsWith("image/") || result.frames?.length)
-						? { ...result, error: "Field extraction requires textual fetched content" }
-						: result)
-					: fetchResults;
+				: textResults;
 			const extractLimit = pLimit(3);
 			const extractions = extractFields
 				? await Promise.all(presentedResults.map(result => result.error ? undefined : extractLimit(() => extractPageFields(result.content, extractFields!, { modelRegistry: ctx?.modelRegistry }, signal))))
@@ -1112,19 +1105,19 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			const structuredContent = fetchStructuredContent(storedContent ? responseId : null, presentedResults);
 
 			if (extractions) {
-				// A page that fetched but could not be extracted still counts as fetched: its content is stored.
 				let output = "## Extracted fields\n";
 				presentedResults.forEach((result, index) => {
 					output += `\n### ${result.title || result.url}\n`;
 					output += result.error ? `Error: ${result.error}\n` : formatPageExtraction(extractions[index]!);
 				});
-				// Extract rejects auth, so the pages are always stored.
 				const outputLimit = getMaxInlineContentChars();
-				if (output.length > outputLimit) output = `${output.slice(0, outputLimit)}\n\n[Results cut at ${outputLimit} characters; ask for fewer fields or URLs${getSearchContentEnabled ? `, or read a stored page with ${toolNames.getSearchContent}` : ""}.]\n`;
+				if (output.length > outputLimit) output = `${output.slice(0, outputLimit)}\n\n[Results cut at ${outputLimit} characters; ask for fewer fields or URLs.]\n`;
+				// Extract rejects auth, so the pages are always stored.
 				output += getSearchContentEnabled
 					? `\n---\nThe fetched pages are stored as responseId "${responseId}". Use ${toolNames.getSearchContent}({ responseId: "${responseId}", urlIndex: 0 }) to read the first one; urlIndex follows the order above.`
 					: "\n---\nContent retrieval is not registered.";
 				return {
+					// A page that fetched but could not be extracted still counts as fetched: its content is stored.
 					...(successful === 0 ? { isError: true } : {}),
 					content: [{ type: "text", text: output }],
 					structuredContent,

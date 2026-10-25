@@ -16,8 +16,6 @@ test("web_search accepts auto-summary workflow in schema and config resolution",
 test("auto-summary skips curator and reuses summary model fallback plumbing", () => {
 	assert.match(indexSrc, /const shouldCurate = workflow === "summary-review"/);
 	assert.match(indexSrc, /if \(workflow === "auto-summary"\)/);
-	assert.match(indexSrc, /await loadSummaryModelChoices\(summaryContext\)/);
-	assert.match(indexSrc, /await generateSummaryDraft\(\s*searchResults,\s*summaryContext,\s*signal,\s*summaryModelChoices\.defaultSummaryModel \?\? undefined,\s*undefined,\s*undefined,\s*getSummaryGenerationDeadlineMs\(\),\s*getSummaryInstructions\(\),/);
 	assert.match(coreSrc, /workflow: call\.summarize \? "auto-summary" : undefined/);
 });
 

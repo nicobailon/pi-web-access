@@ -41,7 +41,7 @@ Two sets of claims, each with 2–7 short passages labeled with their page title
 - **Calibration**: 33 claims written while building the judge ([`eval/fixtures/claims-calibration.json`](../eval/fixtures/claims-calibration.json)).
 - **Held-out**: 32 claims written blind by a separate agent that never saw the calibration set or any model output ([`eval/fixtures/claims-holdout.json`](../eval/fixtures/claims-holdout.json)). They cover negation, wrong numbers, wrong product or version, claims stronger than the evidence, word-overlap decoys, paraphrases with no shared words, old vs. new statements, and forum rumors.
 
-Each set has 8 cases where the page title matters: 2 about versions, 2 about plans or editions, 2 about sibling products, and 2 where only the title names the subject. The sibling-product cases are a known limit and are reported apart from the scores, leaving 61 scored claims.
+Each set has 8 cases where the page title matters: 2 about versions, 2 about plans or editions, 2 about sibling products, and 2 where only the title names the subject. The sibling-product cases are reported apart from the scores, leaving 61 scored claims.
 
 Every reference ran all 61 scored claims through Pi 3 times, and the claims closest to a threshold 10 times. Each threshold is `max(0.85, highest probability that reference gave that answer when it was wrong + 0.05)`, rounded up:
 
@@ -55,7 +55,7 @@ At these thresholds no reference gave a wrong verdict. Clef returned the same an
 
 **Page titles matter.** Without them, Clef answered `supported` at 0.88 for a v1 claim backed by a v2 docs page. With them, the version and plan cases are answered correctly.
 
-**Sibling products.** The 4 sibling-product fixture cases came back `unclear`. But the claim "Kestrel Agent runs on Windows." with the passage "Runs on Windows, macOS and Linux." from the page "Kestrel Dashboard — System requirements" got `supported` at about 0.98 from both models, with or without extra instructions. Treat products that share a brand name as a known miss.
+**Sibling products** (the known limit above). The 4 sibling-product fixture cases came back `unclear`. But the claim "Kestrel Agent runs on Windows." with the passage "Runs on Windows, macOS and Linux." from the page "Kestrel Dashboard — System requirements" got `supported` at about 0.98 from both models, with or without extra instructions.
 
 Two designs were measured on the first, title-free fixtures and rejected: Cloudflare's faster `clef-flash` (one wrong `supported` at 0.88), and asking about each passage separately (Clef judged an outdated passage alone as supporting the claim at 0.98).
 
@@ -65,6 +65,6 @@ Two designs were measured on the first, title-free fixtures and rejected: Cloudf
 PI_WEB_ACCESS_REAL_SEMANTIC=1 node eval/claim-judge.mjs --models cloudflare-workers-ai/@cf/cloudflare/clef,typesafe/jev-latest --repeat 3
 ```
 
-It calls the same judge code `source_check` uses through Pi's model registry with your Pi credentials, makes real billed requests, and refuses to run without `PI_WEB_ACCESS_REAL_SEMANTIC=1`. Without `--models` it runs every accepted reference. For each reference and fixture set it prints the pass count, wrong `supported` and `contradicted` verdicts, the highest wrong probability for each, how many verdicts cited an expected passage, latency, and the known-limit cases on their own.
+It calls the same judge code `source_check` uses through Pi's model registry with your Pi credentials, makes real billed requests, and refuses to run without `PI_WEB_ACCESS_REAL_SEMANTIC=1`. Without `--models` it runs every accepted reference.
 
 Run it without `--import ./test/isolate-env.mjs`: that test helper hides Pi's stored credentials.

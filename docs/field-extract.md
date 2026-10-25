@@ -22,7 +22,7 @@ It uses the Cloudflare credential Pi already has for its `cloudflare-workers-ai`
 
 To send the requests through a Cloudflare [AI Gateway](https://developers.cloudflare.com/ai-gateway/) for its logs, caching, rate limits or billing, give Pi a gateway id: set `CLOUDFLARE_GATEWAY_ID`, or store one with `/login cloudflare-ai-gateway`. Extract then adds the `cf-aig-gateway-id` header to the same Workers AI request, with the same key. A gateway that doesn't exist fails with Cloudflare's "Please configure AI Gateway in the Cloudflare dashboard". In testing, results through the `default` gateway matched direct calls, with about 30 ms added per page.
 
-`fields` is offered to the model only when extract is allowed, so the tool definition stays the same size for everyone else. `extract` cannot be `fetch.defaultMode`, because every call needs its own `fields`.
+`fields` is in the tool definition only when extract is allowed. `extract` cannot be `fetch.defaultMode`, because every call needs its own `fields`.
 
 Extract is available in Pi only, because it uses Pi's credentials. The MCP server's `fetch_content` offers `readable` and `raw`, not `extract`.
 
@@ -84,4 +84,4 @@ No value was reported extracted that was wrong, and no field that was on its pag
 PI_WEB_ACCESS_REAL_SEMANTIC=1 node eval/field-extract.mjs --repeat 3
 ```
 
-It loads your Pi model registry and uses Pi's `cloudflare-workers-ai` credential, calls the same extraction code `fetch_content` uses, makes real billed requests, and refuses to run without `PI_WEB_ACCESS_REAL_SEMANTIC=1`. For each fixture set it counts, across every round: correct, correct not-on-the-page, withheld, wrong extracted, wrong withheld, missed (a value reported as not on the page), and errors, plus the highest confidence of a wrong value and latency.
+It loads your Pi model registry and uses Pi's `cloudflare-workers-ai` credential, calls the same extraction code `fetch_content` uses, makes real billed requests, and refuses to run without `PI_WEB_ACCESS_REAL_SEMANTIC=1`. It prints the table's counts per fixture set, plus missed values (reported as not on the page), errors, and latency.

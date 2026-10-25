@@ -51,6 +51,10 @@ export function isLoopbackHostname(hostnameValue: string): boolean {
 		|| (isIP(normalized) === 4 && normalized.split(".", 1)[0] === "127");
 }
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function allowsHttpBaseUrls(): boolean {
 	const environmentValue = process.env.PI_WEB_ACCESS_ALLOW_HTTP_BASE_URLS;
 	if (environmentValue !== undefined) {
@@ -67,7 +71,7 @@ function allowsHttpBaseUrls(): boolean {
 	} catch (err) {
 		throw new Error(`Failed to parse ${path}: ${err instanceof Error ? err.message : String(err)}`);
 	}
-	const value = raw && typeof raw === "object" ? (raw as { allowHttpBaseUrls?: unknown }).allowHttpBaseUrls : undefined;
+	const value = isRecord(raw) ? raw.allowHttpBaseUrls : undefined;
 	if (value !== undefined && typeof value !== "boolean") throw new Error(`allowHttpBaseUrls in ${path} must be a boolean`);
 	return value === true;
 }

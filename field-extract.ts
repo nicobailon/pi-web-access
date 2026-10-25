@@ -1,7 +1,7 @@
 // fetch_content mode "extract": typed values read from a fetched page by Cloudflare's Clairic model.
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { redactCredential } from "./credential-source.ts";
-import { fetchWithCredentialRedirects } from "./utils.ts";
+import { fetchWithCredentialRedirects, isRecord } from "./utils.ts";
 
 const MAX_FIELDS = 16;
 const MAX_PAGE_CHARS = 200_000;
@@ -28,9 +28,8 @@ export type PageExtraction =
 	| { fields: Record<string, FieldResult>; cut: boolean }
 	| { error: string };
 
-/** Parses `{ name: "type" | "type: what to find" }` into Clairic field specs; throws on any invalid field. */
 export function parseExtractFields(fields: unknown): Record<string, FieldSpec> {
-	if (!fields || typeof fields !== "object" || Array.isArray(fields)) throw new Error("fields must be an object mapping names to types");
+	if (!isRecord(fields)) throw new Error("fields must be an object mapping names to types");
 	const entries = Object.entries(fields);
 	if (entries.length === 0 || entries.length > MAX_FIELDS) throw new Error(`fields must list 1 to ${MAX_FIELDS} fields`);
 	// No prototype, so a field named "__proto__" or "constructor" is an ordinary key.
@@ -43,13 +42,12 @@ export function parseExtractFields(fields: unknown): Record<string, FieldSpec> {
 		const instructions = colon === -1 ? "" : raw.slice(colon + 1).trim();
 		const [base, sub, extra] = type.split(".");
 		let spec: FieldSpec | undefined;
-		if (extra !== undefined) spec = undefined;
-		else if (sub === undefined && ["text", "number", "date", "time", "datetime", "duration"].includes(base)) spec = { type: base as FieldSpec["type"] };
+		if (sub === undefined && ["text", "number", "date", "time", "datetime", "duration"].includes(base)) spec = { type: base as FieldSpec["type"] };
 		else if (sub === undefined && base === "integer") spec = { type: "number", integer: true };
 		else if (sub === undefined && base === "list") spec = { type: "list", items: "text" };
 		else if (base === "duration" && DURATION_UNITS.includes(sub)) spec = { type: "duration", unit: sub };
 		else if (base === "list" && (sub === "number" || sub === "date")) spec = { type: "list", items: sub };
-		if (!spec) {
+		if (!spec || extra !== undefined) {
 			throw new Error(`field ${name} has unknown type "${type}"; use text, number, integer, date, time, datetime, duration, duration.<${DURATION_UNITS.join("|")}>, list, list.number, or list.date`);
 		}
 		specs[name] = instructions ? { ...spec, instructions } : spec;
@@ -69,10 +67,10 @@ function realTime(text: string): boolean {
 }
 
 /** Whether the value has the field's type; dates and times must also exist on the calendar and clock. */
-function matchesType(spec: FieldSpec | { type: ItemType }, value: unknown): boolean {
+function matchesType(spec: FieldSpec, value: unknown): boolean {
 	switch (spec.type) {
 		case "text": return typeof value === "string" && value.trim() !== "";
-		case "number": return typeof value === "number" && Number.isFinite(value) && (!(spec as FieldSpec).integer || Number.isInteger(value));
+		case "number": return typeof value === "number" && Number.isFinite(value) && (!spec.integer || Number.isInteger(value));
 		case "duration": return typeof value === "number" && Number.isFinite(value) && value >= 0;
 		case "date": return typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && realDate(value);
 		case "time": return typeof value === "string" && /^\d{2}:\d{2}(:\d{2})?$/.test(value) && realTime(value);
@@ -80,14 +78,14 @@ function matchesType(spec: FieldSpec | { type: ItemType }, value: unknown): bool
 			const match = typeof value === "string" ? /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2})?)(?:\.\d+)?(?:Z|[+-](\d{2}:\d{2}))?$/.exec(value) : null;
 			return match !== null && realDate(match[1]) && realTime(match[2]) && (match[3] === undefined || realTime(match[3]));
 		}
-		case "list": return Array.isArray(value) && value.every((item) => matchesType({ type: (spec as FieldSpec).items! }, item));
+		case "list": return Array.isArray(value) && value.every((item) => matchesType({ type: spec.items! }, item));
 	}
 }
 
-/** A value needs a valid confidence at the threshold to count as extracted; Clairic may send only p_null when nothing was found. */
 function fieldResult(spec: FieldSpec, answer: unknown): FieldResult {
-	if (!answer || typeof answer !== "object" || Array.isArray(answer)) throw new Error("the response is invalid: a field answer is missing");
-	const { value = null, confidence: rawConfidence } = answer as Record<string, unknown>;
+	if (!isRecord(answer)) throw new Error("the response is invalid: a field answer is missing");
+	// Clairic may send only p_null when nothing was found.
+	const { value = null, confidence: rawConfidence } = answer;
 	// A null value is Clairic's "not on the page" verdict; the guess it still sends then is a fallback, not evidence.
 	if (value === null) return { status: "null" };
 	const confidence = typeof rawConfidence === "number" && rawConfidence >= 0 && rawConfidence <= 1 ? rawConfidence : undefined;
@@ -129,18 +127,11 @@ async function runClairic(body: string, modelRegistry: Pick<ModelRegistry, "getP
 	} catch (err) {
 		throw new Error(redactCredential(err instanceof Error ? err.message : String(err), apiKey));
 	}
-	const reply = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : undefined;
-	if (reply?.success !== true || !reply.result || typeof reply.result !== "object" || Array.isArray(reply.result)) {
-		throw new Error("Cloudflare Workers AI reported an unsuccessful response");
-	}
-	return reply.result as Record<string, unknown>;
+	if (!isRecord(parsed) || parsed.success !== true || !isRecord(parsed.result)) throw new Error("Cloudflare Workers AI reported an unsuccessful response");
+	return parsed.result;
 }
 
-/**
- * Asks Clairic for the fields on one page. Reports a value as extracted only when its confidence reaches the
- * threshold and it matches its type; every provider failure, including Cloudflare not being set up in Pi, becomes
- * `{ error }`. A caller abort is rethrown.
- */
+/** Provider failures, including Cloudflare not being set up in Pi, become `{ error }`; a caller abort is rethrown. */
 export async function extractPageFields(
 	page: string,
 	fields: Record<string, FieldSpec>,
@@ -155,20 +146,17 @@ export async function extractPageFields(
 		fields,
 		reference_date: referenceDate,
 	});
-	const timeout = new AbortController();
-	const timer = setTimeout(() => timeout.abort(), TIMEOUT_MS);
+	const timeout = AbortSignal.timeout(TIMEOUT_MS);
 	try {
-		const result = await runClairic(body, context.modelRegistry, signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal);
+		const result = await runClairic(body, context.modelRegistry, signal ? AbortSignal.any([signal, timeout]) : timeout);
 		const answers = result.answers;
-		if (!answers || typeof answers !== "object" || Array.isArray(answers)) throw new Error("the response is invalid: answers are missing");
-		const results = Object.fromEntries(Object.entries(fields).map(([name, spec]) => [name, fieldResult(spec, Object.hasOwn(answers, name) ? (answers as Record<string, unknown>)[name] : undefined)]));
+		if (!isRecord(answers)) throw new Error("the response is invalid: answers are missing");
+		const results = Object.fromEntries(Object.entries(fields).map(([name, spec]) => [name, fieldResult(spec, Object.hasOwn(answers, name) ? answers[name] : undefined)]));
 		return { fields: results, cut: cut || result.truncated === true };
 	} catch (err) {
 		signal?.throwIfAborted();
-		if (timeout.signal.aborted) return { error: `timed out after ${TIMEOUT_MS / 1000} s` };
+		if (timeout.aborted) return { error: `timed out after ${TIMEOUT_MS / 1000} s` };
 		return { error: err instanceof Error ? err.message : String(err) };
-	} finally {
-		clearTimeout(timer);
 	}
 }
 

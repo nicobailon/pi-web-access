@@ -80,12 +80,12 @@ for (const provider of ["openai", "xai", "mistral", "gemini"]) {
 test("model is rejected before any request without one explicit supported provider", () => {
 	const requests = run({ ...keys, provider: "openai", braveApiKey: "brave-key" }, `
 		for (const params of [{}, { provider: "auto" }, { provider: "all" }, { provider: "brave" }]) {
-			await assert.rejects(tool.execute("x", { query: "q", model: "m", ...params }), /web_search model/);
+			await assert.rejects(tool.execute("x", { query: "q", model: "m", ...params }), /^Error: model (requires one explicit provider|is not supported)/);
 		}
 		for (const provider of [["openai", "xai"], "openai,xai"]) {
 			await assert.rejects(tool.execute("x", { query: "q", model: "m", provider }), /provider lists are ambiguous/);
 		}
-		await assert.rejects(tool.execute("x", { query: "q", provider: "openai", model: "  " }), /non-empty string/);
+		await assert.rejects(tool.execute("x", { query: "q", provider: "openai", model: "  " }), /non-empty model ID/);
 		const curated = await tool.execute("x", { query: "q", provider: "openai", model: "m", workflow: "summary-review" }, undefined, undefined, {});
 		assert.match(curated.content[0].text, /model cannot be used with workflow "summary-review"/);
 		assert.equal(curated.isError, true);

@@ -70,7 +70,7 @@ function exhaustedBuckets(headers: Headers): BraveRateLimitBucket[] {
 	return parseBraveRateLimitHeaders(headers).filter(bucket => bucket.limit > 0 && bucket.remaining === 0);
 }
 
-function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+export function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
 	if (signal?.aborted) return Promise.reject(new Error("Aborted"));
 	return new Promise((resolve, reject) => {
 		const cleanup = () => signal?.removeEventListener("abort", onAbort);
@@ -87,7 +87,7 @@ function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
 	});
 }
 
-function formatWait(ms: number): string {
+export function formatWait(ms: number): string {
 	const seconds = Math.ceil(ms / 1000);
 	if (seconds < 60) return `${seconds}s`;
 	const minutes = Math.ceil(seconds / 60);

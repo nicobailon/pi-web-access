@@ -206,7 +206,7 @@ export function buildDeterministicSummary(results: QueryResultData[]): { summary
 	};
 }
 
-async function resolveThinkingLevel(model: Model<Api>, requested?: SummaryThinkingLevel): Promise<ModelThinkingLevel | undefined> {
+export async function resolveThinkingLevel(model: Model<Api>, requested?: SummaryThinkingLevel): Promise<ModelThinkingLevel | undefined> {
 	if (!requested) return undefined;
 	const { clampThinkingLevel } = await import("@earendil-works/pi-ai");
 	return clampThinkingLevel(model, requested as ModelThinkingLevel);

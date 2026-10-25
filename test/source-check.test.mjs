@@ -158,11 +158,22 @@ function registerSourceCheck() {
   return { tool: tools.find((candidate) => candidate.name === "source_check"), entries };
 }
 
-test("source_check executes a successful OpenAI provider response with runtime context", async () => {
+async function withProviderKey(envName, fetchImpl, run) {
   const previousFetch = globalThis.fetch;
-  const previousKey = process.env.OPENAI_API_KEY;
-  process.env.OPENAI_API_KEY = "source-check-test-key";
-  globalThis.fetch = async (url) => {
+  const previousKey = process.env[envName];
+  process.env[envName] = "source-check-test-key";
+  globalThis.fetch = fetchImpl;
+  try {
+    await run();
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousKey === undefined) delete process.env[envName];
+    else process.env[envName] = previousKey;
+  }
+}
+
+test("source_check executes a successful OpenAI provider response with runtime context", async () => {
+  await withProviderKey("OPENAI_API_KEY", async (url) => {
     assert.equal(String(url), "https://api.openai.com/v1/responses");
     return new Response(JSON.stringify({
       output: [
@@ -170,78 +181,53 @@ test("source_check executes a successful OpenAI provider response with runtime c
         { type: "message", content: [{ type: "output_text", text: "The API supports streaming responses." }] },
       ],
     }), { status: 200 });
-  };
-  try {
+  }, async () => {
     const { tool, entries } = registerSourceCheck();
     const response = await tool.execute("call", { claim: "API supports streaming responses", provider: "openai" }, undefined, undefined, { modelRegistry: {} });
     assert.equal(response.details.sourceCount, 1);
     assert.equal(response.details.passageCount, 0);
     assert.equal(entries[0].type, "web-search-results");
-  } finally {
-    globalThis.fetch = previousFetch;
-    if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = previousKey;
-  }
+  });
 });
 
 test("source_check stops on cancellation instead of continuing queries", async () => {
-  const previousFetch = globalThis.fetch;
-  const previousKey = process.env.OPENAI_API_KEY;
   let calls = 0;
   const controller = new AbortController();
-  process.env.OPENAI_API_KEY = "source-check-test-key";
-  globalThis.fetch = async () => {
+  await withProviderKey("OPENAI_API_KEY", async () => {
     calls++;
     controller.abort();
     throw new Error("AbortError: canceled");
-  };
-  try {
+  }, async () => {
     const { tool } = registerSourceCheck();
     const response = await tool.execute("call", { claim: "cancel this", queries: ["first", "second"], provider: "openai" }, controller.signal, undefined, { modelRegistry: {} });
     assert.equal(calls, 1);
     assert.equal(response.details.sourceCount, 0);
-  } finally {
-    globalThis.fetch = previousFetch;
-    if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = previousKey;
-  }
+  });
 });
 
 test("source_check retains a rejected page fetch in the artifact", async () => {
-  const previousFetch = globalThis.fetch;
-  const previousKey = process.env.OPENAI_API_KEY;
-  process.env.OPENAI_API_KEY = "source-check-test-key";
-  globalThis.fetch = async (url) => {
+  await withProviderKey("OPENAI_API_KEY", async (url) => {
     if (String(url) === "https://api.openai.com/v1/responses") {
       return new Response(JSON.stringify({
         output: [{ type: "web_search_call", action: { sources: [{ title: "API docs", url: "https://example.com/api" }] } }],
       }), { status: 200 });
     }
     throw new Error("fetch rejected");
-  };
-  try {
+  }, async () => {
     const { tool } = registerSourceCheck();
     const response = await tool.execute("call", { claim: "API docs", provider: "openai", fetchContent: true }, undefined, undefined, { modelRegistry: {} });
     assert.equal(response.details.sourceCount, 1);
     assert.match(response.details.artifact.sources[0].fetch_error, /^fetch rejected/);
-  } finally {
-    globalThis.fetch = previousFetch;
-    if (previousKey === undefined) delete process.env.OPENAI_API_KEY;
-    else process.env.OPENAI_API_KEY = previousKey;
-  }
+  });
 });
 
 test("source_check shows each source's passages in its result, capped at 4,000 characters", async () => {
-  const previousFetch = globalThis.fetch;
-  const previousKey = process.env.BRAVE_API_KEY;
-  process.env.BRAVE_API_KEY = "source-check-test-key";
   const results = Array.from({ length: 20 }, (_, index) => ({
     title: `Doc ${index + 1}`,
     url: `https://docs.example.com/${index + 1}`,
     description: (index === 0 ? "L" : String.fromCharCode(97 + index)).repeat(index === 0 ? 600 : index === 14 ? 50 : 300),
   }));
-  globalThis.fetch = async () => Response.json({ web: { results } });
-  try {
+  await withProviderKey("BRAVE_API_KEY", async () => Response.json({ web: { results } }), async () => {
     const { tool } = registerSourceCheck();
     const response = await tool.execute("call", { claim: "API supports streaming", provider: "brave", numResults: 20 }, undefined, undefined, { modelRegistry: {} });
     const text = response.content[0].text;
@@ -251,11 +237,7 @@ test("source_check shows each source's passages in its result, capped at 4,000 c
     assert.match(text, new RegExp(`- p-15-0: ${"o".repeat(50)}\\n`));
     assert.match(text, /\n7 more passages in the artifact\.\n/);
     assert.equal(response.details.artifact.passages[0].text.length, 600);
-  } finally {
-    globalThis.fetch = previousFetch;
-    if (previousKey === undefined) delete process.env.BRAVE_API_KEY;
-    else process.env.BRAVE_API_KEY = previousKey;
-  }
+  });
 });
 
 test("registered source_check validates the claim at runtime", async () => {
