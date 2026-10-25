@@ -2,7 +2,7 @@ import type { ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { complete, Api, Model, ProviderHeaders } from "@earendil-works/pi-ai/compat";
 import type { SummaryGenerationContext } from "./summary-review.ts";
 import { awaitWithAbort } from "./abortable.ts";
-import { findModelWithProviderRouting, isModelInScope, parseHelperModelSelector, resolveHelperModelSpec, type SummaryThinkingLevel } from "./summary-model-scope.ts";
+import { findModelWithProviderRouting, isModelInScope, resolveHelperModelSelector, type SummaryThinkingLevel } from "./summary-model-scope.ts";
 
 async function resolveFirstAvailableModel(
 	ctx: SummaryGenerationContext,
@@ -21,7 +21,7 @@ async function resolveConfiguredModel(
 	ctx: SummaryGenerationContext,
 	selector: string,
 ): Promise<{ model: Model<Api>; apiKey?: string; headers?: ProviderHeaders; thinkingLevel?: SummaryThinkingLevel }> {
-	const spec = resolveHelperModelSpec(parseHelperModelSelector(selector, "query rewrite model"), ctx.model);
+	const spec = resolveHelperModelSelector(selector, "query rewrite model", ctx.model);
 	if (!spec) throw new Error(`Query rewrite model not found: ${selector} (no active Pi session model)`);
 	const model = findModelWithProviderRouting(ctx.modelRegistry, spec.provider, spec.id);
 	if (!model) throw new Error(`Query rewrite model not found: ${selector}`);
@@ -38,7 +38,6 @@ export async function rewriteSearchQuery(
 	signal: AbortSignal,
 	modelSelector?: string,
 ): Promise<string> {
-	// A configured selector is the only model tried; the built-in list applies only when none is configured.
 	const { model, apiKey, headers, thinkingLevel }: Awaited<ReturnType<typeof resolveConfiguredModel>> = modelSelector === undefined
 		? await resolveFirstAvailableModel(ctx, [
 			{ provider: "anthropic", id: "claude-haiku-4-5" },

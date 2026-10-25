@@ -12,9 +12,10 @@ process.env.PI_WEB_ACCESS_CACHE_ROOT = root;
 process.env.BRAVE_API_KEY = "fixture-key";
 delete process.env.BRAVE_BASE_URL;
 const configPath = join(root, "web-search.json");
+const contractError = key => `${key} in ${configPath} must be "current", "current:<level>", or "provider/model-id[:<level>]"`;
 
-const { default: initializeExtension, getQueryRewriteModel } = await import("../index.ts");
-const { parseHelperModelSelector } = await import("../summary-model-scope.ts");
+const { default: initializeExtension } = await import("../index.ts");
+const { resolveHelperModelSelector } = await import("../summary-model-scope.ts");
 const { generateSummaryDraft } = await import("../summary-review.ts");
 const { rewriteSearchQuery } = await import("../query-rewrite.ts");
 
@@ -42,39 +43,27 @@ function registry(models, calls, failing) {
 }
 
 test("helper model selectors accept current, thinking suffixes, and provider/model-id", () => {
-	assert.deepEqual(parseHelperModelSelector("current", "summary model"), { kind: "current", thinkingLevel: undefined });
-	assert.deepEqual(parseHelperModelSelector(" current:low ", "summary model"), { kind: "current", thinkingLevel: "low" });
-	assert.deepEqual(parseHelperModelSelector("a/b:high", "summary model"), { kind: "model", provider: "a", id: "b", thinkingLevel: "high" });
-	assert.deepEqual(parseHelperModelSelector("openrouter/x/y:free", "summary model"), { kind: "model", provider: "openrouter", id: "x/y:free", thinkingLevel: undefined });
-	for (const value of ["foo", "/x", "x/", "current:bogus"]) {
-		assert.throws(() => parseHelperModelSelector(value, "summary model"), /^Error: Invalid summary model: .*Use provider\/model-id or current\.$/);
+	assert.deepEqual(resolveHelperModelSelector(" current:low ", "summary model", local), { provider: "strata", id: "strata", thinkingLevel: "low" });
+	assert.equal(resolveHelperModelSelector("current", "summary model"), undefined);
+	assert.deepEqual(resolveHelperModelSelector("openrouter/x/y:free", "summary model"), { provider: "openrouter", id: "x/y:free", thinkingLevel: undefined });
+	for (const value of ["foo", "/x", "x/", "current:bogus", ""]) {
+		assert.throws(() => resolveHelperModelSelector(value, "summary model"), /^Error: Invalid summary model: .*Use provider\/model-id or current\.$/);
 	}
 });
 
-test("summary model current resolves the session model and honors enabled models", async () => {
-	const calls = [];
-	const lowResult = await generateSummaryDraft(results, { model: local, modelRegistry: registry([haiku, local], calls), scopedModels: [] }, undefined, "current:low");
-	assert.equal(lowResult.meta.model, "strata/strata");
-	assert.deepEqual(calls, [{ model: "strata/strata", reasoning: "low" }]);
-
-	calls.length = 0;
-	const scopedResult = await generateSummaryDraft(results, { model: local, modelRegistry: registry([haiku, local], calls), scopedModels: [{ model: haiku }] }, undefined, "current");
-	assert.equal(scopedResult.meta.model, "anthropic/claude-haiku-4-5");
-	assert.deepEqual(calls, [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }]);
-});
-
-test("without preferredFallback only the configured summary model is tried", async () => {
+test("summary drafts try only the given model unless preferredFallback is on", async () => {
 	const draft = async (override, { scopedModels = [], failing, options } = {}) => {
 		const calls = [];
 		const ctx = { model: local, modelRegistry: registry([haiku, local], calls, failing), scopedModels };
 		const { meta } = await generateSummaryDraft(results, ctx, undefined, override, undefined, undefined, 1000, undefined, options);
-		return { calls: calls.map(call => call.model), reason: meta.fallbackReason };
+		return { calls, reason: meta.fallbackReason };
 	};
 	const strict = { preferredFallback: false };
+	assert.deepEqual(await draft("current:low", { options: strict }), { calls: [{ model: "strata/strata", reasoning: "low" }], reason: undefined });
 	assert.deepEqual(await draft("ollama/missing", { options: strict }), { calls: [], reason: "summary-model-unavailable: Summary model not found: ollama/missing" });
-	assert.deepEqual(await draft("strata/strata", { failing: local, options: strict }), { calls: ["strata/strata"], reason: "summary-model-unavailable: local server down" });
+	assert.deepEqual(await draft("strata/strata", { failing: local, options: strict }), { calls: [{ model: "strata/strata", reasoning: undefined }], reason: "summary-model-unavailable: local server down" });
 	assert.deepEqual(await draft("current", { scopedModels: [{ model: haiku }], options: strict }), { calls: [], reason: "summary-model-unavailable: Summary model is not enabled: strata/strata" });
-	assert.deepEqual(await draft("ollama/missing"), { calls: ["anthropic/claude-haiku-4-5"], reason: undefined });
+	assert.deepEqual(await draft("ollama/missing"), { calls: [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }], reason: undefined });
 });
 
 async function searchTool(config) {
@@ -95,18 +84,15 @@ async function autoSummary(summaryModel) {
 	return { calls, fallbackReason: result.details.summary.fallbackReason };
 }
 
-test("auto-summary uses the session model for summaryModel current and keeps the default chain when unset", async () => {
-	assert.deepEqual((await autoSummary("current:low")).calls, [{ model: "strata/strata", reasoning: "low" }]);
-	assert.deepEqual((await autoSummary(undefined)).calls, [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }]);
-});
-
-test("auto-summary with an unavailable summaryModel calls no other model", async () => {
+test("auto-summary follows summaryModel without falling back, and keeps the default chain when unset", async () => {
+	assert.deepEqual(await autoSummary("current:low"), { calls: [{ model: "strata/strata", reasoning: "low" }], fallbackReason: undefined });
 	assert.deepEqual(await autoSummary("ollama/missing"), { calls: [], fallbackReason: "summary-model-unavailable: Summary model not found: ollama/missing" });
+	assert.deepEqual(await autoSummary(undefined), { calls: [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }], fallbackReason: undefined });
 });
 
 test("malformed summaryModel fails auto-summary with the config path", async () => {
 	for (const value of ["nope", 42, ""]) {
-		await assert.rejects(autoSummary(value), error => error.message.includes(`summaryModel in ${configPath} must be "current", "current:<level>", or "provider/model-id[:<level>]"`));
+		await assert.rejects(autoSummary(value), error => error.message.includes(contractError("summaryModel")));
 	}
 });
 
@@ -118,24 +104,11 @@ test("queryRewriteModel selects the only model used for query rewrite", async ()
 		const outcome = await rewriteSearchQuery("q", ctx, new AbortController().signal, selector).catch(error => error.message);
 		return { outcome, calls };
 	};
-	assert.deepEqual(await rewrite("current"), { outcome: "SUMMARY", calls: [{ model: "strata/strata", reasoning: undefined }] });
 	assert.deepEqual(await rewrite("current:low"), { outcome: "SUMMARY", calls: [{ model: "strata/strata", reasoning: "low" }] });
 	assert.deepEqual(await rewrite("google/gemini-3.6-flash"), { outcome: "SUMMARY", calls: [{ model: "google/gemini-3.6-flash", reasoning: undefined }] });
 	assert.deepEqual(await rewrite("ollama/missing"), { outcome: "Query rewrite model not found: ollama/missing", calls: [] });
 	assert.deepEqual(await rewrite("current", null), { outcome: "Query rewrite model not found: current (no active Pi session model)", calls: [] });
 	assert.deepEqual(await rewrite(undefined), { outcome: "SUMMARY", calls: [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }] });
-});
-
-test("queryRewriteModel config is validated", async () => {
-	const read = async config => {
-		await writeFile(configPath, JSON.stringify(config));
-		try { return getQueryRewriteModel(); } catch (error) { return error.message; }
-	};
-	assert.equal(await read({}), undefined);
-	assert.equal(await read({ queryRewriteModel: " current:low " }), "current:low");
-	for (const value of ["nope", 42, ""]) {
-		assert.equal(await read({ queryRewriteModel: value }), `queryRewriteModel in ${configPath} must be "current", "current:<level>", or "provider/model-id[:<level>]"`);
-	}
 });
 
 async function curator(config, model) {
@@ -167,6 +140,8 @@ test("curator rewrite and Auto summary use only the configured helper models", a
 		const summary = await session.post("/summarize", { selected: [0] });
 		assert.equal(summary.meta.fallbackReason, "summary-model-unavailable: Summary model not found: ollama/missing");
 		assert.equal(session.calls.length, 1);
+		await writeFile(configPath, JSON.stringify({ queryRewriteModel: 42 }));
+		assert.equal((await session.post("/rewrite", { query: "q" })).error, contractError("queryRewriteModel"));
 	} finally {
 		await session.close();
 	}

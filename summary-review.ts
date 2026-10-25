@@ -1,7 +1,7 @@
 import type { ModelThinkingLevel, ThinkingLevel } from "@earendil-works/pi-ai";
 import type { complete, Api, Message, Model } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { findModelWithProviderRouting, isModelInScope, parseHelperModelSelector, resolveHelperModelSpec, type SummaryThinkingLevel } from "./summary-model-scope.ts";
+import { findModelWithProviderRouting, isModelInScope, resolveHelperModelSelector, type SummaryThinkingLevel } from "./summary-model-scope.ts";
 import type { QueryResultData } from "./storage.ts";
 
 type ProviderHeaders = Record<string, string | null>;
@@ -221,9 +221,9 @@ async function resolveSummaryModelCandidates(
 	const errors: string[] = [];
 	const normalizedOverride = typeof modelOverride === "string" ? modelOverride.trim() : "";
 	if (normalizedOverride.length > 0) {
-		const spec = resolveHelperModelSpec(parseHelperModelSelector(normalizedOverride, "summary model"), ctx.model);
+		const spec = resolveHelperModelSelector(normalizedOverride, "summary model", ctx.model);
 		if (spec) specs.push(spec);
-		else errors.push("Summary model not found: current (no active Pi session model)");
+		else errors.push(`Summary model not found: ${normalizedOverride} (no active Pi session model)`);
 	}
 	if (preferredFallback) specs.push(...PREFERRED_SUMMARY_MODELS);
 

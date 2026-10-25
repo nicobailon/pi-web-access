@@ -78,7 +78,7 @@ import { isZaiAvailable } from "./zai.ts";
 import { isValyuAvailable } from "./valyu.ts";
 import { isXcrawlAvailable } from "./xcrawl.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
-import { findModelWithProviderRouting, isModelInScope, parseHelperModelSelector, resolveHelperModelSpec } from "./summary-model-scope.ts";
+import { findModelWithProviderRouting, isModelInScope, resolveHelperModelSelector } from "./summary-model-scope.ts";
 import { registerCuratorRunLifecycle, resolveWebSearchWorkflow, type WebSearchWorkflow } from "./curator-run.ts";
 import { registerWebToolActivation } from "./tool-activation.ts";
 import {
@@ -303,21 +303,13 @@ function readHelperModelKey(key: "summaryModel" | "queryRewriteModel"): string |
 	const value: unknown = loadConfig()[key];
 	if (value === undefined) return undefined;
 	const message = `${key} in ${WEB_SEARCH_CONFIG_PATH} must be "current", "current:<level>", or "provider/model-id[:<level>]"`;
-	if (typeof value !== "string" || value.trim().length === 0) throw new Error(message);
+	if (typeof value !== "string") throw new Error(message);
 	try {
-		parseHelperModelSelector(value, key);
+		resolveHelperModelSelector(value, key);
 	} catch {
 		throw new Error(message);
 	}
 	return value.trim();
-}
-
-export function getConfiguredSummaryModel(): string | undefined {
-	return readHelperModelKey("summaryModel");
-}
-
-export function getQueryRewriteModel(): string | undefined {
-	return readHelperModelKey("queryRewriteModel");
 }
 
 function shouldAutoOpenCuratorBrowser(config: WebSearchConfig): boolean {
@@ -993,7 +985,7 @@ export default function (pi: ExtensionAPI) {
 		if (selectedResults.length === 0) {
 			throw new Error("No selected results available for summary generation");
 		}
-		const configuredSummaryModel = getConfiguredSummaryModel();
+		const configuredSummaryModel = readHelperModelKey("summaryModel");
 		try {
 			return await generateSummaryDraft(
 				selectedResults,
@@ -1047,7 +1039,7 @@ export default function (pi: ExtensionAPI) {
 			addModel(summaryContext.model.provider, summaryContext.model.id);
 		}
 
-		const configuredSummaryModel = getConfiguredSummaryModel();
+		const configuredSummaryModel = readHelperModelKey("summaryModel");
 		const preferredDefaults = [
 			{ provider: "anthropic", id: "claude-haiku-4-5" },
 			{ provider: "openai-codex", id: "gpt-5.6-luna" },
@@ -1059,12 +1051,10 @@ export default function (pi: ExtensionAPI) {
 
 		let defaultSummaryModel: string | null = null;
 		if (configuredSummaryModel !== undefined) {
-			const spec = resolveHelperModelSpec(parseHelperModelSelector(configuredSummaryModel, "summary model"), summaryContext.model);
-			// `current` without a session model has no concrete value. Listing no models makes the curator send
-			// Auto (the configured selector), which fails visibly, instead of preselecting an unrelated first model.
+			const spec = resolveHelperModelSelector(configuredSummaryModel, "summary model", summaryContext.model);
+			// With no concrete value to show, list nothing so the curator sends Auto (the configured selector).
 			if (!spec) return { summaryModels: [], defaultSummaryModel: configuredSummaryModel, preferredFallback: false };
-			// The curator groups choices by the text before "/", so `current` becomes a concrete selector, and an
-			// unavailable configured model is still listed and preselected so its failure is visible.
+			// The curator groups choices by provider, so `current` must be concrete. Unavailable models stay listed so failures are visible.
 			defaultSummaryModel = `${spec.provider}/${spec.id}${spec.thinkingLevel ? `:${spec.thinkingLevel}` : ""}`;
 			if (!seen.has(defaultSummaryModel)) {
 				seen.add(defaultSummaryModel);
@@ -1300,7 +1290,7 @@ export default function (pi: ExtensionAPI) {
 					async onRewriteQuery(query, rewriteSignal) {
 						return runWithProxy(pc.proxy, async () => {
 							if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
-							return rewriteSearchQuery(query, pc.summaryContext, rewriteSignal, getQueryRewriteModel());
+							return rewriteSearchQuery(query, pc.summaryContext, rewriteSignal, readHelperModelKey("queryRewriteModel"));
 						});
 					},
 				},
@@ -2477,7 +2467,7 @@ export default function (pi: ExtensionAPI) {
 							if (commandHandle && !isCommandActive()) {
 								throw new Error("Curator session is no longer active.");
 							}
-							return rewriteSearchQuery(query, summaryContext, rewriteSignal, getQueryRewriteModel());
+							return rewriteSearchQuery(query, summaryContext, rewriteSignal, readHelperModelKey("queryRewriteModel"));
 						},
 					},
 				);
