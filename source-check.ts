@@ -105,7 +105,8 @@ function tokenize(value: string): string[] {
 
 function extractRelevantSpans(content: string, hint: string): Span[] {
 	const sentences: Span[] = [];
-	const sentencePattern = /[^.!?]+(?:[.!?]+(?=\s|$)|$)/g;
+	// Punctuation ends a sentence only before whitespace or end of input, so "example.com" stays inside its sentence.
+	const sentencePattern = /[^.!?]+(?:[.!?]+(?![\s.!?]|$)[^.!?]*)*(?:[.!?]+(?=\s|$)|$)/g;
 	for (const match of content.matchAll(sentencePattern)) {
 		const raw = match[0];
 		const text = raw.trim();

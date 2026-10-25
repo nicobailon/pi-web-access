@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- `source_check` passages from fetched pages keep the whole sentence when it contains a period inside a word, such as `example.com`. Before, the passage started after the last such period and lost its subject. Thanks to [@appe233](https://github.com/appe233) for reporting [#600](https://github.com/nicobailon/pi-web-access/issues/600).
+
 ## [0.44.0] - 2026-10-20
 
 ### Highlights
