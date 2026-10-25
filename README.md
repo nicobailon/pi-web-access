@@ -807,7 +807,7 @@ Text results become source links with snippets capped at 500 characters. With `i
 
 ### Kimi Code Plan
 
-Run `/login kimi-coding` in Pi and complete sign-in for an active Kimi Code Plan. Then select `provider: "kimi"`, include `"kimi"` in an explicit provider array, or add it to `searchRouting.providers`. The extension resolves a model with provider `kimi-coding` from Pi's model registry and reuses Pi's refreshed OAuth credential; no Moonshot Open Platform key is configured here.
+Run `/login kimi-coding` in Pi and complete sign-in for an active Kimi Code Plan. Then select `provider: "kimi"`, include `kimi` in a provider list such as `"kimi,exa"`, or add it to `searchRouting.providers`. The extension resolves a model with provider `kimi-coding` from Pi's model registry and reuses Pi's refreshed OAuth credential; no Moonshot Open Platform key is configured here.
 
 Kimi search calls `POST https://api.kimi.com/coding/v1/search` with the query as `text_query`. This is the Kimi Code Plan search service, not Moonshot Open Platform `$web_search`. The endpoint exposes no native recency parameter, so `recencyFilter` is unsupported and is not sent. Shared `domainFilter` and `numResults` behavior is enforced locally on the returned `search_results`.
 
@@ -830,7 +830,7 @@ Successful provider answers are preserved separately while source URLs and inlin
 }
 ```
 
-Setting `provider` is optional. In `auto` mode, Jina is tried after Firecrawl and before SERPdive. It can also be selected per request with `provider: "jina"`, included in provider arrays or `provider: "all"`, or placed in `searchRouting.providers`.
+Setting `provider` is optional. In `auto` mode, Jina is tried after Firecrawl and before SERPdive. It can also be selected per request with `provider: "jina"`, included in a provider list such as `"jina,exa"` or `provider: "all"`, or placed in `searchRouting.providers`.
 
 Jina Search maps `numResults` to its bounded `count` parameter, sends included domains as `site` filters, and adds excluded domains and recency constraints to the search query. Without `includeContent`, it requests SERP metadata only. With `includeContent: true`, Jina visits matching pages and returns their Markdown inline, so requests can take longer and consume more Jina tokens. The fixed hosted endpoint is `https://s.jina.ai`; no custom endpoint is configured by this extension.
 
@@ -862,7 +862,7 @@ The stable Search (`https://api.search.tinyfish.ai`) and Fetch (`https://api.fet
 }
 ```
 
-Setting `provider` is optional. In `auto` mode, an available Search1API provider is tried after TinyFish and before Searchinfinity. You can also select it per request with `provider: "search1api"`, include it in provider arrays or `provider: "all"`, or place `"search1api"` in `searchRouting.providers`.
+Setting `provider` is optional. In `auto` mode, an available Search1API provider is tried after TinyFish and before Searchinfinity. You can also select it per request with `provider: "search1api"`, include it in a provider list such as `"search1api,exa"` or `provider: "all"`, or place `"search1api"` in `searchRouting.providers`.
 
 Search1API Search supports the shared `numResults`, `recencyFilter`, and include/exclude `domainFilter` options. When `includeContent` is true, it maps to Search1API Deep Search and returns successfully crawled result content inline. The Search1API Crawl endpoint is also used as a hosted `fetch_content` fallback after Jina Reader and TinyFish, before Parallel.
 
@@ -879,7 +879,7 @@ Search1API is credit-based. A basic search costs 1 credit; Deep Search adds 1 cr
 }
 ```
 
-Setting `provider` is optional. In `auto` mode, an available Searchinfinity provider is tried after Search1API and before Querit. You can also select it per request with `provider: "searchinfinity"`, include it in provider arrays or `provider: "all"`, or place `"searchinfinity"` in `searchRouting.providers`.
+Setting `provider` is optional. In `auto` mode, an available Searchinfinity provider is tried after Search1API and before Querit. You can also select it per request with `provider: "searchinfinity"`, include it in a provider list such as `"searchinfinity,exa"` or `provider: "all"`, or place `"searchinfinity"` in `searchRouting.providers`.
 
 Searchinfinity Search supports the shared `numResults` (max 20 per request), `recencyFilter`, and include/exclude `domainFilter` options (up to 5 domains each). Answers are assembled from the model-generated per-result summaries when present, falling back to plain snippets. Accounts include a monthly free search quota shared with the Custom edition; API Key requests are limited to 5 QPS and a 30-second server-side timeout. See the [Searchinfinity API reference](https://docs.byteplus.com/api/docs/searchinfinity/Searchinfinity_API_Reference).
 
@@ -894,7 +894,7 @@ Searchinfinity Search supports the shared `numResults` (max 20 per request), `re
 }
 ```
 
-Setting `provider` is optional. In `auto` mode, an available Querit provider is tried after Searchinfinity and before Tavily. You can also select it per request with `provider: "querit"`, include it in provider arrays or `provider: "all"`, or place `"querit"` in `searchRouting.providers`.
+Setting `provider` is optional. In `auto` mode, an available Querit provider is tried after Searchinfinity and before Tavily. You can also select it per request with `provider: "querit"`, include it in a provider list such as `"querit,exa"` or `provider: "all"`, or place `"querit"` in `searchRouting.providers`.
 
 Search requests follow the official [`querit-python`](https://github.com/querit-ai/querit-python) models: `numResults` maps to `count`, include/exclude `domainFilter` values map to `filters.sites`, and recency maps to `filters.timeRange.date` (`d1`, `w1`, `m1`, or `y1`). When `includeContent` is true, result URLs are sent to `POST /v1/contents` in batches of up to 10 and returned as inline Markdown. The same Contents endpoint is used as a hosted `fetch_content` fallback after Search1API and before Parallel. Querit Search and Contents subscriptions are independent; an API key can search successfully while `/v1/contents` returns `403 No active contents subscription`.
 

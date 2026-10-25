@@ -79,8 +79,11 @@ for (const provider of ["openai", "xai", "mistral", "gemini"]) {
 
 test("model is rejected before any request without one explicit supported provider", () => {
 	const requests = run({ ...keys, provider: "openai", braveApiKey: "brave-key" }, `
-		for (const params of [{}, { provider: "auto" }, { provider: "all" }, { provider: ["openai", "xai"] }, { provider: "openai,xai" }, { provider: "brave" }]) {
+		for (const params of [{}, { provider: "auto" }, { provider: "all" }, { provider: "brave" }]) {
 			await assert.rejects(tool.execute("x", { query: "q", model: "m", ...params }), /web_search model/);
+		}
+		for (const provider of [["openai", "xai"], "openai,xai"]) {
+			await assert.rejects(tool.execute("x", { query: "q", model: "m", provider }), /provider lists are ambiguous/);
 		}
 		await assert.rejects(tool.execute("x", { query: "q", provider: "openai", model: "  " }), /non-empty string/);
 		const curated = await tool.execute("x", { query: "q", provider: "openai", model: "m", workflow: "summary-review" }, undefined, undefined, {});
