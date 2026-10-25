@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,9 +14,10 @@ process.env.BRAVE_API_KEY = "fixture-key";
 delete process.env.BRAVE_BASE_URL;
 const configPath = join(root, "web-search.json");
 
-const { default: initializeExtension } = await import("../index.ts");
+const { default: initializeExtension, getQueryRewriteModel } = await import("../index.ts");
 const { parseHelperModelSelector } = await import("../summary-model-scope.ts");
 const { generateSummaryDraft } = await import("../summary-review.ts");
+const { rewriteSearchQuery } = await import("../query-rewrite.ts");
 
 after(async () => {
 	globalThis.fetch = originalFetch;
@@ -101,4 +103,34 @@ test("malformed summaryModel fails auto-summary with the config path", async () 
 	for (const value of ["nope", 42, ""]) {
 		await assert.rejects(autoSummary(value), error => error.message.includes(`summaryModel in ${configPath} must be "current", "current:<level>", or "provider/model-id[:<level>]"`));
 	}
+});
+
+test("queryRewriteModel selects the only model used for query rewrite", async () => {
+	const flash = { ...haiku, provider: "google", id: "gemini-3.6-flash" };
+	const rewrite = async (selector, model = local) => {
+		const calls = [];
+		const ctx = { model, modelRegistry: registry([haiku, flash, local], calls), scopedModels: [] };
+		const outcome = await rewriteSearchQuery("q", ctx, new AbortController().signal, selector).catch(error => error.message);
+		return { outcome, calls };
+	};
+	assert.deepEqual(await rewrite("current"), { outcome: "SUMMARY", calls: [{ model: "strata/strata", reasoning: undefined }] });
+	assert.deepEqual(await rewrite("current:low"), { outcome: "SUMMARY", calls: [{ model: "strata/strata", reasoning: "low" }] });
+	assert.deepEqual(await rewrite("google/gemini-3.6-flash"), { outcome: "SUMMARY", calls: [{ model: "google/gemini-3.6-flash", reasoning: undefined }] });
+	assert.deepEqual(await rewrite("ollama/missing"), { outcome: "Query rewrite model not found: ollama/missing", calls: [] });
+	assert.deepEqual(await rewrite("current", null), { outcome: "Query rewrite model not found: current (no active Pi session model)", calls: [] });
+	assert.deepEqual(await rewrite(undefined), { outcome: "SUMMARY", calls: [{ model: "anthropic/claude-haiku-4-5", reasoning: undefined }] });
+});
+
+test("queryRewriteModel config is read for each curator rewrite and validated", async () => {
+	const read = async config => {
+		await writeFile(configPath, JSON.stringify(config));
+		try { return getQueryRewriteModel(); } catch (error) { return error.message; }
+	};
+	assert.equal(await read({}), undefined);
+	assert.equal(await read({ queryRewriteModel: " current:low " }), "current:low");
+	for (const value of ["nope", 42, ""]) {
+		assert.equal(await read({ queryRewriteModel: value }), `queryRewriteModel in ${configPath} must be "current", "current:<level>", or "provider/model-id[:<level>]"`);
+	}
+	const indexSrc = readFileSync(new URL("../index.ts", import.meta.url), "utf8");
+	assert.equal(indexSrc.match(/rewriteSearchQuery\(query, (?:pc\.)?summaryContext, rewriteSignal, getQueryRewriteModel\(\)\)/g)?.length, 2);
 });

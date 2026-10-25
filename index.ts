@@ -299,17 +299,25 @@ export function getSummaryInstructions(): string | undefined {
 	return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export function getConfiguredSummaryModel(): string | undefined {
-	const value: unknown = loadConfig().summaryModel;
+function readHelperModelKey(key: "summaryModel" | "queryRewriteModel"): string | undefined {
+	const value: unknown = loadConfig()[key];
 	if (value === undefined) return undefined;
-	const message = `summaryModel in ${WEB_SEARCH_CONFIG_PATH} must be "current", "current:<level>", or "provider/model-id[:<level>]"`;
+	const message = `${key} in ${WEB_SEARCH_CONFIG_PATH} must be "current", "current:<level>", or "provider/model-id[:<level>]"`;
 	if (typeof value !== "string" || value.trim().length === 0) throw new Error(message);
 	try {
-		parseHelperModelSelector(value, "summary model");
+		parseHelperModelSelector(value, key);
 	} catch {
 		throw new Error(message);
 	}
 	return value.trim();
+}
+
+export function getConfiguredSummaryModel(): string | undefined {
+	return readHelperModelKey("summaryModel");
+}
+
+export function getQueryRewriteModel(): string | undefined {
+	return readHelperModelKey("queryRewriteModel");
 }
 
 function shouldAutoOpenCuratorBrowser(config: WebSearchConfig): boolean {
@@ -1289,7 +1297,7 @@ export default function (pi: ExtensionAPI) {
 					async onRewriteQuery(query, rewriteSignal) {
 						return runWithProxy(pc.proxy, async () => {
 							if (pendingCurates.get(callId) !== pc) throw new Error("Curator session is no longer active.");
-							return rewriteSearchQuery(query, pc.summaryContext, rewriteSignal);
+							return rewriteSearchQuery(query, pc.summaryContext, rewriteSignal, getQueryRewriteModel());
 						});
 					},
 				},
@@ -2466,7 +2474,7 @@ export default function (pi: ExtensionAPI) {
 							if (commandHandle && !isCommandActive()) {
 								throw new Error("Curator session is no longer active.");
 							}
-							return rewriteSearchQuery(query, summaryContext, rewriteSignal);
+							return rewriteSearchQuery(query, summaryContext, rewriteSignal, getQueryRewriteModel());
 						},
 					},
 				);
