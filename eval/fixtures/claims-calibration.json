@@ -1,0 +1,107 @@
+[
+{"id":"c01","claim":"Tessellate CLI can export reports as CSV.","expected":"supported","evidence":["p-1-1"],"passages":[
+ {"id":"p-1-0","text":"Tessellate CLI generates usage reports for your workspace."},
+ {"id":"p-1-1","text":"Run `tessellate report --format csv` to write the report as comma-separated values instead of the default JSON."},
+ {"id":"p-2-0","text":"Install Tessellate with Homebrew or download a binary from the releases page."},
+ {"id":"p-3-0","text":"Reports include seats, storage and API calls for the selected billing period."}]},
+{"id":"c02","claim":"Quillstack's free tier includes custom domains.","expected":"contradicted","evidence":["p-1-1"],"passages":[
+ {"id":"p-1-0","text":"Quillstack is a hosted publishing platform for documentation sites."},
+ {"id":"p-1-1","text":"Custom domains are available on paid plans only; sites on the free tier are served from a quillstack.app subdomain."},
+ {"id":"p-2-0","text":"The free tier includes unlimited pages and up to three editors."}]},
+{"id":"c03","claim":"The Brightwave SDK retries failed requests automatically.","expected":"not_addressed","evidence":[],"passages":[
+ {"id":"p-1-0","text":"The Brightwave SDK exposes a `timeout` option on every request, in milliseconds."},
+ {"id":"p-1-1","text":"Errors are raised as BrightwaveError with the HTTP status code and the request id."},
+ {"id":"p-2-0","text":"Brightwave's REST API returns JSON and uses standard HTTP status codes."},
+ {"id":"p-3-0","text":"You can pass a custom fetch implementation to the client constructor."}]},
+{"id":"c04","claim":"The Lumen API allows 1,000 requests per minute per key.","expected":"contradicted","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Rate limit: 100 requests per minute per API key. Contact sales if you need a higher limit."},
+ {"id":"p-1-1","text":"When you exceed the limit the API responds with 429 and a Retry-After header."},
+ {"id":"p-2-0","text":"Lumen keys are created in the dashboard under Settings → API."}]},
+{"id":"c05","claim":"The Lumen API allows 100 requests per second.","expected":"contradicted","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Rate limit: 100 requests per minute per API key. Contact sales if you need a higher limit."},
+ {"id":"p-1-1","text":"When you exceed the limit the API responds with 429 and a Retry-After header."}]},
+{"id":"c06","claim":"Nimbus Queue delivers messages in FIFO order.","expected":"not_addressed","evidence":[],"passages":[
+ {"id":"p-1-0","text":"Nimbus Topics delivers messages in FIFO order within a partition."},
+ {"id":"p-1-1","text":"Nimbus Queue supports visibility timeouts of up to 12 hours."},
+ {"id":"p-2-0","text":"Both Nimbus Queue and Nimbus Topics are billed per million requests."}]},
+{"id":"c07","claim":"Orbital DB's latest release is version 5.2.","expected":"supported","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"October 14, 2026 — Orbital DB 5.2 is now available, our newest release, with faster vector indexes."},
+ {"id":"p-2-0","text":"June 3, 2026 — Orbital DB 5.1 is now available with logical replication."},
+ {"id":"p-3-0","text":"Orbital DB is an open-source document database written in Rust."}]},
+{"id":"c08","claim":"Kestrel Agent runs on Windows.","expected":"contradicted","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Kestrel Agent supports Linux and macOS. Windows is not supported."},
+ {"id":"p-1-1","text":"The agent uses about 40 MB of memory and ships as a single binary."},
+ {"id":"p-2-0","text":"Kestrel's dashboard works in any modern browser, including on Windows."}]},
+{"id":"c09","claim":"All Fernway plans include single sign-on.","expected":"not_addressed","evidence":[],"passages":[
+ {"id":"p-1-0","text":"Single sign-on (SAML and OIDC) is included in the Fernway Enterprise plan."},
+ {"id":"p-1-1","text":"Fernway offers Starter, Team and Enterprise plans, billed monthly or yearly."},
+ {"id":"p-2-0","text":"Every Fernway plan includes two-factor authentication."}]},
+{"id":"c10","claim":"Pallas 4 will ship in December 2026.","expected":"not_addressed","evidence":[],"passages":[
+ {"id":"p-1-0","text":"Forum post: I heard from someone at the meetup that Pallas 4 might land around December, no idea if that's true."},
+ {"id":"p-2-0","text":"Pallas 3.8 was released in August 2026 with improved type inference."},
+ {"id":"p-3-0","text":"The Pallas team publishes a roadmap but does not commit to release dates."}]},
+{"id":"c11","claim":"Driftwood encrypts data at rest.","expected":"supported","evidence":["p-2-0"],"passages":[
+ {"id":"p-1-0","text":"Driftwood syncs folders between your devices in the background."},
+ {"id":"p-2-0","text":"Every file Driftwood stores is kept AES-256 encrypted on disk on our servers."},
+ {"id":"p-3-0","text":"Driftwood has clients for macOS, Windows, iOS and Android."}]},
+{"id":"c12","claim":"Corvid supports webhooks for payment events.","expected":"contradicted","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Corvid does not support webhooks yet; poll the /events endpoint to learn about payment events."},
+ {"id":"p-1-1","text":"Events are retained for 30 days."},
+ {"id":"p-2-0","text":"Corvid processes card and bank transfer payments in 14 countries."}]},
+{"id":"c13","claim":"Corvid sends webhooks for refund events.","expected":"not_addressed","evidence":[],"passages":[
+ {"id":"p-1-0","text":"Corvid webhooks fire for payment events: payment.created, payment.succeeded and payment.failed."},
+ {"id":"p-1-1","text":"Refunds can be issued from the dashboard or with POST /refunds."},
+ {"id":"p-2-0","text":"Webhook payloads are signed with HMAC-SHA256."}]},
+{"id":"c14","claim":"Pebble's maximum upload size is 5 GB.","expected":"supported","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Single uploads of up to 5 GB are accepted; larger files must use multipart upload."},
+ {"id":"p-1-1","text":"Pebble stores objects in three availability zones."},
+ {"id":"p-2-0","text":"Download bandwidth is free for the first 100 GB each month."}]},
+{"id":"c15","claim":"Pebble accepts single uploads of up to 50 GB.","expected":"contradicted","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Single uploads of up to 5 GB are accepted; larger files must use multipart upload."},
+ {"id":"p-1-1","text":"Pebble stores objects in three availability zones."},
+ {"id":"p-2-0","text":"Download bandwidth is free for the first 100 GB each month."}]},
+{"id":"c16","claim":"Marlin supports HTTP/3.","expected":"supported","evidence":["p-4-1"],"passages":[
+ {"id":"p-1-0","text":"Marlin is a reverse proxy and load balancer written in Go."},
+ {"id":"p-1-1","text":"Configuration lives in a single TOML file that reloads without downtime."},
+ {"id":"p-2-0","text":"Marlin can terminate TLS with certificates from Let's Encrypt."},
+ {"id":"p-3-0","text":"Health checks run every 10 seconds by default."},
+ {"id":"p-4-0","text":"Version 2 rewrote the routing engine for lower latency."},
+ {"id":"p-4-1","text":"Marlin serves traffic over HTTP/1.1, HTTP/2 and HTTP/3 (QUIC)."},
+ {"id":"p-5-0","text":"Metrics are exported in Prometheus format on port 9090."}]},
+{"id":"c17","claim":"Marlin supports server push over HTTP/3.","expected":"not_addressed","evidence":[],"passages":[
+ {"id":"p-1-0","text":"Marlin serves traffic over HTTP/1.1, HTTP/2 and HTTP/3 (QUIC)."},
+ {"id":"p-1-1","text":"Server push is supported for HTTP/2 connections."},
+ {"id":"p-2-0","text":"Metrics are exported in Prometheus format on port 9090."}]},
+{"id":"c18","claim":"Ostrich's v1 API is still available.","expected":"contradicted","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"The v1 API was shut down on March 1, 2026; every v1 request now returns 410 Gone."},
+ {"id":"p-1-1","text":"Migrate to v2, which uses cursor pagination."},
+ {"id":"p-2-0","text":"Ostrich's status page lists all API incidents."}]},
+{"id":"c19","claim":"Glimmer is released under the MIT license.","expected":"supported","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Glimmer is open source under the MIT License."},
+ {"id":"p-1-1","text":"Contributions are welcome; see CONTRIBUTING.md."},
+ {"id":"p-2-0","text":"Glimmer renders charts to SVG and Canvas."}]},
+{"id":"c20","claim":"Glimmer is released under the MIT license.","expected":"not_addressed","evidence":[],"passages":[
+ {"id":"p-1-0","text":"Glimmer is open source; see the LICENSE file in the repository."},
+ {"id":"p-1-1","text":"Contributions are welcome; see CONTRIBUTING.md."},
+ {"id":"p-2-0","text":"Glimmer renders charts to SVG and Canvas."}]},
+{"id":"c21","claim":"Glimmer is released under the MIT license.","expected":"contradicted","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Glimmer is licensed under the Apache License 2.0."},
+ {"id":"p-1-1","text":"Contributions are welcome; see CONTRIBUTING.md."},
+ {"id":"p-2-0","text":"Glimmer renders charts to SVG and Canvas."}]},
+{"id":"c22","claim":"Tidewater does not collect telemetry.","expected":"supported","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Tidewater sends no usage data or telemetry; nothing leaves your machine."},
+ {"id":"p-1-1","text":"Tidewater is a local-first note-taking app."},
+ {"id":"p-2-0","text":"Sync is optional and end-to-end encrypted."}]},
+{"id":"c23","claim":"Tidewater does not collect telemetry.","expected":"contradicted","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Tidewater collects anonymous usage telemetry by default; set TIDEWATER_TELEMETRY=0 to turn it off."},
+ {"id":"p-1-1","text":"Tidewater is a local-first note-taking app."},
+ {"id":"p-2-0","text":"Sync is optional and end-to-end encrypted."}]},
+{"id":"c24","claim":"Tidewater does not collect telemetry.","expected":"not_addressed","evidence":[],"passages":[
+ {"id":"p-1-0","text":"Tidewater respects your privacy."},
+ {"id":"p-1-1","text":"Tidewater is a local-first note-taking app."},
+ {"id":"p-2-0","text":"Sync is optional and end-to-end encrypted."}]},
+{"id":"c25","claim":"Harbor ORM 3.0 supports composite primary keys.","expected":"supported","evidence":["p-1-0"],"passages":[
+ {"id":"p-1-0","text":"Harbor ORM 3.0 adds support for composite primary keys on every database it supports."},
+ {"id":"p-1-1","text":"Harbor ORM 3.0 drops support for Node.js 18."},
+ {"id":"p-2-0","text":"Harbor ORM generates TypeScript types from your schema."}]}
+]

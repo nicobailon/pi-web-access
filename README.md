@@ -304,7 +304,9 @@ source_check({
 | `provider` | Same as `web_search`: `"auto"`, `"all"`, one name, or a list such as `"brave,exa"` |
 | `proxy` | http(s) or socks proxy URL for every request in this call; `""` forces a direct connection. See [Proxy](#proxy-proxy) |
 
-The artifact preserves the `supported`, `contradicted`, `unclear`, or `missing-evidence` claim status schema, source quality hints, SHA-256 content hashes, and passage IDs with exact source offsets. It does not infer semantic support or contradiction automatically: retrieved passages produce `unclear` for manual review, while no passages produce `missing-evidence`. Search and fetch errors remain in the artifact instead of being silently discarded. Artifacts are stored with the session and retrieved through `get_search_content` using the returned `responseId`; paged artifact responses are JSON slices, so request the next `offset` when needed.
+The artifact preserves the `supported`, `contradicted`, `unclear`, or `missing-evidence` claim status schema, source quality hints, SHA-256 content hashes, and passage IDs with exact source offsets. By default it does not judge the claim: retrieved passages produce `unclear` for manual review, while no passages produce `missing-evidence`. Search and fetch errors remain in the artifact instead of being silently discarded. Artifacts are stored with the session and retrieved through `get_search_content` using the returned `responseId`; paged artifact responses are JSON slices, so request the next `offset` when needed.
+
+To have a small model judge the claim, set `"sourceCheck": { "judgeModel": "clef" }` (Cloudflare Workers AI, with `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`) or `"jev-1.13.0"` (TypeSafe, with `TYPESAFE_API_KEY`) in `web-search.json`. The status is then `supported` or `contradicted` when the model is confident and cites one of the passages, and `unclear` otherwise, including when the call fails. The claim and its passages are sent to Cloudflare or TypeSafe. [docs/claim-judge.md](docs/claim-judge.md) covers the credentials, how the thresholds were measured, and the results.
 
 ### In codemode scripts
 
