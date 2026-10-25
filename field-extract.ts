@@ -95,7 +95,10 @@ function fieldResult(spec: FieldSpec, answer: unknown): FieldResult {
 	return { status: "uncertain", guess: value, ...(confidence !== undefined ? { confidence } : {}) };
 }
 
-/** Clairic is not in Pi's model catalog, so it is called directly with Pi's `cloudflare-workers-ai` credential. */
+/**
+ * Clairic is not in Pi's model catalog, so it is called directly with Pi's `cloudflare-workers-ai` credential.
+ * When Pi has an AI Gateway id (`CLOUDFLARE_GATEWAY_ID`), the request goes through that gateway.
+ */
 async function runClairic(body: string, modelRegistry: Pick<ModelRegistry, "getProviderAuth"> | undefined, signal: AbortSignal): Promise<Record<string, unknown>> {
 	if (!modelRegistry) throw new Error("extract mode runs only inside Pi");
 	if (typeof modelRegistry.getProviderAuth !== "function") throw new Error("this Pi version cannot supply the Cloudflare credential; update Pi");
@@ -103,11 +106,12 @@ async function runClairic(body: string, modelRegistry: Pick<ModelRegistry, "getP
 	const apiKey = credential?.auth.apiKey;
 	const accountId = credential?.env?.CLOUDFLARE_ACCOUNT_ID;
 	if (!apiKey || !accountId) throw new Error("Cloudflare Workers AI is not set up in Pi; set CLOUDFLARE_API_KEY and CLOUDFLARE_ACCOUNT_ID");
+	const gatewayId = (await modelRegistry.getProviderAuth("cloudflare-ai-gateway"))?.env?.CLOUDFLARE_GATEWAY_ID ?? process.env.CLOUDFLARE_GATEWAY_ID;
 	let parsed: unknown;
 	try {
 		const response = await fetchWithCredentialRedirects(`https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/run/@cf/cloudflare/clairic`, {
 			method: "POST",
-			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+			headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", ...(gatewayId ? { "cf-aig-gateway-id": gatewayId } : {}) },
 			body,
 			signal,
 		}, ["Authorization"]);

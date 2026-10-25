@@ -226,3 +226,15 @@ test("a caller abort during extraction rejects instead of becoming a per-page er
 	});
 	await assert.rejects(extractPageFields("Alpha", { total: { type: "number" } }, { modelRegistry: setUpRegistry }, controller.signal), { name: "AbortError" });
 });
+
+test("with an AI Gateway id in Pi, Clairic is called through that gateway", async (t) => {
+	const gateways = [];
+	t.mock.method(globalThis, "fetch", async (_url, init) => {
+		gateways.push(init.headers["cf-aig-gateway-id"]);
+		return Response.json({ success: true, result: { answers: { total: { type: "number", value: 1, confidence: 0.99 } } } });
+	});
+	const withGateway = { async getProviderAuth(provider) { return provider === "cloudflare-ai-gateway" ? { auth: {}, env: { CLOUDFLARE_ACCOUNT_ID: "acct-1", CLOUDFLARE_GATEWAY_ID: "team-gw" } } : setUpRegistry.getProviderAuth(); } };
+	await extractPageFields("Alpha", { total: { type: "number" } }, { modelRegistry: withGateway });
+	await extractPageFields("Alpha", { total: { type: "number" } }, { modelRegistry: { async getProviderAuth(provider) { return provider === "cloudflare-ai-gateway" ? undefined : setUpRegistry.getProviderAuth(); } } });
+	assert.deepEqual(gateways, ["team-gw", undefined]);
+});

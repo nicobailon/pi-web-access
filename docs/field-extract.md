@@ -20,6 +20,8 @@ Extract is off by default. Add it to the allowed modes in `web-search.json`:
 
 It uses the Cloudflare credential Pi already has for its `cloudflare-workers-ai` provider: set `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` in the environment, or store them with Pi's `/login`. The key needs Workers AI access. There are no extract-specific credential settings in `web-search.json`. Without the credential, each page reports `Extraction failed: Cloudflare Workers AI is not set up in Pi; ...` and nothing is sent.
 
+To send the requests through a Cloudflare [AI Gateway](https://developers.cloudflare.com/ai-gateway/) for its logs, caching, rate limits or billing, give Pi a gateway id: set `CLOUDFLARE_GATEWAY_ID`, or store one with `/login cloudflare-ai-gateway`. Extract then adds the `cf-aig-gateway-id` header to the same Workers AI request, with the same key. A gateway that doesn't exist fails with Cloudflare's "Please configure AI Gateway in the Cloudflare dashboard". In testing, results through the `default` gateway matched direct calls, with about 30 ms added per page.
+
 `fields` is offered to the model only when extract is allowed, so the tool definition stays the same size for everyone else. `extract` cannot be `fetch.defaultMode`, because every call needs its own `fields`.
 
 Extract is available in Pi only, because it uses Pi's credentials. The MCP server's `fetch_content` offers `readable` and `raw`, not `extract`.
