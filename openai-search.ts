@@ -69,6 +69,12 @@ interface CurrentModelSearchTarget {
 	useCodexEndpoint: boolean;
 }
 
+function isAzureResponsesUrl(url: URL): boolean {
+	return url.protocol === "https:" &&
+		[".openai.azure.com", ".cognitiveservices.azure.com", ".services.ai.azure.com"].some((suffix) => url.hostname.endsWith(suffix)) &&
+		/^\/openai\/v1(?:\/responses)?\/?$/u.test(url.pathname);
+}
+
 function resolveCurrentModelSearchTarget(model: CurrentModel): CurrentModelSearchTarget {
 	const url = new URL(model.baseUrl);
 	if (url.protocol !== "https:") throw new Error("Current model base URL must use HTTPS");
@@ -88,7 +94,12 @@ function resolveCurrentModelSearchTarget(model: CurrentModel): CurrentModelSearc
 		return { responsesUrl: CODEX_RESPONSES_URL, useCodexEndpoint: true };
 	}
 
-	throw new Error("Current model is not backed by an official OpenAI Responses endpoint");
+	if ((model.api === "openai-responses" || model.api === "azure-openai-responses") && isAzureResponsesUrl(url)) {
+		url.pathname = "/openai/v1/responses";
+		return { responsesUrl: url.toString(), useCodexEndpoint: false };
+	}
+
+	throw new Error("Current model is not backed by an official OpenAI or Azure Responses endpoint");
 }
 
 // The active model draws on a ChatGPT subscription: openai-codex, or openai signed in
@@ -101,7 +112,15 @@ export function isOpenAISubscriptionModelSelected(ctx?: Pick<ExtensionContext, "
 
 export function isCurrentModelHostedSearchEligible(ctx?: Pick<ExtensionContext, "model">): boolean {
 	const model = ctx?.model;
-	if (!model || !/^gpt-/iu.test(model.id)) return false;
+	if (!model) return false;
+	if (!/^gpt-/iu.test(model.id)) {
+		// Azure model IDs are deployment names, which need not use a GPT prefix.
+		try {
+			if (!isAzureResponsesUrl(new URL(model.baseUrl))) return false;
+		} catch {
+			return false;
+		}
+	}
 	try {
 		resolveCurrentModelSearchTarget(model);
 		return true;
@@ -383,13 +402,14 @@ export async function isOpenAISearchAvailable(ctx?: ExtensionContext): Promise<b
 async function resolveCurrentModelAuth(ctx: ExtensionContext, signal?: AbortSignal): Promise<OpenAIAuth> {
 	const model = ctx.model;
 	if (!model || !isCurrentModelHostedSearchEligible(ctx)) {
-		throw new Error("Current model is not eligible for official OpenAI Hosted web search");
+		throw new Error("Current model is not eligible for OpenAI or Azure hosted web search");
 	}
-	const target = resolveCurrentModelSearchTarget(model);
 	const resolved = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 	if (signal?.aborted) signal.throwIfAborted();
 	if (!resolved.ok) throw new Error(`OpenAI current model authentication failed: ${resolved.error}`);
 	if (!resolved.apiKey) throw new Error("OpenAI current model authentication failed: API key unavailable");
+	// Resolve the destination together with credentials; auth may override baseUrl.
+	const target = resolveCurrentModelSearchTarget({ ...model, baseUrl: resolved.baseUrl ?? model.baseUrl });
 	return {
 		provider: "openai",
 		apiKey: resolved.apiKey,
@@ -715,9 +735,13 @@ async function runOpenAISearch(
 	ctx?: Pick<ExtensionContext, "sessionManager">,
 ): Promise<SearchResponse> {
 	const useAlphaSearch = isAlphaSearchEnabled();
-	if (useAlphaSearch) options.signal?.throwIfAborted();
 	const useCodexEndpoint = auth.useCodexEndpoint ?? (auth.provider === "openai-codex" || isCodexJwt(auth.apiKey));
 	const responsesUrl = useCodexEndpoint && !auth.useProviderBaseUrl ? CODEX_RESPONSES_URL : auth.responsesUrl;
+	const isAzure = isAzureResponsesUrl(new URL(responsesUrl));
+	if (isAzure && useAlphaSearch) {
+		throw new OpenAIAlphaSearchUnsupportedError("Azure OpenAI does not support Codex alpha/search; disable openaiUseAlphaSearch to use hosted web_search");
+	}
+	if (useAlphaSearch) options.signal?.throwIfAborted();
 	const requestUrl = useAlphaSearch ? resolveAlphaSearchUrl(responsesUrl) : responsesUrl;
 	const body = useAlphaSearch ? buildAlphaSearchBody(query, options, auth.model) : {
 		model: auth.model,
@@ -748,6 +772,19 @@ async function runOpenAISearch(
 		ctx,
 	);
 
+	if (isAzure) {
+		requestHeaders.delete("Authorization");
+		requestHeaders.delete("api-key");
+		requestHeaders.delete("OpenAI-Beta");
+		requestHeaders.delete("chatgpt-account-id");
+		requestHeaders.delete("originator");
+		if (decodeJwtPayload(auth.apiKey)) {
+			requestHeaders.set("Authorization", `Bearer ${auth.apiKey}`);
+		} else {
+			requestHeaders.set("api-key", auth.apiKey);
+		}
+	}
+
 	try {
 		const response = await fetchWithCredentialRedirects(requestUrl, {
 			method: "POST",
@@ -756,7 +793,7 @@ async function runOpenAISearch(
 			signal: options.signal
 				? AbortSignal.any([AbortSignal.timeout(SEARCH_TIMEOUT_MS), options.signal])
 				: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
-		}, ["Authorization", "x-opencode-session", "x-opencode-client", "chatgpt-account-id", ...Object.keys(auth.headers)]);
+		}, ["Authorization", "api-key", "x-opencode-session", "x-opencode-client", "chatgpt-account-id", ...Object.keys(auth.headers)]);
 
 		if (!response.ok) {
 			activityMonitor.logError(activityId, `HTTP ${response.status}`);

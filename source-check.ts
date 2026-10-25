@@ -105,15 +105,22 @@ function tokenize(value: string): string[] {
 
 function extractRelevantSpans(content: string, hint: string): Span[] {
 	const sentences: Span[] = [];
-	const sentencePattern = /[^.!?]+(?:[.!?]+(?=\s|$)|$)/g;
-	for (const match of content.matchAll(sentencePattern)) {
-		const raw = match[0];
+	// A sentence ends at punctuation (plus closing quotes, brackets, emphasis or a [n] citation) followed by
+	// whitespace or the end, so "example.com" stays inside its sentence. The lookbehind starts each attempt only at
+	// the beginning of a punctuation run, which keeps the scan linear on long runs such as "!!!…x".
+	const boundary = /(?<![.!?])[.!?]+(?:["'”’)\]*_]|\[\d+\])*(?=\s|$)/g;
+	let segmentStart = 0;
+	const addSentence = (end: number) => {
+		const raw = content.slice(segmentStart, end);
 		const text = raw.trim();
 		if (text.length > 0 && text.length <= 400) {
-			const start = (match.index ?? 0) + raw.indexOf(text);
+			const start = segmentStart + raw.indexOf(text);
 			sentences.push({ text, start, end: start + text.length });
 		}
-	}
+		segmentStart = end;
+	};
+	for (const match of content.matchAll(boundary)) addSentence(match.index + match[0].length);
+	addSentence(content.length);
 	const terms = tokenize(hint);
 	if (terms.length === 0) return [];
 	return sentences

@@ -6,6 +6,7 @@ import { getApiKey, getVersionedApiBase, fetchGeminiApi, isGatewayConfigured, is
 import { isGeminiAdcAvailable } from "./gemini-adc.ts";
 import { getGeminiWebAvailabilityDiagnostic, isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.ts";
+import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { isExaAvailable, searchWithExa } from "./exa.ts";
 import { isBraveAvailable, searchWithBrave } from "./brave.ts";
 import {
@@ -75,8 +76,11 @@ export type SearchProviderErrorKind =
 export interface SearchRoutingConfig {
 	providers: ResolvedSearchProvider[];
 	useCurrentModel?: boolean;
-	fallbackOn: Array<Extract<SearchProviderErrorKind, "transient" | "quota" | "network" | "invalid-response" | "unsupported">>;
+	fallbackOn: Array<Extract<SearchProviderErrorKind, "transient" | "quota" | "network" | "invalid-response" | "unsupported"> | WeakResultKind>;
 }
+
+/** A successful response a route may still move past: no results and no answer (`empty`), or no result on a requested domain (`domain-miss`; an empty response also counts when a domain was requested). */
+export type WeakResultKind = "empty" | "domain-miss";
 
 export class SearchProviderError extends Error {
 	readonly provider: ResolvedSearchProvider;
@@ -120,7 +124,7 @@ const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
 // Explicit-only providers (Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, Linkup) are deliberately absent:
 // `all` must never fan out to an opt-in or paid provider without the user asking for it.
 export const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "ollama", "perplexity", "gemini", "bocha"];
-const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported"] as const;
+const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported", "empty", "domain-miss"] as const;
 
 type SearchConfig = {
 	searchProvider: SearchProviderSelection;
@@ -198,7 +202,7 @@ function normalizeSearchRouting(value: unknown): SearchRoutingConfig {
 	const fallbackOn: SearchRoutingConfig["fallbackOn"] = [];
 	for (const kind of raw.fallbackOn) {
 		if (typeof kind !== "string" || !VALID_ROUTING_KINDS.includes(kind as typeof VALID_ROUTING_KINDS[number])) {
-			throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} may only contain transient, quota, network, invalid-response, or unsupported`);
+			throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} may only contain transient, quota, network, invalid-response, unsupported, empty, or domain-miss`);
 		}
 		if (!fallbackOn.includes(kind as SearchRoutingConfig["fallbackOn"][number])) {
 			fallbackOn.push(kind as SearchRoutingConfig["fallbackOn"][number]);
@@ -644,12 +648,30 @@ async function searchWithProviders(
 	};
 }
 
+/** Describes a successful response a route may move past; `fallback` says which fallbackOn kinds apply. */
+function weakResult(response: SearchResponse, domainFilter: string[] | undefined): { kind: WeakResultKind; empty: boolean; domainMiss: boolean } {
+	const empty = response.results.length === 0 && !response.answer.trim();
+	const wanted = (domainFilter ?? [])
+		.filter((domain) => !domain.trim().startsWith("-"))
+		.flatMap((domain) => normalizeDomain(domain) ?? []);
+	const domainMiss = wanted.length > 0 && !response.results.some((result) => {
+		try {
+			const host = new URL(result.url).hostname.toLowerCase();
+			return wanted.some((domain) => host === domain || host.endsWith(`.${domain}`));
+		} catch {
+			return false;
+		}
+	});
+	return { kind: empty ? "empty" : "domain-miss", empty, domainMiss };
+}
+
 async function searchWithConfiguredRouting(
 	query: string,
 	options: FullSearchOptions,
 	routing: SearchRoutingConfig,
 ): Promise<AttributedSearchResponse> {
 	const diagnostics: string[] = [];
+	let firstWeak: AttributedSearchResponse | undefined;
 	for (const provider of routing.providers) {
 		const useCurrentModel = provider === "openai" && routing.useCurrentModel === true;
 		if (!(await isResolvedProviderAvailable(provider, options, useCurrentModel))) {
@@ -657,7 +679,12 @@ async function searchWithConfiguredRouting(
 			continue;
 		}
 		try {
-			return await searchWithResolvedProvider(provider, query, options, useCurrentModel);
+			const response = await searchWithResolvedProvider(provider, query, options, useCurrentModel);
+			const weak = weakResult(response, options.domainFilter);
+			const moveOn = (weak.empty && routing.fallbackOn.includes("empty")) || (weak.domainMiss && routing.fallbackOn.includes("domain-miss"));
+			if (!moveOn) return response;
+			diagnostics.push(`${provider} [${weak.kind}]`);
+			firstWeak ??= response;
 		} catch (err) {
 			const classified = classifyProviderError(provider, err);
 			diagnostics.push(`${provider} [${classified.kind}]: ${errorMessage(err)}`);
@@ -666,6 +693,8 @@ async function searchWithConfiguredRouting(
 			}
 		}
 	}
+	// Like the built-in auto chain, hand back the first weak response rather than an error.
+	if (firstWeak) return firstWeak;
 	throw new Error(`Configured search routing exhausted:\n  - ${diagnostics.join("\n  - ")}`);
 }
 

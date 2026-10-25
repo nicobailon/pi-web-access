@@ -25,6 +25,7 @@ interface ExaSearchResponse {
 		text?: string;
 		highlights?: unknown;
 		highlightScores?: number[];
+		entities?: unknown;
 	}>;
 }
 
@@ -43,11 +44,19 @@ export type ExaSearchResult = SearchResponse | null;
 
 export interface ExaSearchOptions extends SearchOptions {
 	includeContent?: boolean;
-	/** Restrict results to an Exa content category (e.g. "research paper", "news", "pdf"). */
+	/** Restrict results to an Exa content category (e.g. "publication", "news", "company"). */
 	category?: string;
 }
 
-type McpParsedResult = { title: string; url: string; content: string };
+type McpParsedResult = { title: string; url: string; content: string; publishedDate?: string; author?: string };
+
+interface ResultMetadata {
+	publishedDate?: unknown;
+	author?: unknown;
+	entities?: unknown;
+}
+
+const MAX_LISTED_AUTHORS = 3;
 
 let cachedConfig: WebSearchConfig | null = null;
 
@@ -154,6 +163,56 @@ function fallbackSourceLabel(url: string | undefined, index: number): string {
 	return `Source ${index + 1}`;
 }
 
+function nonEmptyString(value: unknown): string | null {
+	return typeof value === "string" && value.trim().length > 0 && value.trim() !== "N/A" ? value.trim() : null;
+}
+
+function publicationProperties(entities: unknown): Record<string, unknown> | null {
+	if (!Array.isArray(entities)) return null;
+	const entity = entities.find(item => item && typeof item === "object" && (item as { type?: unknown }).type === "publication");
+	const properties = (entity as { properties?: unknown } | undefined)?.properties;
+	return properties && typeof properties === "object" ? properties as Record<string, unknown> : null;
+}
+
+function listAuthors(names: string[]): string | null {
+	if (names.length === 0) return null;
+	const listed = names.slice(0, MAX_LISTED_AUTHORS).join(", ");
+	return names.length > MAX_LISTED_AUTHORS ? `${listed} et al.` : listed;
+}
+
+function publicationAuthors(properties: Record<string, unknown> | null): string | null {
+	if (!Array.isArray(properties?.authors)) return null;
+	return listAuthors(properties.authors
+		.map(author => nonEmptyString((author as { name?: unknown } | null)?.name))
+		.filter((name): name is string => name !== null));
+}
+
+// Exa's top-level `author` joins every paper author with ", ".
+function shortenAuthorField(value: unknown): string | null {
+	const author = nonEmptyString(value);
+	return author ? listAuthors(author.split(", ").map(name => name.trim()).filter(Boolean)) : null;
+}
+
+/**
+ * One line of the date, author and, for Exa's `publication` category, the paper's
+ * citation count and DOI. Exa returns these alongside each result; without them an
+ * agent cannot tell a 1974 paper from a 2024 one or judge how established it is.
+ */
+function formatResultMetadata(item: ResultMetadata): string {
+	const paper = publicationProperties(item.entities);
+	const parts: string[] = [];
+	const date = nonEmptyString(item.publishedDate)?.slice(0, 10)
+		?? nonEmptyString(paper?.date)?.slice(0, 10)
+		?? (typeof paper?.year === "number" ? String(paper.year) : null);
+	if (date) parts.push(`Published: ${date}`);
+	const authors = publicationAuthors(paper) ?? shortenAuthorField(item.author);
+	if (authors) parts.push(`Authors: ${authors}`);
+	if (typeof paper?.citationCount === "number") parts.push(`Citations: ${paper.citationCount}`);
+	const doi = nonEmptyString(paper?.doi);
+	if (doi) parts.push(`DOI: ${doi}`);
+	return parts.length > 0 ? `\n${parts.join(" | ")}` : "";
+}
+
 function buildAnswerFromSearchResults(results: ExaSearchResponse["results"]): string {
 	if (!results?.length) return "";
 	const parts: string[] = [];
@@ -166,7 +225,7 @@ function buildAnswerFromSearchResults(results: ExaSearchResponse["results"]): st
 			: typeof item.text === "string" ? item.text.trim().slice(0, 1000) : "";
 		if (!content) continue;
 		const sourceTitle = item.title || fallbackSourceLabel(item.url, i);
-		parts.push(`${content}\nSource: ${sourceTitle} (${item.url})`);
+		parts.push(`${content}\nSource: ${sourceTitle} (${item.url})${formatResultMetadata(item)}`);
 	}
 	return parts.join("\n\n");
 }
@@ -298,17 +357,24 @@ function parseMcpResults(text: string): McpParsedResult[] | null {
 		const title = block.match(/^Title: (.+)/m)?.[1]?.trim() ?? "";
 		const url = block.match(/^URL: (.+)/m)?.[1]?.trim() ?? "";
 		let content = "";
+		let contentStart = block.length;
 		const textStart = block.indexOf("\nText: ");
 		if (textStart >= 0) {
 			content = block.slice(textStart + 7).trim();
+			contentStart = textStart;
 		} else {
 			const hlMatch = block.match(/\nHighlights:\s*\n/);
 			if (hlMatch?.index != null) {
 				content = block.slice(hlMatch.index + hlMatch[0].length).trim();
+				contentStart = hlMatch.index;
 			}
 		}
 		content = content.replace(/\n---\s*$/, "").trim();
-		return { title, url, content };
+		// Read metadata from the header only, so a quoted "Author:" line in the page text is not taken as the source's.
+		const header = block.slice(0, contentStart);
+		const publishedDate = header.match(/^Published: (.+)/m)?.[1]?.trim();
+		const author = header.match(/^Author: (.+)/m)?.[1]?.trim();
+		return { title, url, content, publishedDate, author };
 	}).filter(result => result.url.length > 0);
 	return parsed.length > 0 ? parsed : null;
 }
@@ -321,7 +387,7 @@ function buildAnswerFromMcpResults(results: McpParsedResult[]): string {
 		const snippet = result.content.replace(/\s+/g, " ").trim().slice(0, 500);
 		if (!snippet) continue;
 		const sourceTitle = result.title || fallbackSourceLabel(result.url, i);
-		parts.push(`${snippet}\nSource: ${sourceTitle} (${result.url})`);
+		parts.push(`${snippet}\nSource: ${sourceTitle} (${result.url})${formatResultMetadata(result)}`);
 	}
 	return parts.join("\n\n");
 }
