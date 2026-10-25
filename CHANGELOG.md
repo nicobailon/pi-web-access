@@ -7,12 +7,12 @@ All notable changes to this project will be documented in this file.
 ### Added
 
 - `queryRewriteModel` chooses the model the curator uses to rewrite a search query: `"current"` for the model your Pi session is running, or a `provider/model-id`, each with an optional thinking level such as `"current:low"`. When set, no other model is tried. Unset, the rewrite still uses its built-in list of cloud models.
-- `summaryModel` accepts `"current"` or `"current:<level>"` to write summaries with the model your Pi session is running, which keeps them on a local or self-hosted model. Pi `enabledModels` still applies. An invalid `summaryModel`, including an empty string, now stops the summary with an error naming the config file instead of being ignored.
+- `summaryModel` accepts `"current"` or `"current:<level>"` to write summaries with the model your Pi session is running, which keeps them on a local or self-hosted model. Pi `enabledModels` still applies. An invalid `summaryModel`, including an empty string, now stops the summary with an error naming the config file instead of being ignored. Thanks to [@Meetsch](https://github.com/Meetsch) for [issue #597](https://github.com/nicobailon/pi-web-access/issues/597).
 - Exa search results show each source's published date and authors, and results from Exa's `publication` category (its research paper index) also show the citation count and DOI. The README now names `publication` as the Exa category for research papers. Exa uses it in place of `research paper`, which still works. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #596](https://github.com/nicobailon/pi-web-access/pull/596).
 
 ### Changed
 
-- When `summaryModel` is set, summaries use only that model. Before, if it was missing, signed out, or failed, the summary quietly switched to a built-in cloud model such as Claude Haiku, which could bill a provider you did not choose. Now you get the plain summary built from the search results, with a reason naming your model, and the curator preselects your model even when it is unavailable. If `summaryModel` is not set, nothing changes.
+- When `summaryModel` is set, summaries use only that model. Before, if it was missing, signed out, or failed, the summary quietly switched to a built-in cloud model such as Claude Haiku, which could bill a provider you did not choose. Now you get the plain summary built from the search results, with the reason it failed, and the curator preselects your model even when it is unavailable. If `summaryModel` is not set, nothing changes. Thanks to [@Meetsch](https://github.com/Meetsch) for [issue #597](https://github.com/nicobailon/pi-web-access/issues/597).
 
 ### Fixed
 
