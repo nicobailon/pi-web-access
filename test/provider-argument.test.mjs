@@ -25,7 +25,7 @@ const register = `
 test("provider tool arguments accept names, lists, and JSON arrays, and reject anything else", () => {
 	const cases = [
 		"brave", " Brave ", "auto", "all", "brave,exa", " brave , EXA ", '["brave","exa"]', ["brave", "exa"], "", "  ",
-		"bogus", "brave,all", "brave,brave", "[bad", 42,
+		"bogus", "brave,all", "brave,brave", "[bad", 42, '["Bogus"]', '["auto"]',
 	];
 	const output = child(undefined, `
 		const { parseProviderArgument } = await import(${JSON.stringify(new URL("../gemini-search.ts", import.meta.url).href)});
@@ -39,10 +39,13 @@ test("provider tool arguments accept names, lists, and JSON arrays, and reject a
 		{ value: null }, { value: null },
 	]);
 	assert.match(output[10].error, /^Unknown search provider "bogus"\. Use auto, all, or one or more comma-separated names: openai, brave, .*kagi.*, linkup$/);
-	assert.deepEqual(output[11], { error: output[10].error.replace('"bogus"', '"all"') });
+	const combined = { error: 'Search providers "auto" and "all" can\'t be combined with other names; pass one of them alone, or list only provider names' };
+	assert.deepEqual(output[11], combined);
 	assert.deepEqual(output[12], { error: "provider must not contain duplicates: brave" });
 	assert.deepEqual(output[13], { error: "provider must be a provider name or comma-separated names; the given value is not valid JSON" });
 	assert.deepEqual(output[14], { error: output[10].error.replace('"bogus"', '"42"') });
+	assert.deepEqual(output[15], output[10]);
+	assert.deepEqual(output[16], combined);
 });
 
 test("unknown providers fail before any request and list only allowed providers", () => {

@@ -273,6 +273,7 @@ export function parseProviderArgument(value: unknown): SearchProviderSelection |
 	if (typeof value !== "string") throw unknown(String(value));
 	const normalized = value.trim().toLowerCase();
 	if (normalized === "") return undefined;
+	let names: string[];
 	if (normalized.startsWith("[")) {
 		let parsed: unknown;
 		try {
@@ -280,15 +281,21 @@ export function parseProviderArgument(value: unknown): SearchProviderSelection |
 		} catch {
 			throw new Error("provider must be a provider name or comma-separated names; the given value is not valid JSON");
 		}
-		return normalizeResolvedProviderList(parsed, "provider");
+		if (!Array.isArray(parsed) || parsed.length === 0) return normalizeResolvedProviderList(parsed, "provider");
+		names = parsed.map(entry => typeof entry === "string" ? entry.trim() : String(entry));
+	} else {
+		names = normalized.split(",").map(name => name.trim()).filter(Boolean);
+		if (names.length === 0) throw unknown(value);
+		if (names.length === 1) {
+			if (!SEARCH_PROVIDERS.includes(names[0] as SearchProvider)) throw unknown(names[0]);
+			return names[0] as SearchProvider;
+		}
 	}
-	const names = normalized.split(",").map(name => name.trim()).filter(Boolean);
-	if (names.length === 1) {
-		if (!SEARCH_PROVIDERS.includes(names[0] as SearchProvider)) throw unknown(names[0]);
-		return names[0] as SearchProvider;
+	if (names.some(name => name === "auto" || name === "all")) {
+		throw new Error('Search providers "auto" and "all" can\'t be combined with other names; pass one of them alone, or list only provider names');
 	}
 	const invalid = names.find(name => !RESOLVED_SEARCH_PROVIDERS.includes(name as ResolvedSearchProvider));
-	if (invalid !== undefined || names.length === 0) throw unknown(invalid ?? value);
+	if (invalid !== undefined) throw unknown(invalid);
 	return normalizeResolvedProviderList(names, "provider");
 }
 
