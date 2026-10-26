@@ -14,7 +14,7 @@
 
 ## What's new in 0.45
 
-https://github.com/user-attachments/assets/b3c57253-6c24-470b-a2af-381b1cce9c84
+https://github.com/user-attachments/assets/d9296f9b-9769-4ca0-8c27-ef1a766afcdc
 
 The agent can now pull specific values off a page, like a price or a rate limit, instead of reading the whole thing. Numbers and text come back with the line they were found on, and anything the model isn't sure of is marked as a guess or as not on the page. Code mode scripts get those values as typed data, so one script can search and compare numbers across the top results. Search can also move on to the next provider when one comes back empty or off-topic, and the web tools take about 60% fewer tokens on every request. See the [changelog](CHANGELOG.md#0450---2026-10-25) for everything in this release.
 
