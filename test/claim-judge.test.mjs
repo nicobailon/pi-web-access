@@ -90,7 +90,7 @@ test("a verdict whose cited page is about another product becomes unclear", asyn
 		questions: { other_subject: { type: "bool", instructions: "The source is the title of the page the passage comes from. Does that title name a different product than the claim names, such as a sibling product of the same brand?", criteria: { true: null, false: null } } },
 	}));
 	assert.deepEqual([claim.status, claim.supporting_passages, claim.confidence], ["unclear", [], 0.97]);
-	assert.equal(claim.rationale, `Claim judge ${CLEF}: supported 0.97, contradicted 0.01, not_addressed 0.02; evidence p-1-0; other subject 0.29. The cited page "A" looks like it is about a different product than the claim; review the passages.`);
+	assert.equal(claim.rationale, `Claim judge ${CLEF}: supported 0.97, contradicted 0.01, not_addressed 0.02; evidence p-1-0; other subject 0.29. The cited page "A" looks like it is about a different product than the claim; review the passages. Only search snippets were checked; retry with fetchContent: true to include the pages.`);
 	const below = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.97, 0.01, 0.02], "p-1-0"), undefined, 0.28) });
 	assert.equal(below.claim.status, "supported");
 	const jev = await runSourceCheck("typesafe/jev-latest", { modelRegistry: fakeRegistry(stop([0.02, 0.92, 0.06], "p-1-0"), undefined, 0.23) });
