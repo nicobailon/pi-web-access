@@ -1,4 +1,5 @@
 // fetch_content mode "extract": typed values read from a fetched page by Cloudflare's Clairic model.
+import type { JsonValue } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { redactCredential } from "./credential-source.ts";
 import { fetchWithCredentialRedirects, isRecord } from "./utils.ts";
@@ -20,8 +21,8 @@ interface FieldSpec {
 }
 
 export type FieldResult =
-	| { status: "extracted"; value: unknown; confidence: number }
-	| { status: "uncertain"; guess: unknown; confidence?: number }
+	| { status: "extracted"; value: JsonValue; confidence: number }
+	| { status: "uncertain"; guess: JsonValue; confidence?: number }
 	| { status: "null" };
 
 export type PageExtraction =
@@ -85,7 +86,8 @@ function matchesType(spec: FieldSpec, value: unknown): boolean {
 function fieldResult(spec: FieldSpec, answer: unknown): FieldResult {
 	if (!isRecord(answer)) throw new Error("the response is invalid: a field answer is missing");
 	// Clairic may send only p_null when nothing was found.
-	const { value = null, confidence: rawConfidence } = answer;
+	// The answer was parsed from Clairic's JSON response, so its value is JSON.
+	const { value = null, confidence: rawConfidence } = answer as { value?: JsonValue; confidence?: unknown };
 	// A null value is Clairic's "not on the page" verdict; the guess it still sends then is a fallback, not evidence.
 	if (value === null) return { status: "null" };
 	const confidence = typeof rawConfidence === "number" && rawConfidence >= 0 && rawConfidence <= 1 ? rawConfidence : undefined;

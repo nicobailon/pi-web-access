@@ -153,6 +153,18 @@ const fetchContentOutputSchema = Type.Object({
 		mimeType: Type.Optional(Type.String()),
 		status: Type.Optional(Type.Number()),
 		duration: Type.Optional(Type.Number()),
+		extraction: Type.Optional(Type.Union([
+			Type.Object({
+				fields: Type.Record(Type.String(), Type.Object({
+					status: Type.Union([Type.Literal("extracted"), Type.Literal("uncertain"), Type.Literal("null")], { description: "null means not on the page" }),
+					value: Type.Optional(Type.Unknown({ description: "Typed value when extracted" })),
+					guess: Type.Optional(Type.Unknown({ description: "Unconfirmed value when uncertain" })),
+					confidence: Type.Optional(Type.Number()),
+				})),
+				cut: Type.Boolean({ description: "Only the first part of the page was read" }),
+			}),
+			Type.Object({ error: Type.String({ description: "Why extraction failed for this fetched page" }) }),
+		], { description: "Extract mode only, for each fetched URL" })),
 	})),
 });
 

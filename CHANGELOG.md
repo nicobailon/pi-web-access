@@ -35,6 +35,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
+- Codemode scripts that call `fetch_content` with `mode: "extract"` now get each page's typed values as data, under `extraction` for each URL. Before, the values were only in the text the model sees, so a script had to parse it. ([#618](https://github.com/nicobailon/pi-web-access/issues/618))
 - DuckDuckGo search no longer locks itself out. Several searches at once, such as a `queries` list, used to trigger DuckDuckGo's bot check for the whole IP address for 10 to 15 minutes, and every retry kept the block in place. DuckDuckGo searches now run one at a time, at least 2 seconds apart. After a bot check the provider stops sending requests for 5 minutes, doubling up to 1 hour, and fails at once with a `quota` error, so search routing can fall back right away.
 - A DuckDuckGo search that times out now fails as a network error instead of an abort, so search routing falls back to the next provider. Its 30-second limit also counts the time spent waiting behind other DuckDuckGo searches. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #593](https://github.com/nicobailon/pi-web-access/pull/593).
 - `source_check` passages from fetched pages keep the whole sentence when it contains a period inside a word, such as `example.com`. Before, the passage started after the last such period and lost its subject. Thanks to [@appe233](https://github.com/appe233) for reporting [#600](https://github.com/nicobailon/pi-web-access/issues/600).

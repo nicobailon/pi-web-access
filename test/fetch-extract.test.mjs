@@ -60,7 +60,7 @@ function runFetch(config, calls, replies = {}, { setUp = true, fails = false } =
 				const stored = result.details.responseId
 					? (await tools.find((tool) => tool.name === "get_search_content").execute("get", { responseId: result.details.responseId, urlIndex: 0 })).content[0].text
 					: undefined;
-				results.push({ text: result.content.map((part) => part.text).join("\\n"), isError: result.isError, details: result.details, stored });
+				results.push({ text: result.content.map((part) => part.text).join("\\n"), isError: result.isError, details: result.details, structured: result.structuredContent, stored });
 			}
 			console.log(JSON.stringify({ results, clairicRequests, pageFetches, today, properties: Object.keys(fetchTool.parameters.properties), modes: fetchTool.parameters.properties.mode.enum, promptSnippet: fetchTool.promptSnippet }));
 		`,
@@ -104,6 +104,8 @@ test("extract sends the page and mapped fields to Clairic and shows confident ty
 	const [result] = run.results;
 	assert.match(result.text, /\ntotal: 42\.1 \(0\.99\)\nitems: 3 \(0\.98\)\nwait: 95 \(0\.97\)\ntags: \["a","b"\] \(0\.95\)\ndates: \["2026-10-27"\] \(0\.90\)\n/);
 	assert.deepEqual(result.details.extractions[0].fields.total, { status: "extracted", value: 42.1, confidence: 0.99 });
+	// Codemode scripts get the same typed values as data.
+	assert.deepEqual(result.structured.urls[0].extraction.fields.total, { status: "extracted", value: 42.1, confidence: 0.99 });
 	assert.deepEqual([result.details.title, result.details.totalChars], ["a", "Alpha page. Order total $42.10.".length]);
 });
 
@@ -178,6 +180,10 @@ test("a failed extraction is shown per page without the credential, and the fetc
 	assert.ok(![result.text, JSON.stringify(result.details)].some((output) => output.includes(CF_TOKEN.slice(0, 10))));
 	assert.equal(result.isError, undefined);
 	assert.equal(result.details.successful, 2);
+	assert.deepEqual(result.structured.urls.map((entry) => [entry.error, entry.extraction]), [
+		[null, { error: "Cloudflare Workers AI returned HTTP 500: " + "x".repeat(190) + "[redacted]" }],
+		[null, { fields: { total: { status: "null" } }, cut: false }],
+	]);
 	assert.match(result.stored, /Alpha page\. Order total \$42\.10\./);
 });
 

@@ -1108,6 +1108,9 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			const structuredContent = fetchStructuredContent(storedContent ? responseId : null, presentedResults);
 
 			if (extractions) {
+				structuredContent.urls.forEach((entry, index) => {
+					if (extractions[index]) entry.extraction = extractions[index];
+				});
 				let output = "## Extracted fields\n";
 				presentedResults.forEach((result, index) => {
 					output += `\n### ${result.title || result.url}\n`;

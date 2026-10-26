@@ -316,6 +316,15 @@ To have a classifier model from Pi's catalog judge the claim, set `"sourceCheck"
 
 Scripts run by Pi's `codemode` tool (Pi 1.0 or later) get data instead of the text the model sees. `await tools.web_search(...)` resolves to `{ responseId, fetchId, queries }`, where each query has its `answer`, `error`, provider, and `results` (`title`, `url`, `snippet`). `await tools.fetch_content(...)` resolves to `{ responseId, urls }`, where each URL has its full `content`, not limited by `maxInlineContentChars`, and its `error`. Failed searches and fetches still resolve to this data, with the reason in `error`; invalid arguments reject. A script's `web_search` uses `workflow: "none"` unless it passes a workflow, so a configured curator does not open, and with `includeContent` it waits for the pages, readable through `fetchId`, instead of fetching them in the background. A script that passes `workflow: "summary-review"` gets the curator and the background fetch, as the model does.
 
+With extract mode allowed, each fetched URL also has an `extraction`: `fields` maps each name to `{ status, value, confidence }` (`status` is `"extracted"`, `"uncertain"` with a `guess` instead of a `value`, or `"null"` for not on the page), or `error` says why extraction failed for that page. To search and read a value off the top results:
+
+```js
+const search = await tools.web_search({ query: "Acme Pro plan price" });
+const urls = search.queries[0].results.slice(0, 3).map((result) => result.url);
+const page = await tools.fetch_content({ urls, mode: "extract", fields: { pro_monthly: "number: Pro plan price per month" } });
+return page.urls.map(({ url, extraction }) => ({ url, price: extraction?.fields?.pro_monthly }));
+```
+
 ## Use from other agents (MCP)
 
 Other agents, such as Claude Code, Codex, Cursor, or Executor, can use `web_search`, `fetch_content`, `get_search_content`, and `source_check` through a local stdio MCP server. It needs Node.js 22.19 or later and no Pi install:
