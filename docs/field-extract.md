@@ -22,7 +22,7 @@ It uses the Cloudflare credential Pi already has for its `cloudflare-workers-ai`
 
 To send the requests through a Cloudflare [AI Gateway](https://developers.cloudflare.com/ai-gateway/) for its logs, caching, rate limits or billing, give Pi a gateway id: set `CLOUDFLARE_GATEWAY_ID`, or store one with `/login cloudflare-ai-gateway`. Extract then adds the `cf-aig-gateway-id` header to the same Workers AI request, with the same key. A gateway that doesn't exist fails with Cloudflare's "Please configure AI Gateway in the Cloudflare dashboard". In testing, results through the `default` gateway matched direct calls, with about 30 ms added per page.
 
-`fields` is in the tool definition only when extract is allowed. `extract` cannot be `fetch.defaultMode`, because every call needs its own `fields`.
+`fields` is in the tool definition only when extract is allowed, and so is a line in the agent's tool list telling it to use extract for a specific value (a price, version, date or limit) instead of reading the whole page. `extract` cannot be `fetch.defaultMode`, because every call needs its own `fields`.
 
 Extract is available in Pi only, because it uses Pi's credentials. The MCP server's `fetch_content` offers `readable` and `raw`, not `extract`.
 

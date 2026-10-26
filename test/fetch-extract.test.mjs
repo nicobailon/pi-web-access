@@ -62,7 +62,7 @@ function runFetch(config, calls, replies = {}, { setUp = true, fails = false } =
 					: undefined;
 				results.push({ text: result.content.map((part) => part.text).join("\\n"), isError: result.isError, details: result.details, stored });
 			}
-			console.log(JSON.stringify({ results, clairicRequests, pageFetches, today, properties: Object.keys(fetchTool.parameters.properties), modes: fetchTool.parameters.properties.mode.enum }));
+			console.log(JSON.stringify({ results, clairicRequests, pageFetches, today, properties: Object.keys(fetchTool.parameters.properties), modes: fetchTool.parameters.properties.mode.enum, promptSnippet: fetchTool.promptSnippet }));
 		`,
 		encoding: "utf8",
 		env,
@@ -193,6 +193,8 @@ test("without Cloudflare set up in Pi each page reports it and Clairic is not ca
 test("extract is offered only when fetch.allowedModes lists it, and cannot be the default mode", () => {
 	const byDefault = runFetch(undefined, [{ url: PAGE_A, mode: "extract", fields: { total: "number" } }]);
 	assert.ok(!byDefault.properties.includes("fields"));
+	assert.doesNotMatch(byDefault.promptSnippet, /extract/);
+	assert.match(runFetch(extractConfig, []).promptSnippet, /For specific values .* use mode "extract" with fields/);
 	assert.match(byDefault.results[0].text, /Fetch mode "extract" is disabled by fetch\.allowedModes/);
 	assert.deepEqual([byDefault.pageFetches, byDefault.clairicRequests.length], [0, 0]);
 	const asDefault = runFetch({ fetch: { allowedModes: ["extract"], defaultMode: "extract" } }, [], {}, { fails: true });

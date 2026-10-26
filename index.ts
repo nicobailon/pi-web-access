@@ -1987,7 +1987,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Fetch Content",
 		description: `Fetch web pages, PDFs, GitHub repos, images, YouTube and local video, as the mode allows. ${fetchContentStorageNote}`,
 		promptSnippet:
-			"Use to fetch URL content, direct images, GitHub repos, and videos.",
+			`Use to fetch URL content, direct images, GitHub repos, and videos.${fetchModeConfig.allowedModes.includes("extract") ? ' For specific values (a price, version, date or limit), use mode "extract" with fields instead of reading the whole page.' : ""}`,
 		parameters: Type.Object({
 			url: Type.Optional(Type.String()),
 			urls: Type.Optional(Type.Array(Type.String())),
