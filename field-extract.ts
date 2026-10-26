@@ -99,42 +99,76 @@ const MAX_LINE_CHARS = 200;
 // Thousands separators seen on pages: comma, period, space, no-break and narrow no-break space, apostrophe.
 const THOUSANDS = "[,. \\u00a0\\u202f']?";
 
-// Text and numbers keep a form that can be found on the page. Dates, times and durations are normalized by Clairic, so they have none.
-function valuePattern(spec: FieldSpec, value: unknown): RegExp | undefined {
-	if (spec.type === "text" && typeof value === "string" && value.trim()) {
-		// Case and whitespace may differ, and markdown emphasis may sit between words.
-		return new RegExp(value.trim().split(/\s+/).map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s*_`]+"), "i");
-	}
-	if (spec.type === "number" && typeof value === "number") {
-		const match = /^(\d+)(?:\.(\d+))?$/.exec(String(Math.abs(value)));
-		if (!match) return undefined;
-		const groups = match[1].match(/\d{1,3}(?=(?:\d{3})*$)/g)!;
-		const fraction = match[2] ? `[.,]${match[2]}0*` : "(?:[.,]0+)?";
-		// Not part of a longer number: "299" must not match inside "1,299", nor "3" inside "5.3.1".
-		return new RegExp(`(?<!\\d[.,]?)${groups.join(THOUSANDS)}${fraction}(?![.,]?\\d)`);
-	}
-	return undefined;
+// Numbers keep a form that can be found on the page; this regex is built from digits only.
+function numberPattern(value: number): RegExp | undefined {
+	const match = /^(\d+)(?:\.(\d+))?$/.exec(String(Math.abs(value)));
+	if (!match) return undefined;
+	const groups = match[1].match(/\d{1,3}(?=(?:\d{3})*$)/g)!;
+	const fraction = match[2] ? `[.,]${match[2]}0*` : "(?:[.,]0+)?";
+	// Not part of a longer number: "299" must not match inside "1,299", nor "3" inside "5.3.1".
+	return new RegExp(`(?<!\\d[.,]?)${groups.join(THOUSANDS)}${fraction}(?![.,]?\\d)`);
 }
 
-function lineAround(page: string, match: RegExpExecArray): string {
-	const start = page.lastIndexOf("\n", match.index) + 1;
-	const end = page.indexOf("\n", match.index + match[0].length);
-	const line = page.slice(start, end === -1 ? undefined : end);
+/**
+ * The same text on the page and from the model can differ in markdown and typography: readable pages come from
+ * Turndown, which escapes markdown characters (`my\_package`, `\[beta\]`). Both sides are reduced the same way and
+ * compared with includes(), so the cost stays linear whatever the value holds.
+ */
+function comparable(text: string): string {
+	return text
+		.normalize("NFKC")
+		.replace(/\\([!-/:-@[-`{-~])/g, "$1")
+		// A link keeps its text: "[docs](https://x)" → "[docs]". The bound keeps a line of unclosed "](" linear.
+		.replace(/\]\([^()\s]{0,2048}\)/g, "]")
+		.replace(/[‘’‚‛′]/g, "'")
+		.replace(/[“”„‟″]/g, '"')
+		.replace(/[‐-―]/g, "-")
+		.replace(/[*_`[\]]/g, " ")
+		.toLowerCase()
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function cite(line: string, at: number): string {
 	if (line.length <= MAX_LINE_CHARS) return line.replace(/\s+/g, " ").trim();
-	const from = Math.max(0, Math.min(match.index - start - 60, line.length - MAX_LINE_CHARS));
-	const window = line.slice(from, from + MAX_LINE_CHARS).replace(/\s+/g, " ").trim();
-	return `${from > 0 ? "…" : ""}${window}${from + MAX_LINE_CHARS < line.length ? "…" : ""}`;
+	// Room for an ellipsis on each side.
+	const size = MAX_LINE_CHARS - 2;
+	const from = Math.max(0, Math.min(at - 60, line.length - size));
+	return `${from > 0 ? "…" : ""}${line.slice(from, from + size).replace(/\s+/g, " ").trim()}${from + size < line.length ? "…" : ""}`;
 }
 
-/** Adds the page line a text or number value was found on. A number match only cites; it never changes the status. */
+function textLine(value: string, page: string): string | undefined | null {
+	const wanted = comparable(value);
+	if (!wanted) return null;
+	for (const line of page.split("\n")) {
+		if (!comparable(line).includes(wanted)) continue;
+		const firstWord = wanted.split(" ")[0];
+		return cite(line, Math.max(0, line.toLowerCase().indexOf(firstWord)));
+	}
+	// A value that wraps across lines is on the page but has no single line to cite.
+	return comparable(page).includes(wanted) ? null : undefined;
+}
+
+/**
+ * Adds the page line a text or number value was found on (dates, times and durations are rewritten by Clairic, so
+ * they have none). A number match only cites; it never changes the status.
+ */
 function withPageLine(spec: FieldSpec, result: FieldResult, page: string): FieldResult {
 	if (result.status === "null") return result;
-	const pattern = valuePattern(spec, result.status === "extracted" ? result.value : result.guess);
-	if (!pattern) return result;
-	const match = pattern.exec(page);
-	if (match) return { ...result, line: lineAround(page, match) };
+	const value = result.status === "extracted" ? result.value : result.guess;
+	if (spec.type === "number" && typeof value === "number") {
+		const match = numberPattern(value)?.exec(page);
+		if (!match) return result;
+		const start = page.lastIndexOf("\n", match.index) + 1;
+		const end = page.indexOf("\n", match.index);
+		return { ...result, line: cite(page.slice(start, end === -1 ? undefined : end), match.index - start) };
+	}
+	if (spec.type !== "text" || typeof value !== "string") return result;
+	// undefined: not on the page; null: on the page without a line to cite, or nothing comparable in the value.
+	const line = textLine(value, page);
+	if (line) return { ...result, line };
 	// Text that is not on the page was not read from it, however confident the model is.
-	if (result.status === "extracted" && spec.type === "text") return { status: "uncertain", guess: result.value, confidence: result.confidence, notFound: true };
+	if (line === undefined && result.status === "extracted") return { status: "uncertain", guess: result.value, confidence: result.confidence, notFound: true };
 	return result;
 }
 

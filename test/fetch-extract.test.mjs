@@ -265,3 +265,28 @@ test("text and numbers cite the page line they are on, and text that is not on t
 		review: { status: "extracted", value: "2026-11-02", confidence: 0.99 },
 	});
 });
+
+test("text is found through Turndown's markdown escapes and links", async (t) => {
+	const { default: TurndownService } = await import("turndown");
+	const page = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" })
+		.turndown('<p>Install my_package_name and set the [beta] flag.</p><p>See the <a href="https://example.com/docs">setup guide</a> — it’s short.</p>');
+	t.mock.method(globalThis, "fetch", async () => Response.json({ success: true, result: { answers: {
+		pkg: { type: "text", value: "my_package_name", confidence: 0.99 },
+		flag: { type: "text", value: "[beta]", confidence: 0.99 },
+		guide: { type: "text", value: "setup guide - it's short", confidence: 0.99 },
+	} } }));
+	const result = await extractPageFields(page, parseExtractFields({ pkg: "text", flag: "text", guide: "text" }), { modelRegistry: setUpRegistry });
+	assert.deepEqual(Object.values(result.fields).map((field) => [field.status, field.line]), [
+		["extracted", "Install my\\_package\\_name and set the \\[beta\\] flag."],
+		["extracted", "Install my\\_package\\_name and set the \\[beta\\] flag."],
+		["extracted", "See the [setup guide](https://example.com/docs) — it’s short."],
+	]);
+});
+
+test("a value made of emphasis characters against a long run of them is checked without stalling", async (t) => {
+	t.mock.method(globalThis, "fetch", async () => Response.json({ success: true, result: { answers: { total: { type: "text", value: "Total _ _ due", confidence: 0.99 } } } }));
+	// A regex built from the value backtracked for seconds on 4,000 underscores.
+	const page = `Total ${"_".repeat(100_000)} paid`;
+	const result = await extractPageFields(page, parseExtractFields({ total: "text" }), { modelRegistry: setUpRegistry });
+	assert.equal(result.fields.total.status, "uncertain");
+});
