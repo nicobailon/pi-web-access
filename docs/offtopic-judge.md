@@ -1,6 +1,28 @@
-# Off-topic judge (measurement)
+# Off-topic fallback for search routing
 
-Issue [#619](https://github.com/nicobailon/pi-web-access/issues/619) proposes letting `searchRouting` move on to the next provider when a provider answers with results that have nothing to do with the query. Before any routing code, this measures whether a classifier model from Pi's catalog can tell. Nothing in the extension calls the judge yet.
+`searchRouting` can move on to the next provider when a provider answers with results that have nothing to do with the query ([#619](https://github.com/nicobailon/pi-web-access/issues/619)). A classifier model from Pi's catalog makes the call; this page shows how it was measured.
+
+## Turn it on
+
+```json
+{
+  "searchRouting": {
+    "providers": ["brave", "tavily", "exa"],
+    "fallbackOn": ["transient", "quota", "network", "off-topic"],
+    "offTopicModel": "cloudflare-workers-ai/@cf/cloudflare/clef"
+  }
+}
+```
+
+`offTopicModel` must be one of the three measured references below, and is required when `fallbackOn` lists `"off-topic"`; anything else is reported as a `searchRouting` config error, like other mistakes there. The judge uses Pi's credentials for that provider.
+
+- It runs only on routed searches, after a provider returns an answer or results. Named providers, `provider: "all"`, and provider lists are never judged. An empty response is left to the `empty` kind.
+- When the judge says off-topic at or above the model's threshold, the route tries the next provider. If every provider is weak, you get the first weak response, as with `empty` and `domain-miss`.
+- If the check fails (an error, its 10-second limit, or `searchRouting.timeoutMs` running out), the response is kept and the failure shows in Pi's activity log.
+- It needs Pi's model registry, so it does nothing over MCP.
+- **Privacy:** the query, the answer and the result titles, URLs and snippets are sent to the model's provider on every routed search that returns something.
+
+## How it was measured
 
 `offtopic-judge.ts` sends one choice question with the query, the provider's answer text (up to 4,000 characters), and up to 10 results (title, URL, snippet up to 500 characters):
 

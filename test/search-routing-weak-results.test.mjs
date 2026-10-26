@@ -139,11 +139,49 @@ test("invalid timeoutMs and fallbackOn kinds are rejected", async () => {
 		[{ providers: ["brave"], fallbackOn: base, timeoutMs: 0 }, "timeoutMs"],
 		[{ providers: ["brave"], fallbackOn: base, timeoutMs: "soon" }, "timeoutMs"],
 		[{ providers: ["brave"], fallbackOn: ["weak"] }, "fallbackOn"],
+		[{ providers: ["brave"], fallbackOn: [...base, "off-topic"] }, "offTopicModel"],
+		[{ providers: ["brave"], fallbackOn: [...base, "off-topic"], offTopicModel: "openrouter/cloudflare/clef" }, "offTopicModel"],
 	]) {
 		const child = await run(routing, `
 			const { search } = await import(${JSON.stringify(searchModuleUrl)});
 			try { await search("q", { provider: "auto" }); } catch (err) { console.log(String(err.message)); }
 		`);
 		assert.match(child.stdout, new RegExp(`searchRouting\\.${field}`), child.stderr);
+	}
+});
+
+test("off-topic moves on only when the judge clears the model's threshold, and a judge failure keeps the response", async () => {
+	const routing = { providers: ["brave", "tavily"], fallbackOn: [...base, "off-topic"], offTopicModel: "cloudflare-workers-ai/@cf/cloudflare/clef" };
+	// off_topic probability per provider's first result title; "error" makes the judge fail.
+	for (const [scores, provider, calls] of [
+		[{ B: 0.9, T: 0.1 }, "tavily", ["brave", "judge B", "tavily", "judge T"]],
+		[{ B: 0.84 }, "brave", ["brave", "judge B"]],
+		[{ B: 0.9, T: 0.95 }, "brave", ["brave", "judge B", "tavily", "judge T"]],
+		[{ B: "error" }, "brave", ["brave", "judge B"]],
+	]) {
+		const child = await run(routing, `
+			const scores = ${JSON.stringify(scores)};
+			const modelRegistry = { findOfType: () => ({ id: "clef" }), async classify(_model, context) {
+				const title = context.state.results[0].title;
+				calls.push("judge " + title);
+				if (scores[title] === "error") throw new Error("judge down");
+				const p = scores[title];
+				return { stopReason: "stop", answers: { relevance: { type: "choice", choice: p >= 0.5 ? "off_topic" : "addresses", probabilities: { addresses: 1 - p, off_topic: p }, confidence: p } } };
+			} };
+			globalThis.fetch = async (url) => {
+				calls.push(String(url).includes("brave") ? "brave" : "tavily");
+				return String(url).includes("brave")
+					? brave([{ title: "B", url: "https://example.com/b", description: "d" }])
+					: tavily([{ title: "T", url: "https://example.com/t", content: "text" }]);
+			};
+			const { search } = await import(${JSON.stringify(searchModuleUrl)});
+			const { activityMonitor } = await import(${JSON.stringify(new URL("../activity.ts", import.meta.url).href)});
+			const result = await search("q", { provider: "auto", extensionContext: { modelRegistry } });
+			console.log(JSON.stringify({ provider: result.provider, calls, errors: activityMonitor.getEntries().flatMap((entry) => entry.error ?? []) }));
+		`);
+		assert.equal(child.status, 0, child.stderr);
+		const out = JSON.parse(child.stdout.trim());
+		assert.deepEqual([out.provider, out.calls], [provider, calls]);
+		assert.deepEqual(out.errors, scores.B === "error" ? ["brave: off-topic check failed: judge down"] : []);
 	}
 });

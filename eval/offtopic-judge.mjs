@@ -13,14 +13,14 @@ if (process.env.PI_WEB_ACCESS_REAL_SEMANTIC !== "1") {
 
 const defaultHoldout = new URL("./fixtures/offtopic-holdout.json", import.meta.url);
 const { values } = parseArgs({ options: {
-	models: { type: "string", default: OFFTOPIC_JUDGE_MODELS.join(",") },
+	models: { type: "string", default: Object.keys(OFFTOPIC_JUDGE_MODELS).join(",") },
 	repeat: { type: "string", default: "1" },
 	holdout: { type: "string" },
 } });
 const models = values.models.split(",").map((model) => model.trim()).filter(Boolean);
 const repeat = Number(values.repeat);
 for (const model of models) {
-	if (!OFFTOPIC_JUDGE_MODELS.includes(model)) throw new Error(`Unknown model ${model}; use one of ${OFFTOPIC_JUDGE_MODELS.join(", ")}`);
+	if (!Object.hasOwn(OFFTOPIC_JUDGE_MODELS, model)) throw new Error(`Unknown model ${model}; use one of ${Object.keys(OFFTOPIC_JUDGE_MODELS).join(", ")}`);
 }
 if (!Number.isInteger(repeat) || repeat < 1) throw new Error("--repeat must be a positive integer");
 const modelRegistry = new ModelRegistry(await ModelRuntime.create());

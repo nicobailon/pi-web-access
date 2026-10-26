@@ -8,6 +8,7 @@ import { isGeminiAdcAvailable } from "./gemini-adc.ts";
 import { getGeminiWebAvailabilityDiagnostic, isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
+import { judgeOffTopic, OFFTOPIC_JUDGE_MODELS, type OffTopicJudgeModel } from "./offtopic-judge.ts";
 import { isExaAvailable, searchWithExa } from "./exa.ts";
 import { isBraveAvailable, searchWithBrave } from "./brave.ts";
 import {
@@ -81,6 +82,8 @@ export interface SearchRoutingConfig {
 	fallbackOn: Array<typeof VALID_ROUTING_KINDS[number]>;
 	/** Total budget for one routed search across every candidate, in milliseconds. */
 	timeoutMs?: number;
+	/** Classifier that judges the "off-topic" fallback; required when fallbackOn lists it. */
+	offTopicModel?: OffTopicJudgeModel;
 }
 
 export class SearchProviderError extends Error {
@@ -125,7 +128,7 @@ const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
 // Explicit-only providers (Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, Linkup, 9router) are deliberately absent:
 // `all` must never fan out to an opt-in or paid provider without the user asking for it.
 export const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "ollama", "perplexity", "gemini", "bocha"];
-const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported", "empty", "domain-miss"] as const;
+const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported", "empty", "domain-miss", "off-topic"] as const;
 const MAX_ROUTING_TIMEOUT_MS = 600_000;
 
 type SearchConfig = {
@@ -204,7 +207,7 @@ function normalizeSearchRouting(value: unknown): SearchRoutingConfig {
 	const fallbackOn: SearchRoutingConfig["fallbackOn"] = [];
 	for (const kind of raw.fallbackOn) {
 		if (typeof kind !== "string" || !VALID_ROUTING_KINDS.includes(kind as typeof VALID_ROUTING_KINDS[number])) {
-			throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} may only contain transient, quota, network, invalid-response, unsupported, empty, or domain-miss`);
+			throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} may only contain transient, quota, network, invalid-response, unsupported, empty, domain-miss, or off-topic`);
 		}
 		if (!fallbackOn.includes(kind as SearchRoutingConfig["fallbackOn"][number])) {
 			fallbackOn.push(kind as SearchRoutingConfig["fallbackOn"][number]);
@@ -214,11 +217,19 @@ function normalizeSearchRouting(value: unknown): SearchRoutingConfig {
 	if (timeoutMs !== undefined && (typeof timeoutMs !== "number" || !Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > MAX_ROUTING_TIMEOUT_MS)) {
 		throw new Error(`searchRouting.timeoutMs in ${CONFIG_PATH} must be an integer from 1 through ${MAX_ROUTING_TIMEOUT_MS}`);
 	}
+	const offTopicModel = raw.offTopicModel;
+	if (offTopicModel !== undefined && (typeof offTopicModel !== "string" || !Object.hasOwn(OFFTOPIC_JUDGE_MODELS, offTopicModel))) {
+		throw new Error(`searchRouting.offTopicModel in ${CONFIG_PATH} must be one of ${Object.keys(OFFTOPIC_JUDGE_MODELS).join(", ")}`);
+	}
+	if (fallbackOn.includes("off-topic") && offTopicModel === undefined) {
+		throw new Error(`searchRouting.fallbackOn in ${CONFIG_PATH} lists off-topic, which needs searchRouting.offTopicModel`);
+	}
 	return {
 		providers,
 		...(useCurrentModel !== undefined ? { useCurrentModel: useCurrentModel as boolean } : {}),
 		fallbackOn,
 		...(timeoutMs !== undefined ? { timeoutMs } : {}),
+		...(offTopicModel !== undefined ? { offTopicModel: offTopicModel as OffTopicJudgeModel } : {}),
 	};
 }
 
@@ -760,9 +771,21 @@ async function searchWithConfiguredRouting(
 		try {
 			const response = await untilDeadline(searchWithResolvedProvider(provider, query, options, useCurrentModel));
 			const weak = weakResult(response, options.domainFilter);
-			const moveOn = (weak.empty && routing.fallbackOn.includes("empty")) || (weak.domainMiss && routing.fallbackOn.includes("domain-miss"));
-			if (!moveOn) return response;
-			diagnostics.push(`${provider} [${weak.empty ? "empty" : "domain-miss"}]`);
+			let kind = weak.empty && routing.fallbackOn.includes("empty") ? "empty" : weak.domainMiss && routing.fallbackOn.includes("domain-miss") ? "domain-miss" : undefined;
+			// Over MCP there is no Pi model registry, so the off-topic check is inactive there.
+			const registry = options.extensionContext?.modelRegistry;
+			if (!kind && !weak.empty && routing.offTopicModel && routing.fallbackOn.includes("off-topic") && registry) {
+				// A deadline during the check keeps the response: it is still a success.
+				const judgment = await untilDeadline(judgeOffTopic(routing.offTopicModel, query, response, registry, signal))
+					.catch((err) => { if (timedOut()) return { error: `routing timeout after ${routing.timeoutMs}ms` }; throw err; });
+				if ("error" in judgment) {
+					const line = `${provider}: off-topic check failed: ${judgment.error}`;
+					diagnostics.push(line);
+					activityMonitor.logError(activityMonitor.logStart({ type: "api", query }), line);
+				} else if (judgment.probabilities.off_topic >= OFFTOPIC_JUDGE_MODELS[routing.offTopicModel]) kind = "off-topic";
+			}
+			if (!kind) return response;
+			diagnostics.push(`${provider} [${kind}]`);
 			firstWeak ??= response;
 		} catch (err) {
 			if (timedOut()) {

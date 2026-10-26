@@ -1,5 +1,5 @@
-// Asks a classifier model from Pi's catalog whether a search response addresses its query (#619).
-// Measurement only for now: eval/offtopic-judge.mjs sets the thresholds before any routing uses it.
+// Asks a classifier model from Pi's catalog whether a search response addresses its query, for the
+// searchRouting "off-topic" fallback (#619). eval/offtopic-judge.mjs measured the thresholds.
 import type { ClassifierContext } from "@earendil-works/pi-ai";
 import type { ModelRegistry } from "@earendil-works/pi-coding-agent";
 import { isRecord } from "./utils.ts";
@@ -10,14 +10,13 @@ type Label = typeof LABELS[number];
 // Frozen after calibration (docs/offtopic-judge.md); change it only after re-measuring.
 const INSTRUCTIONS = "A search engine returned this answer and these results for the query. addresses: the answer or at least one result is about what the query asks for, even if incomplete or outdated. off_topic: nothing is about what the query asks for, including results that only share words with it, a different meaning of the same word, or a different product.";
 
-export const OFFTOPIC_JUDGE_MODELS = [
-	"cloudflare-workers-ai/@cf/cloudflare/clef",
-	"openrouter/cloudflare/clef",
-	"typesafe/jev-latest",
-	"openrouter/typesafe/jev-1.14",
-	"cloudflare-workers-ai/typesafe/jev-1.14.0",
-] as const;
-export type OffTopicJudgeModel = typeof OFFTOPIC_JUDGE_MODELS[number];
+/** The only Pi classifier references accepted, each with its measured off_topic threshold (docs/offtopic-judge.md). */
+export const OFFTOPIC_JUDGE_MODELS = {
+	"cloudflare-workers-ai/@cf/cloudflare/clef": 0.85,
+	"typesafe/jev-latest": 0.85,
+	"cloudflare-workers-ai/typesafe/jev-1.14.0": 0.85,
+} as const;
+export type OffTopicJudgeModel = keyof typeof OFFTOPIC_JUDGE_MODELS;
 
 export type OffTopicResult = { title: string; url: string; snippet: string };
 export type OffTopicJudgment = { probabilities: Record<Label, number> } | { error: string };
