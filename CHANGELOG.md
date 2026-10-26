@@ -6,12 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Highlights
 
-- Pull exact facts off a web page, such as a price, a release date, or a rate limit, instead of reading the whole page. It is opt-in and runs on your own Cloudflare account.
-- Check a claim against the sources found for it: a classifier model says whether they support or contradict it and points to the passage, or says it can't tell. Also opt-in.
-- The web tools take up about 60% less of every request to the model, about 1,100 tokens instead of 2,800.
-- Search through Azure OpenAI with Bing results, choose the search model for a single search, and keep summaries on the model your Pi session already runs.
-- When a search provider finds nothing useful, search can move on to the next one, and a whole search can be given a time limit.
-- DuckDuckGo searches no longer get your IP address blocked by arriving too fast.
+- Pull exact facts off a page. Ask for "price: number" and get 29 back, not 40KB of HTML. It says when a value isn't there instead of guessing. Opt-in.
+- Check a claim against its sources. A small classifier model says supported, contradicted or unclear, and quotes the passage. Opt-in.
+- The web tools take 60% less of every request to the model (2.8k → 1.1k tokens).
+- Search moves to the next provider when one comes back empty, you can put a time limit on the whole search, and DuckDuckGo no longer gets your IP blocked.
+- Search through Azure with Bing, pick the model for a single search, or keep summaries on the model you're already running.
 
 ### Added
 
