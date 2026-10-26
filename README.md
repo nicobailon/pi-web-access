@@ -12,6 +12,12 @@
 
 <https://github.com/user-attachments/assets/cac6a17a-1eeb-4dde-9818-cdf85d8ea98f>
 
+## What's new in 0.45
+
+https://github.com/user-attachments/assets/b3c57253-6c24-470b-a2af-381b1cce9c84
+
+The agent can now pull specific values off a page, like a price or a rate limit, instead of reading the whole thing. Each value comes back with the line it was found on, and a value that isn't on the page is reported as missing rather than guessed. Code mode scripts get those values as typed data, so one script can search and compare numbers across the top results. Search can also move on to the next provider when one comes back empty or off-topic, and the web tools take about 60% fewer tokens on every request. See the [changelog](CHANGELOG.md#0450---2026-10-25) for everything in this release.
+
 ## Why Pi Web Access
 
 **Zero Config** — Works out of the box with Exa MCP (no API key needed). If you're signed into Pi with a Codex subscription, OpenAI web search can reuse that auth. An active Kimi Code Plan signed in through `/login kimi-coding` enables explicit Kimi search without a separate Open Platform key. Add API keys or endpoints for OpenAI, Brave, Parallel, TinyFish, Search1API, Searchinfinity, Querit, Tavily, Firecrawl, Jina, SERPdive, Kagi, Bocha, Ollama, Valyu, SerpBase, SerpApi, Serper, explicit-only Serply, Exa, Perplexity, Gemini API, or Mistral for more control; configure a self-hosted SearXNG endpoint or a degoog metasearch instance (public `https://degoog.org` by default) for private search; or opt into browser-cookie access for Gemini Web.
