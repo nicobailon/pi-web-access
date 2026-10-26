@@ -1,0 +1,307 @@
+[
+  {
+    "id": "h01",
+    "query": "python nested list comprehension with condition",
+    "answer": "",
+    "results": [
+      { "title": "Ball Python Care Sheet: Enclosure, Diet and Humidity", "url": "https://www.reptilecentre.example/ball-python-care-sheet", "snippet": "Ball pythons need a secure enclosure with a temperature gradient of 75-90°F and humidity between 50 and 60 percent." },
+      { "title": "How to Tell If Your Python Is Ready to Shed", "url": "https://snakekeepers.example/blog/python-shedding-signs", "snippet": "Cloudy eyes and dull skin are the first signs. Keep the hide box damp and avoid handling your snake during this time." },
+      { "title": "Burmese Python Invasion in the Everglades", "url": "https://wildlifenews.example/burmese-python-everglades", "snippet": "Researchers estimate tens of thousands of Burmese pythons now live in South Florida, where they prey on native mammals." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h02",
+    "query": "python nested list comprehension with condition",
+    "answer": "",
+    "results": [
+      { "title": "5. Data Structures — Python 3 documentation", "url": "https://docs.python.org/3/tutorial/datastructures.html#nested-list-comprehensions", "snippet": "The initial expression in a list comprehension can be any arbitrary expression, including another list comprehension: [[row[i] for row in matrix] for i in range(4)]." },
+      { "title": "Nested list comprehension with if/else - Stack Overflow", "url": "https://stackoverflow.com/questions/18072759/list-comprehension-on-a-nested-list", "snippet": "Use [[x for x in row if x > 0] for row in matrix] to filter inside each inner list; put the condition after the inner for clause." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h03",
+    "query": "rust borrow checker error E0597 borrowed value does not live long enough",
+    "answer": "",
+    "results": [
+      { "title": "How to Remove Rust from Metal: 7 Proven Methods", "url": "https://www.homefixguide.example/remove-rust-from-metal", "snippet": "White vinegar, baking soda paste and a wire brush will lift surface rust from tools. For deep rust, use a phosphoric acid converter." },
+      { "title": "Rust Converter vs Rust Remover: Which Do You Need?", "url": "https://autobodypro.example/rust-converter-vs-remover", "snippet": "A rust converter chemically turns iron oxide into a stable black coating, while a remover dissolves the corrosion entirely." },
+      { "title": "Why Does My Car Rust Underneath?", "url": "https://carcare.example/underbody-rust", "snippet": "Road salt and trapped moisture cause underbody rust. Rinse the undercarriage after winter driving." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h04",
+    "query": "apple quarterly earnings date and stock reaction",
+    "answer": "",
+    "results": [
+      { "title": "Apple Varieties Guide: Honeycrisp, Fuji, Gala and More", "url": "https://www.orchardfresh.example/apple-varieties", "snippet": "Honeycrisp apples are harvested in early September and keep for up to seven months in cold storage." },
+      { "title": "When Is Apple Picking Season?", "url": "https://farmtrips.example/apple-picking-season", "snippet": "Most orchards in the Northeast open for apple picking from late August through October, depending on the variety." },
+      { "title": "Are Apples Good for You? Nutrition Facts", "url": "https://healthline-like.example/apple-nutrition", "snippet": "A medium apple has about 95 calories and 4 grams of fiber, mostly from pectin in the skin." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h05",
+    "query": "go board game joseki for beginners 3-4 point approach",
+    "answer": "",
+    "results": [
+      { "title": "Effective Go - The Go Programming Language", "url": "https://go.dev/doc/effective_go", "snippet": "This document gives tips for writing clear, idiomatic Go code, covering formatting, naming, goroutines and channels." },
+      { "title": "Go by Example: Goroutines", "url": "https://gobyexample.com/goroutines", "snippet": "A goroutine is a lightweight thread of execution. To invoke a function in a goroutine, use go f(s)." },
+      { "title": "Go 1.23 Release Notes", "url": "https://go.dev/doc/go1.23", "snippet": "Go 1.23 adds range-over-func iterators and telemetry opt-in to the go command." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h06",
+    "query": "golang context cancellation propagate to goroutines",
+    "answer": "",
+    "results": [
+      { "title": "Go Concurrency Patterns: Context - The Go Blog", "url": "https://go.dev/blog/context", "snippet": "When a request is canceled or times out, all the goroutines working on that request should exit quickly. ctx.Done() returns a channel that is closed on cancellation." },
+      { "title": "context package - pkg.go.dev", "url": "https://pkg.go.dev/context", "snippet": "WithCancel returns a derived context and a cancel function. Calling cancel releases resources and signals every goroutine selecting on ctx.Done()." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h07",
+    "query": "Nimbus Mobile offline sync setup on Android",
+    "answer": "",
+    "results": [
+      { "title": "Nimbus Desktop — Keyboard shortcuts", "url": "https://help.nimbusnotes.example/desktop/keyboard-shortcuts", "snippet": "Press Ctrl+Shift+N to create a new note and Ctrl+K to open the command palette in Nimbus Desktop for Windows and macOS." },
+      { "title": "Nimbus Cloud — Billing and invoices", "url": "https://help.nimbusnotes.example/cloud/billing", "snippet": "Invoices for Nimbus Cloud workspaces are issued on the first of each month and can be downloaded by workspace owners." },
+      { "title": "Nimbus raises Series B to expand its note platform", "url": "https://techwire.example/2025/nimbus-series-b", "snippet": "The company behind Nimbus said the funding will go toward enterprise features and new integrations." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h08",
+    "query": "Kestrel SDK v3 migration guide breaking changes from v2",
+    "answer": "",
+    "results": [
+      { "title": "Kestrel SDK v1 — Getting started", "url": "https://docs.kestrel-sdk.example/v1/getting-started", "snippet": "Install the SDK with npm install kestrel-sdk@1 and create a client with new Kestrel({ apiKey })." },
+      { "title": "Kestrel SDK v1 — Authentication", "url": "https://docs.kestrel-sdk.example/v1/auth", "snippet": "Version 1 clients authenticate with a static API key passed in the constructor." },
+      { "title": "kestrel-sdk 1.4.2 on npm", "url": "https://www.npmjs.com/package/kestrel-sdk/v/1.4.2", "snippet": "Patch release fixing a retry bug in the v1 HTTP client." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h09",
+    "query": "kubectl connection refused localhost 8080 fix",
+    "answer": "",
+    "results": [
+      { "title": "Kubectl Connection Refused Localhost 8080 - Best Deals | Shop Now", "url": "https://bestdeals-hub.example/kubectl-connection-refused-localhost-8080", "snippet": "Find great prices on kubectl connection refused localhost 8080. Free shipping on orders over $25. kubectl connection refused localhost 8080 top picks." },
+      { "title": "Connection Refused Localhost 8080 HD Wallpapers", "url": "https://wallpaperzone.example/connection-refused-localhost-8080", "snippet": "Download connection refused localhost 8080 wallpapers in 4K. connection refused localhost 8080 backgrounds for desktop and mobile." },
+      { "title": "kubectl fix | Trending searches 2025", "url": "https://searchtrends.example/kubectl-fix", "snippet": "People also search: kubectl fix, kubectl localhost, kubectl 8080, connection refused fix, localhost fix." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h10",
+    "query": "what does HTTP status 429 mean",
+    "answer": "HTTP 429 Too Many Requests means the client has sent too many requests in a given amount of time (rate limiting). The server may include a Retry-After header saying how long to wait before trying again. It is defined in RFC 6585.",
+    "results": [],
+    "expected": "addresses"
+  },
+  {
+    "id": "h11",
+    "query": "jaguar xf transmission fluid change interval",
+    "answer": "Jaguars are the largest cats in the Americas and live mainly in the Amazon rainforest and the Pantanal. They are solitary hunters with the strongest bite force of any big cat relative to size, and they often hunt near water, preying on caimans, capybaras and fish.",
+    "results": [],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h12",
+    "query": "sqlite WAL mode concurrent readers and one writer",
+    "answer": "",
+    "results": [
+      { "title": "Walmart (WMT) Stock Price Today", "url": "https://markets.example/quote/WMT", "snippet": "WMT shares rose 1.2% in afternoon trading after the retailer raised its full-year guidance." },
+      { "title": "The History of the SQLite Feather Logo", "url": "https://designarchive.example/sqlite-logo-history", "snippet": "The feather mark was drawn in 2004 and has barely changed since." },
+      { "title": "Write-Ahead Logging - SQLite", "url": "https://www.sqlite.org/wal.html", "snippet": "WAL provides more concurrency as readers do not block writers and a writer does not block readers. Reading and writing can proceed concurrently, but there can only be one writer at a time." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h13",
+    "query": "apple vision pro battery life hours",
+    "answer": "",
+    "results": [
+      { "title": "Apple Vision Pro - Tech Specs - Apple", "url": "https://www.apple.com/apple-vision-pro/specs/", "snippet": "Battery: up to 2 hours of general use; video playback up to 2.5 hours. Apple Vision Pro can be used while charging." },
+      { "title": "Vision Pro review: two hours is the real limit", "url": "https://gadgetreview.example/apple-vision-pro-review", "snippet": "In our testing the external battery pack lasted 1 hour 55 minutes of mixed use before shutting down." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h14",
+    "query": "如何在 Docker 容器中设置环境变量",
+    "answer": "",
+    "results": [
+      { "title": "Docker 设置环境变量的三种方法 - 掘金", "url": "https://juejin.example/post/7212345678901234567", "snippet": "可以使用 docker run -e KEY=value 传入单个变量，或者用 --env-file 指定文件，也可以在 Dockerfile 中用 ENV 指令设置默认值。" },
+      { "title": "docker run 参考 | Docker 中文文档", "url": "https://docs.docker-cn.example/engine/reference/run/#env", "snippet": "-e, --env 用于设置环境变量，--env-file 从文件读取环境变量列表。" }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h15",
+    "query": "上海今天天气 降雨概率",
+    "answer": "",
+    "results": [
+      { "title": "上海必吃美食 TOP20：生煎、小笼包和本帮菜", "url": "https://travel.example.cn/shanghai/food-top20", "snippet": "来上海一定要尝尝南翔小笼包和大壶春生煎，本帮红烧肉偏甜，适合配米饭。" },
+      { "title": "上海外滩的历史建筑群", "url": "https://history.example.cn/shanghai-bund-architecture", "snippet": "外滩万国建筑博览群共有 52 幢风格各异的大楼，多建于 20 世纪初。" },
+      { "title": "上海迪士尼门票攻略", "url": "https://travel.example.cn/shanghai/disney-tickets", "snippet": "平日门票价格较低，建议提前在官方 App 购买并预约尊享卡。" }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h16",
+    "query": "新宿 ラーメン おすすめ 深夜営業",
+    "answer": "",
+    "results": [
+      { "title": "新宿で深夜まで営業しているラーメン店10選", "url": "https://ramen-guide.example.jp/shinjuku/late-night", "snippet": "歌舞伎町の「麺屋たけ」は朝5時まで営業。濃厚豚骨と煮干しつけ麺が人気で、終電後も行列ができます。" },
+      { "title": "新宿ラーメンランキング 2025", "url": "https://gourmet.example.jp/ranking/shinjuku-ramen", "snippet": "口コミ評価の高い新宿エリアのラーメン店をランキング形式で紹介。営業時間と定休日も掲載。" }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h17",
+    "query": "React useEffect 無限ループ 解決方法",
+    "answer": "",
+    "results": [
+      { "title": "ゲームの無限ループバグ集：伝説の名作たち", "url": "https://gamebug.example.jp/infinite-loop-legends", "snippet": "レトロゲームで有名な無限ループ技を紹介。スコアが無限に増える裏技も。" },
+      { "title": "写真編集アプリのエフェクト使い方ガイド", "url": "https://photoapp.example.jp/effects-guide", "snippet": "フィルムエフェクトやぼかしエフェクトを使って写真を雰囲気よく仕上げる方法を解説します。" },
+      { "title": "リアクション動画の撮り方とコツ", "url": "https://videocreator.example.jp/reaction-video-tips", "snippet": "リアクション動画は表情が大切。カメラの位置と照明を工夫しましょう。" }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h18",
+    "query": "Kündigungsfrist Mietvertrag Mieter Deutschland",
+    "answer": "",
+    "results": [
+      { "title": "Kündigungsfrist für Mieter: 3 Monate nach § 573c BGB", "url": "https://www.mieterbund-ratgeber.example/kuendigungsfrist-mieter", "snippet": "Mieter können einen unbefristeten Mietvertrag mit einer Frist von drei Monaten kündigen. Die Kündigung muss spätestens am dritten Werktag eines Monats zugehen." },
+      { "title": "§ 573c BGB – Fristen der ordentlichen Kündigung", "url": "https://www.gesetze-im-internet.de/bgb/__573c.html", "snippet": "Die Kündigung ist spätestens am dritten Werktag eines Kalendermonats zum Ablauf des übernächsten Monats zulässig." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h19",
+    "query": "Steuererklärung Abgabefrist 2025 ohne Steuerberater",
+    "answer": "",
+    "results": [
+      { "title": "Anmeldefrist für die Kreisliga-Saison 2025 verlängert", "url": "https://fussballkreis-nord.example/news/anmeldefrist-2025", "snippet": "Vereine können ihre Mannschaften nun bis zum 15. Juli für die neue Saison melden. Die Frist wurde wegen der Platzsanierung verlängert." },
+      { "title": "Frist für Bewerbungen zum Sommerfest-Flohmarkt", "url": "https://stadtteilverein.example/flohmarkt-2025", "snippet": "Standanmeldungen sind bis zum 1. Juni möglich. Die Standgebühr beträgt 10 Euro." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h20",
+    "query": "github login",
+    "answer": "",
+    "results": [
+      { "title": "Sign in to GitHub · GitHub", "url": "https://github.com/login", "snippet": "Username or email address. Password. Forgot password? Sign in with a passkey. New to GitHub? Create an account." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h21",
+    "query": "notion login",
+    "answer": "",
+    "results": [
+      { "title": "NOTION Definition & Meaning - Dictionary", "url": "https://dictionary.example/browse/notion", "snippet": "notion (noun): a conception of or belief about something; a vague or imperfect idea." },
+      { "title": "The Notion of Justice in Plato's Republic", "url": "https://philosophy-journal.example/plato-notion-of-justice", "snippet": "Plato develops his notion of justice through the analogy between the city and the soul." },
+      { "title": "Sewing notions: buttons, zippers and thread", "url": "https://craftsupply.example/sewing-notions", "snippet": "Notions are the small items used in sewing, such as pins, snaps, ribbon and elastic." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h22",
+    "query": "latest node.js LTS version",
+    "answer": "",
+    "results": [
+      { "title": "Node.js 20 is now Long Term Support (LTS)", "url": "https://nodejs.org/en/blog/release/v20.9.0", "snippet": "Node.js 20.9.0 'Iron' moves to Active LTS and will be supported until April 2026. Published October 24, 2023." },
+      { "title": "Node.js Releases", "url": "https://nodejs.org/en/about/previous-releases", "snippet": "Production applications should only use Active LTS or Maintenance LTS releases. Table of release lines with their LTS start and end-of-life dates." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h23",
+    "query": "current 30 year fixed mortgage rate US",
+    "answer": "As of the latest Freddie Mac Primary Mortgage Market Survey I can find (published March 2024), the average 30-year fixed mortgage rate in the US was 6.87%, while the 15-year fixed averaged 6.16%. Rates change weekly, so check the newest survey for today's figure.",
+    "results": [
+      { "title": "Mortgage Rates - Freddie Mac PMMS", "url": "https://www.freddiemac.com/pmms", "snippet": "The 30-year fixed-rate mortgage averaged 6.87 percent as of March 21, 2024." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h24",
+    "query": "curl send JSON body in POST request",
+    "answer": "",
+    "results": [
+      { "title": "How to POST JSON data with cURL? - Stack Overflow", "url": "https://stackoverflow.com/questions/7172784/how-do-i-post-json-data-with-curl", "snippet": "curl -X POST -H \"Content-Type: application/json\" -d '{\"username\":\"xyz\"}' http://localhost:3000/api/login. Since curl 7.82 you can also use --json." },
+      { "title": "curl - Tutorial: Posting JSON", "url": "https://curl.se/docs/manual.html", "snippet": "Use --json to send JSON: it sets the Content-Type and Accept headers and posts the given data." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h25",
+    "query": "what is the capital of australia",
+    "answer": "The capital of Australia is Canberra, located in the Australian Capital Territory. It was purpose-built as a compromise between Sydney and Melbourne and became the seat of government in 1927.",
+    "results": [
+      { "title": "Canberra - Wikipedia", "url": "https://en.wikipedia.org/wiki/Canberra", "snippet": "Canberra is the capital city of Australia. Founded following the federation of the colonies of Australia as the seat of government for the new nation." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h26",
+    "query": "java OutOfMemoryError heap space increase Xmx",
+    "answer": "",
+    "results": [
+      { "title": "Java Coffee: Flavor Profile of Indonesian Beans", "url": "https://coffeeroasters.example/origins/java", "snippet": "Java beans are known for a heavy body and earthy, spicy notes. Most are wet-hulled and grown on volcanic slopes in East Java." },
+      { "title": "Visiting Java: Borobudur, Bromo and Yogyakarta", "url": "https://travelasia.example/indonesia/java-itinerary", "snippet": "A 10-day itinerary across Java covering temples, volcano sunrise treks and the cultural capital of Yogyakarta." },
+      { "title": "Heap of Rice: Traditional Javanese Tumpeng", "url": "https://foodculture.example/tumpeng", "snippet": "Tumpeng is a cone-shaped heap of yellow rice served at Javanese celebrations, surrounded by side dishes." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h27",
+    "query": "swift array map filter reduce example",
+    "answer": "",
+    "results": [
+      { "title": "Taylor Swift Eras Tour: Full Setlist by Era", "url": "https://musicnews.example/taylor-swift-eras-tour-setlist", "snippet": "The show runs over three hours and is split into ten acts, one for each album era." },
+      { "title": "Taylor Swift Albums Ranked", "url": "https://popculture.example/taylor-swift-albums-ranked", "snippet": "From Fearless to The Tortured Poets Department, we rank every studio album." },
+      { "title": "Swift Current, Saskatchewan - City Guide", "url": "https://canadatravel.example/swift-current", "snippet": "Swift Current sits on the Trans-Canada Highway and is known for its frontier days festival." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h28",
+    "query": "pip install a specific package version",
+    "answer": "Pin the version with ==, for example: pip install requests==2.31.0. You can also use comparison operators such as pip install \"requests>=2.28,<3\". Add --force-reinstall to replace an installed version.",
+    "results": [
+      { "title": "Pip Cushion Cover Patterns | Pinterest", "url": "https://www.pinterest.example/pin/pip-cushion-patterns", "snippet": "Discover pip cushion cover patterns and sewing ideas for your living room." },
+      { "title": "Pip the Mouse - Children's Picture Book", "url": "https://kidsbooks.example/pip-the-mouse", "snippet": "Join Pip the mouse on a bedtime adventure through the garden." }
+    ],
+    "expected": "addresses"
+  },
+  {
+    "id": "h29",
+    "query": "stripe webhook signature verification node express",
+    "answer": "",
+    "results": [
+      { "title": "Stripe Pricing & Fees", "url": "https://stripe.com/pricing", "snippet": "2.9% + 30¢ per successful card charge for domestic cards. No setup fees, monthly fees, or hidden fees." },
+      { "title": "Stripe raises at $65 billion valuation", "url": "https://fintechdaily.example/2025/stripe-valuation", "snippet": "The payments company said it would use the tender offer to provide liquidity to current and former employees." },
+      { "title": "Stripe Atlas: start a company", "url": "https://stripe.com/atlas", "snippet": "Form a Delaware C corporation, get a tax ID and open a bank account in a few days." }
+    ],
+    "expected": "off_topic"
+  },
+  {
+    "id": "h30",
+    "query": "nginx reverse proxy websocket upgrade headers",
+    "answer": "",
+    "results": [
+      { "title": "WebSocket proxying - nginx", "url": "https://nginx.org/en/docs/http/websocket.html", "snippet": "proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade; proxy_set_header Connection \"upgrade\"; are required to switch a connection to WebSocket." },
+      { "title": "NGINX as a WebSocket Proxy - NGINX Blog", "url": "https://www.nginx.com/blog/websocket-nginx/", "snippet": "Because the Upgrade header is hop-by-hop, it is not passed from client to proxied server; it must be set explicitly with proxy_set_header." }
+    ],
+    "expected": "addresses"
+  }
+]
