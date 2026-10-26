@@ -1,0 +1,103 @@
+[
+  {"id": "o01", "query": "rust borrow checker lifetime error E0597", "answer": "", "results": [
+    {"title": "How to Remove Rust from Metal Tools", "url": "https://www.homefixit.example.com/remove-rust-tools", "snippet": "Soak rusty tools in white vinegar overnight, then scrub with steel wool to lift the oxidation."},
+    {"title": "Rust Prevention for Cars in Winter", "url": "https://autocare.example.com/winter-rust", "snippet": "Road salt speeds up corrosion. Wash the undercarriage every two weeks to stop rust spreading."}
+  ], "expected": "off_topic"},
+  {"id": "o02", "query": "rust borrow checker lifetime error E0597", "answer": "", "results": [
+    {"title": "E0597 - Error codes index", "url": "https://doc.rust-lang.example.org/error_codes/E0597.html", "snippet": "A value was dropped while it was still borrowed. The borrowed value does not live long enough for the reference stored in the struct."},
+    {"title": "Understanding lifetimes", "url": "https://rustbook.example.org/ch10-03-lifetime-syntax.html", "snippet": "Lifetime annotations describe how long references are valid relative to each other."}
+  ], "expected": "addresses"},
+  {"id": "o03", "query": "python list comprehension with if else", "answer": "", "results": [
+    {"title": "Ball Python Care Sheet", "url": "https://reptiles.example.com/ball-python-care", "snippet": "Ball pythons need a warm side of 88-92°F and humidity around 55-60 percent."},
+    {"title": "Burmese Python Invasion in Florida", "url": "https://wildlife.example.org/burmese-python-florida", "snippet": "Thousands of Burmese pythons now live in the Everglades, where they prey on native mammals."}
+  ], "expected": "off_topic"},
+  {"id": "o04", "query": "python list comprehension with if else", "answer": "Put the conditional expression before the for: [x if x > 0 else 0 for x in values]. A trailing if filters instead: [x for x in values if x > 0].", "results": [], "expected": "addresses"},
+  {"id": "o05", "query": "Tessellate CLI export report as CSV", "answer": "", "results": [
+    {"title": "Tessellate Cloud — Billing FAQ", "url": "https://tessellate.example.com/cloud/billing", "snippet": "Invoices are emailed on the first of each month. Annual plans get two months free."},
+    {"title": "Tessellate Cloud status", "url": "https://status.tessellate.example.com", "snippet": "All systems operational."}
+  ], "expected": "off_topic"},
+  {"id": "o06", "query": "Tessellate CLI export report as CSV", "answer": "", "results": [
+    {"title": "Tessellate Cloud status", "url": "https://status.tessellate.example.com", "snippet": "All systems operational."},
+    {"title": "Tessellate CLI — Reports", "url": "https://docs.tessellate.example.com/cli/reports", "snippet": "Run tessellate report --format csv to write the report as comma-separated values instead of JSON."},
+    {"title": "Tessellate raises Series B", "url": "https://news.example.com/tessellate-series-b", "snippet": "The company plans to hire 40 engineers."}
+  ], "expected": "addresses"},
+  {"id": "o07", "query": "best free CSV to JSON converter online", "answer": "", "results": [
+    {"title": "CSV to JSON — free online converter", "url": "https://convertio.example.com/csv-json", "snippet": "Paste CSV, get JSON. No signup, runs in your browser."}
+  ], "expected": "addresses"},
+  {"id": "o08", "query": "best free CSV to JSON converter online", "answer": "", "results": [
+    {"title": "Best Free CSV, JSON, Converter, Online, Tools 2026 | Top Deals", "url": "https://deals-hub.example.net/best-free-csv-json-converter-online", "snippet": "best free csv to json converter online best free csv to json converter online cheap deals coupons casino bonus"},
+    {"title": "Online Converter Free Best CSV JSON", "url": "https://seo-farm.example.biz/csv-json-best", "snippet": "Looking for best free CSV to JSON converter online? Click here for best free CSV to JSON converter online offers on mattresses."}
+  ], "expected": "off_topic"},
+  {"id": "o09", "query": "github login", "answer": "", "results": [
+    {"title": "Sign in to GitHub", "url": "https://github.com/login", "snippet": "Username or email address. Password. Forgot password?"}
+  ], "expected": "addresses"},
+  {"id": "o10", "query": "github login", "answer": "", "results": [
+    {"title": "GitLab sign in", "url": "https://gitlab.com/users/sign_in", "snippet": "Sign in to GitLab with your username or email."},
+    {"title": "Bitbucket log in", "url": "https://bitbucket.org/account/signin", "snippet": "Log in to your Atlassian account to continue to Bitbucket."}
+  ], "expected": "off_topic"},
+  {"id": "o11", "query": "Node.js 24 release date", "answer": "Node.js 24 was released on May 6, 2025, and entered long-term support in October 2025.", "results": [], "expected": "addresses"},
+  {"id": "o12", "query": "Node.js 24 release date", "answer": "Node.js 18 reached end of life on April 30, 2025. Users should upgrade to a supported release line.", "results": [], "expected": "off_topic"},
+  {"id": "o13", "query": "如何在 Linux 上查看端口占用", "answer": "", "results": [
+    {"title": "Linux 查看端口占用的几种方法", "url": "https://blog.example.cn/linux-port", "snippet": "可以使用 ss -tlnp 或 lsof -i :8080 查看哪个进程占用了端口。"}
+  ], "expected": "addresses"},
+  {"id": "o14", "query": "如何在 Linux 上查看端口占用", "answer": "", "results": [
+    {"title": "上海港口吞吐量创新高", "url": "https://news.example.cn/shanghai-port", "snippet": "今年前三季度，上海港集装箱吞吐量同比增长 6%。"},
+    {"title": "宁波港口物流招聘", "url": "https://jobs.example.cn/ningbo-port", "snippet": "招聘港口调度员，要求两年以上工作经验。"}
+  ], "expected": "off_topic"},
+  {"id": "o15", "query": "東京 おすすめ ラーメン 新宿", "answer": "", "results": [
+    {"title": "新宿のラーメン人気店ランキング", "url": "https://gourmet.example.jp/shinjuku-ramen", "snippet": "新宿駅周辺で評価の高いラーメン店を10店紹介します。濃厚豚骨から醤油まで。"}
+  ], "expected": "addresses"},
+  {"id": "o16", "query": "東京 おすすめ ラーメン 新宿", "answer": "", "results": [
+    {"title": "インスタントラーメンの歴史", "url": "https://history.example.jp/instant-ramen", "snippet": "1958年に世界初のインスタントラーメンが発売されました。"},
+    {"title": "ラーメンの作り方（家庭用）", "url": "https://recipe.example.jp/ramen-home", "snippet": "鶏ガラでスープを取り、市販の麺を茹でるだけで簡単に作れます。"}
+  ], "expected": "off_topic"},
+  {"id": "o17", "query": "Kestrel Agent Windows support", "answer": "", "results": [
+    {"title": "Kestrel Agent — System requirements", "url": "https://docs.kestrel.example.com/agent/requirements", "snippet": "Kestrel Agent runs on Linux and macOS. Windows is not supported."}
+  ], "expected": "addresses"},
+  {"id": "o18", "query": "Kestrel Agent Windows support", "answer": "", "results": [
+    {"title": "Kestrel web server (ASP.NET Core)", "url": "https://learn.example.com/aspnet/core/servers/kestrel", "snippet": "Kestrel is a cross-platform web server for ASP.NET Core, included by default in project templates."},
+    {"title": "American kestrel — bird guide", "url": "https://birds.example.org/american-kestrel", "snippet": "The American kestrel is the smallest falcon in North America."}
+  ], "expected": "off_topic"},
+  {"id": "o19", "query": "postgres 17 logical replication failover slots", "answer": "", "results": [
+    {"title": "What's new in PostgreSQL 9.4", "url": "https://wiki.example.org/whats-new-postgres-9.4", "snippet": "PostgreSQL 9.4 adds the jsonb data type, a binary JSON format with GIN index support."}
+  ], "expected": "off_topic"},
+  {"id": "o20", "query": "postgres 17 logical replication failover slots", "answer": "PostgreSQL 17 adds failover slots: set failover = true when creating a logical replication slot and enable sync_replication_slots on the standby so subscribers can continue after promotion.", "results": [
+    {"title": "PostgreSQL 17 release notes", "url": "https://www.postgresql.example.org/docs/17/release-17.html", "snippet": "Allow logical replication slots to be synchronized to physical standbys for failover."}
+  ], "expected": "addresses"},
+  {"id": "o21", "query": "apple stock price today", "answer": "", "results": [
+    {"title": "AAPL — Apple Inc. stock quote", "url": "https://finance.example.com/quote/AAPL", "snippet": "Apple Inc. (AAPL) 231.45 +1.20 (0.52%) at close."}
+  ], "expected": "addresses"},
+  {"id": "o22", "query": "apple stock price today", "answer": "", "results": [
+    {"title": "Apple prices at the farmers market this week", "url": "https://localfarm.example.com/apple-prices", "snippet": "Honeycrisp apples are $3.50 per pound, Gala $2.20. Cider is back in stock."},
+    {"title": "Making apple stock for soup", "url": "https://recipes.example.com/apple-stock", "snippet": "Simmer apple peels and cores with onion for an hour to make a light stock."}
+  ], "expected": "off_topic"},
+  {"id": "o23", "query": "go generics type constraints example", "answer": "", "results": [
+    {"title": "Tutorial: Getting started with generics", "url": "https://go.example.dev/doc/tutorial/generics", "snippet": "Declare a type constraint as an interface: type Number interface { int64 | float64 }."}
+  ], "expected": "addresses"},
+  {"id": "o24", "query": "go generics type constraints example", "answer": "In the board game Go, a ladder is a sequence of atari that chases a group across the board. Beginners should learn to read ladders before playing on a 19x19 board.", "results": [], "expected": "off_topic"},
+  {"id": "o25", "query": "Wie kündige ich meinen Handyvertrag fristgerecht", "answer": "", "results": [
+    {"title": "Handyvertrag kündigen: Fristen und Musterschreiben", "url": "https://verbraucher.example.de/handyvertrag-kuendigen", "snippet": "Seit 2022 können Verträge nach der Mindestlaufzeit mit einem Monat Frist gekündigt werden. Nutzen Sie den Kündigungsbutton."}
+  ], "expected": "addresses"},
+  {"id": "o26", "query": "Wie kündige ich meinen Handyvertrag fristgerecht", "answer": "", "results": [
+    {"title": "Die besten Handys 2026 im Test", "url": "https://tech.example.de/beste-handys", "snippet": "Das neue Modell überzeugt mit Akku und Kamera."},
+    {"title": "Handyhülle selbst gestalten", "url": "https://shop.example.de/huelle", "snippet": "Laden Sie Ihr Foto hoch und wir drucken es auf die Hülle."}
+  ], "expected": "off_topic"},
+  {"id": "o27", "query": "how to center a div css", "answer": "", "results": [
+    {"title": "Centering in CSS", "url": "https://css-tricks.example.com/centering-css", "snippet": "Use display: flex; justify-content: center; align-items: center; on the parent."}
+  ], "expected": "addresses"},
+  {"id": "o28", "query": "how to center a div css", "answer": "There is no answer for this query.", "results": [], "expected": "off_topic"},
+  {"id": "o29", "query": "mercury retrograde dates 2026", "answer": "", "results": [
+    {"title": "Mercury (planet) — facts", "url": "https://space.example.gov/mercury-facts", "snippet": "Mercury is the smallest planet and closest to the Sun, with a year of 88 Earth days."},
+    {"title": "Mercury poisoning symptoms", "url": "https://health.example.org/mercury-poisoning", "snippet": "Exposure to mercury vapor can cause tremors and memory problems."}
+  ], "expected": "off_topic"},
+  {"id": "o30", "query": "mercury retrograde dates 2026", "answer": "", "results": [
+    {"title": "Mercury retrograde calendar", "url": "https://astro.example.com/mercury-retrograde-2026", "snippet": "In 2026 Mercury is retrograde from February 26 to March 20, June 29 to July 23, and October 24 to November 13."}
+  ], "expected": "addresses"},
+  {"id": "o31", "query": "stripe webhook signature verification node", "answer": "", "results": [
+    {"title": "Check the webhook signatures", "url": "https://docs.stripe.example.com/webhooks/signatures", "snippet": "Use stripe.webhooks.constructEvent(body, sig, secret) with the raw request body to verify the Stripe-Signature header."}
+  ], "expected": "addresses"},
+  {"id": "o32", "query": "stripe webhook signature verification node", "answer": "", "results": [
+    {"title": "Stripes in interior design: 12 ideas", "url": "https://homedecor.example.com/stripes", "snippet": "Vertical stripes make a ceiling look higher."},
+    {"title": "Node (networking)", "url": "https://encyclopedia.example.org/node-networking", "snippet": "A node is a connection point in a network that can receive and send data."}
+  ], "expected": "off_topic"}
+]
