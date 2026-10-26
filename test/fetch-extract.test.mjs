@@ -266,44 +266,45 @@ test("text and numbers cite the page line they are on, and text that is not on t
 	});
 });
 
-test("text is found through Turndown's markdown escapes and links", async (t) => {
-	const { default: TurndownService } = await import("turndown");
-	const page = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" })
-		.turndown('<p>Install my_package_name and set the [beta] flag.</p><p>See the <a href="https://example.com/docs">setup guide</a> — it’s short.</p>');
-	t.mock.method(globalThis, "fetch", async () => Response.json({ success: true, result: { answers: {
-		pkg: { type: "text", value: "my_package_name", confidence: 0.99 },
-		flag: { type: "text", value: "[beta]", confidence: 0.99 },
-		guide: { type: "text", value: "setup guide - it's short", confidence: 0.99 },
-	} } }));
-	const result = await extractPageFields(page, parseExtractFields({ pkg: "text", flag: "text", guide: "text" }), { modelRegistry: setUpRegistry });
-	assert.deepEqual(Object.values(result.fields).map((field) => [field.status, field.line]), [
-		["extracted", "Install my\\_package\\_name and set the \\[beta\\] flag."],
-		["extracted", "Install my\\_package\\_name and set the \\[beta\\] flag."],
-		["extracted", "See the [setup guide](https://example.com/docs) — it’s short."],
-	]);
-});
-
-test("a value made of emphasis characters against a long run of them is checked without stalling", async (t) => {
-	t.mock.method(globalThis, "fetch", async () => Response.json({ success: true, result: { answers: { total: { type: "text", value: "Total _ _ due", confidence: 0.99 } } } }));
-	// A regex built from the value backtracked for seconds on 4,000 underscores.
-	const page = `Total ${"_".repeat(100_000)} paid`;
-	const result = await extractPageFields(page, parseExtractFields({ total: "text" }), { modelRegistry: setUpRegistry });
-	assert.equal(result.fields.total.status, "uncertain");
-});
-
-test("a link's target and an image's address are found, as well as the link text", async (t) => {
-	const { default: TurndownService } = await import("turndown");
-	const page = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" })
-		.turndown('<p>Get it from <a href="https://example.com/file_v2.zip">the download page</a>.</p><p><img src="https://cdn.example.com/logo.png" alt="Logo"></p>');
-	t.mock.method(globalThis, "fetch", async () => Response.json({ success: true, result: { answers: {
-		download: { type: "text", value: "https://example.com/file_v2.zip", confidence: 0.99 },
-		logo: { type: "text", value: "https://cdn.example.com/logo.png", confidence: 0.99 },
-		label: { type: "text", value: "the download page.", confidence: 0.99 },
-	} } }));
-	const result = await extractPageFields(page, parseExtractFields({ download: "text", logo: "text", label: "text" }), { modelRegistry: setUpRegistry });
-	assert.deepEqual(Object.values(result.fields).map((field) => [field.status, field.line]), [
-		["extracted", "Get it from [the download page](https://example.com/file_v2.zip)."],
-		["extracted", "![Logo](https://cdn.example.com/logo.png)"],
-		["extracted", "Get it from [the download page](https://example.com/file_v2.zip)."],
-	]);
-});
+// How a value is found on its page (#616): one test per case, timed, since each page here is adversarial or long.
+const { default: TurndownService } = await import("turndown");
+const turndown = (html) => new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" }).turndown(html);
+const adversarial = "](".repeat(30_000) + "(".repeat(40_000) + "\\".repeat(40_001) + ")".repeat(30_000) + "[a](".repeat(5_000);
+const CATALOG = [
+	["A1 snake_case through Turndown escapes", turndown("<p>Install my_package_name now.</p>"), "text", "my_package_name", { line: "Install my\\_package\\_name now." }],
+	["A2 brackets through Turndown escapes", turndown("<p>Set [beta] mode.</p>"), "text", "[beta]", { line: "Set \\[beta\\] mode." }],
+	["A2 text around escaped brackets", turndown("<p>Set [beta] mode.</p>"), "text", "beta mode", { line: "Set \\[beta\\] mode." }],
+	["A3 a link target", "Get it from [the download page](https://example.com/file.zip).", "text", "https://example.com/file.zip", { line: "Get it from [the download page](https://example.com/file.zip)." }],
+	["A4 an image address", turndown('<img src="https://cdn.example.com/logo.png" alt="logo">'), "text", "https://cdn.example.com/logo.png", { line: "![logo](https://cdn.example.com/logo.png)" }],
+	["A5 link text past a titled target", "[setup guide](https://example.com/docs \"Docs\") — it’s short", "text", "setup guide - it's short", { line: "[setup guide](https://example.com/docs \"Docs\") — it’s short" }],
+	["A6 link text with parentheses", "[Foo (bar) article](https://en.wikipedia.org/wiki/Foo_(bar)) is long", "text", "Foo (bar) article", { includes: "Foo (bar) article" }],
+	["A6 visible text after a target with parentheses", "[Foo (bar) article](https://en.wikipedia.org/wiki/Foo_(bar)) is long", "text", "Foo (bar) article is long", { includes: "is long" }],
+	["A7 the window shows the match, not the first word", `Acme makes tools. ${"x".repeat(250)} Our plan is Acme Pro, billed yearly.`, "text", "Acme Pro", { includes: "Acme Pro" }],
+	["A8 the window shows an escaped match late in a long line", `${"y ".repeat(130)}install my\\_package today`, "text", "my_package", { includes: "my\\_package" }],
+	["A9 299 is not inside 1 299", "Total: 1 299\nPrice 299", "number", 299, { line: "Price 299" }],
+	["A10 299 is not inside 1'299", "Total: 1'299", "number", 299, {}],
+	["A11 a negative number cites its own line", "Revenue: 42\nNet change: -42", "number", -42, { line: "Net change: -42" }],
+	["A12 42 is not -42", "Net change: -42", "number", 42, {}],
+	["A13 European thousands and decimals", "Price: €1.299,00 per year", "number", 1299, { line: "Price: €1.299,00 per year" }],
+	["A14 emphasis characters against a long run of them", `Total ${"_".repeat(200_000)} paid`, "text", "Total _ _ due", { status: "uncertain", notFound: true }],
+	["A15 confident text that is not on the page", "Nothing about codes here.", "text", "SAVE10", { status: "uncertain", notFound: true, confidence: 0.95 }],
+	["A16 a date gets no line", "Due 2026-11-05.", "date", "2026-11-05", {}],
+	["A17 text wrapped onto the next line", "Acme\nPro", "text", "Acme Pro", {}],
+	["A18 adversarial text page", adversarial, "text", "zzz", { status: "uncertain", notFound: true }],
+	["A18 adversarial number page", adversarial, "number", 7, {}],
+];
+for (const [name, page, type, value, want] of CATALOG) {
+	test(`locator ${name}`, async (t) => {
+		const confidence = want.confidence ?? 0.99;
+		t.mock.method(globalThis, "fetch", async () => Response.json({ success: true, result: { answers: { f: { type, value, confidence } } } }));
+		const started = performance.now();
+		const { fields: { f } } = await extractPageFields(page, parseExtractFields({ f: type }), { modelRegistry: setUpRegistry });
+		assert.ok(performance.now() - started < 500, `${name} took ${Math.round(performance.now() - started)} ms`);
+		assert.equal(f.status, want.status ?? "extracted");
+		assert.equal(f.notFound, want.notFound);
+		if (want.includes) {
+			assert.ok(f.line?.includes(want.includes), `${JSON.stringify(f.line)} lacks ${want.includes}`);
+			assert.ok(f.line.length <= 200);
+		} else assert.equal(f.line, want.line);
+	});
+}

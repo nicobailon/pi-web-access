@@ -96,79 +96,154 @@ function fieldResult(spec: FieldSpec, answer: unknown): FieldResult {
 }
 
 const MAX_LINE_CHARS = 200;
+// A link target longer than this is kept as text.
+const MAX_LINK_TARGET_CHARS = 2_048;
 // Thousands separators seen on pages: comma, period, space, no-break and narrow no-break space, apostrophe.
-const THOUSANDS = "[,. \\u00a0\\u202f']?";
+const SEPARATORS = new Set([",", ".", " ", " ", " ", "'"]);
+const isDigit = (char: string | undefined) => char !== undefined && char >= "0" && char <= "9";
 
-// Numbers keep a form that can be found on the page; this regex is built from digits only.
-function numberPattern(value: number): RegExp | undefined {
-	const match = /^(\d+)(?:\.(\d+))?$/.exec(String(Math.abs(value)));
-	if (!match) return undefined;
-	const groups = match[1].match(/\d{1,3}(?=(?:\d{3})*$)/g)!;
-	const fraction = match[2] ? `[.,]${match[2]}0*` : "(?:[.,]0+)?";
-	// Not part of a longer number: "299" must not match inside "1,299", nor "3" inside "5.3.1".
-	return new RegExp(`(?<!\\d[.,]?)${groups.join(THOUSANDS)}${fraction}(?![.,]?\\d)`);
+/** A line reduced for comparison, with the raw index each of its UTF-16 units came from. */
+interface Comparable { text: string; map: number[] }
+
+// For each "(" on the line, the index of its ")" when it closes within the link bound. One pass with a stack.
+function closingParens(line: string): Map<number, number> {
+	const close = new Map<number, number>();
+	const open: number[] = [];
+	for (let i = 0; i < line.length; i++) {
+		if (line[i] === "(") open.push(i);
+		else if (line[i] === ")" && open.length) {
+			const start = open.pop()!;
+			if (i - start <= MAX_LINK_TARGET_CHARS) close.set(start, i);
+		}
+	}
+	return close;
 }
 
 /**
- * The same text on the page and from the model can differ in markdown and typography: readable pages come from
- * Turndown, which escapes markdown characters (`my\_package`, `\[beta\]`). Both sides are reduced the same way and
- * compared with includes(), so the cost stays linear whatever the value holds.
+ * One pass over the text: NFKC, lowercase, markdown backslash escapes removed (Turndown writes `my\_package`,
+ * `\[beta\]`), curly quotes and dashes made plain, `* _ \` [ ]` dropped, whitespace collapsed. With `visible`, a
+ * link or image target `](…)` (nested parentheses and a quoted title included) is skipped, leaving the text a reader sees.
+ * The same steps run on the value, so matching only ever gets looser on the page side.
  */
-function comparable(text: string, linkTextOnly = false): string {
-	const unescaped = text.normalize("NFKC").replace(/\\([!-/:-@[-`{-~])/g, "$1");
-	// A link keeps its text: "[docs](https://x)" → "[docs]". The bound keeps a line of unclosed "](" linear.
-	return (linkTextOnly ? unescaped.replace(/\]\([^()\s]{0,2048}\)/g, "]") : unescaped)
-		.replace(/[‘’‚‛′]/g, "'")
-		.replace(/[“”„‟″]/g, '"')
-		.replace(/[‐-―]/g, "-")
-		// Dropped, not spaced: "[the page]." must still read "the page.".
-		.replace(/[*_`[\]]/g, "")
-		.toLowerCase()
-		.replace(/\s+/g, " ")
-		.trim();
+function comparable(raw: string, visible: boolean): Comparable {
+	const close = visible ? closingParens(raw) : undefined;
+	let text = "";
+	const map: number[] = [];
+	const emit = (chars: string, at: number) => {
+		for (const char of chars.normalize("NFKC")) {
+			const plain = /[‘’‚‛′]/.test(char) ? "'" : /[“”„‟″]/.test(char) ? '"' : /[‐-―]/.test(char) ? "-" : char;
+			if (/[*_`[\]]/.test(plain)) continue;
+			if (/\s/.test(plain)) {
+				if (text && !text.endsWith(" ")) { text += " "; map.push(at); }
+				continue;
+			}
+			const lower = plain.toLowerCase();
+			text += lower;
+			for (let unit = 0; unit < lower.length; unit++) map.push(at);
+		}
+	};
+	for (let i = 0; i < raw.length;) {
+		if (raw[i] === "\\" && i + 1 < raw.length && /[!-/:-@[-`{-~]/.test(raw[i + 1])) {
+			emit(raw[i + 1], i + 1);
+			i += 2;
+			continue;
+		}
+		const target = close && raw[i] === "]" && raw[i + 1] === "(" ? close.get(i + 1) : undefined;
+		if (target !== undefined) {
+			i = target + 1;
+			continue;
+		}
+		const char = String.fromCodePoint(raw.codePointAt(i)!);
+		emit(char, i);
+		i += char.length;
+	}
+	if (text.endsWith(" ")) { text = text.slice(0, -1); map.pop(); }
+	return { text, map };
 }
 
-function cite(line: string, at: number): string {
+interface PageLines { lines: string[]; forms: Comparable[][]; whole: string[] }
+
+function indexLines(page: string): PageLines {
+	const lines = page.split("\n");
+	const forms = lines.map((line) => [comparable(line, true), comparable(line, false)]);
+	// Both forms of every line joined, for a value that wraps onto the next line.
+	const whole = [0, 1].map((form) => forms.map((pair) => pair[form].text).filter(Boolean).join(" "));
+	return { lines, forms, whole };
+}
+
+/** The line, or a window of it that holds raw[start, end), at most MAX_LINE_CHARS including ellipses. */
+function cite(line: string, start: number, end: number): string {
 	if (line.length <= MAX_LINE_CHARS) return line.replace(/\s+/g, " ").trim();
-	// Room for an ellipsis on each side.
 	const size = MAX_LINE_CHARS - 2;
-	const from = Math.max(0, Math.min(at - 60, line.length - size));
+	const from = Math.max(0, Math.min(line.length - size, end - start >= size ? start : start - Math.floor((size - (end - start)) / 2)));
 	return `${from > 0 ? "…" : ""}${line.slice(from, from + size).replace(/\s+/g, " ").trim()}${from + size < line.length ? "…" : ""}`;
 }
 
-// Every other step replaces characters the same way on both sides. Dropping link targets is page-only, so the page
-// matches in either form: a value can be a link's text or its target (an href, an image src).
-const onPage = (text: string, wanted: string) => comparable(text).includes(wanted) || comparable(text, true).includes(wanted);
-
-function textLine(value: string, page: string): string | undefined | null {
-	const wanted = comparable(value);
+/** undefined: not on the page; null: on the page with no single line to cite, or nothing comparable in the value. */
+function locateText(value: string, page: PageLines): string | null | undefined {
+	const wanted = comparable(value, false).text;
 	if (!wanted) return null;
-	for (const line of page.split("\n")) {
-		if (!onPage(line, wanted)) continue;
-		const firstWord = wanted.split(" ")[0];
-		return cite(line, Math.max(0, line.toLowerCase().indexOf(firstWord)));
+	for (const [index, pair] of page.forms.entries()) {
+		for (const form of pair) {
+			const at = form.text.indexOf(wanted);
+			if (at !== -1) return cite(page.lines[index], form.map[at], form.map[at + wanted.length - 1] + 1);
+		}
 	}
-	// A value that wraps across lines is on the page but has no single line to cite.
-	return onPage(page, wanted) ? null : undefined;
+	return page.whole.some((text) => text.includes(wanted)) ? null : undefined;
+}
+
+// The values a digit run with separators can mean: "1.299" is 1.299 or 1299, "1.299,00" is 1299, "5.3.1" is nothing.
+function readings(groups: string[], separators: string[]): number[] {
+	const thousands = (parts: string[]) => parts.slice(1).every((part) => part.length === 3);
+	const values: number[] = [];
+	if (thousands(groups)) values.push(Number(groups.join("")));
+	const decimal = separators.at(-1);
+	if ((decimal === "." || decimal === ",") && separators.slice(0, -1).every((separator) => separator !== decimal) && thousands(groups.slice(0, -1))) {
+		values.push(Number(`${groups.slice(0, -1).join("")}.${groups.at(-1)}`));
+	}
+	return values;
+}
+
+/** The first line holding the whole number, sign included: 299 is not in "1 299", and -42 is not "42". */
+function locateNumber(value: number, lines: string[]): string | undefined {
+	for (const line of lines) {
+		for (let i = 0; i < line.length;) {
+			if (!isDigit(line[i])) { i++; continue; }
+			const groups: string[] = [];
+			const separators: string[] = [];
+			let end = i;
+			for (;;) {
+				const from = end;
+				while (isDigit(line[end])) end++;
+				groups.push(line.slice(from, end));
+				if (!SEPARATORS.has(line[end]) || !isDigit(line[end + 1])) break;
+				separators.push(line[end]);
+				end++;
+			}
+			// A minus, optionally before a currency sign, that does not join two words or numbers ("2026-11", "a-1").
+			let sign = i - 1;
+			if (/[$€£¥]/.test(line[sign] ?? "")) sign--;
+			const negative = (line[sign] === "-" || line[sign] === "−") && !/[\p{L}\p{N}]/u.test(line[sign - 1] ?? "");
+			if (readings(groups, separators).some((reading) => (negative ? -reading : reading) === value)) return cite(line, negative ? sign : i, end);
+			i = end;
+		}
+	}
+	return undefined;
 }
 
 /**
  * Adds the page line a text or number value was found on (dates, times and durations are rewritten by Clairic, so
  * they have none). A number match only cites; it never changes the status.
  */
-function withPageLine(spec: FieldSpec, result: FieldResult, page: string): FieldResult {
+function withPageLine(spec: FieldSpec, result: FieldResult, page: () => PageLines): FieldResult {
 	if (result.status === "null") return result;
 	const value = result.status === "extracted" ? result.value : result.guess;
 	if (spec.type === "number" && typeof value === "number") {
-		const match = numberPattern(value)?.exec(page);
-		if (!match) return result;
-		const start = page.lastIndexOf("\n", match.index) + 1;
-		const end = page.indexOf("\n", match.index);
-		return { ...result, line: cite(page.slice(start, end === -1 ? undefined : end), match.index - start) };
+		const line = locateNumber(value, page().lines);
+		return line ? { ...result, line } : result;
 	}
 	if (spec.type !== "text" || typeof value !== "string") return result;
-	// undefined: not on the page; null: on the page without a line to cite, or nothing comparable in the value.
-	const line = textLine(value, page);
+	const line = locateText(value, page());
 	if (line) return { ...result, line };
 	// Text that is not on the page was not read from it, however confident the model is.
 	if (line === undefined && result.status === "extracted") return { status: "uncertain", guess: result.value, confidence: result.confidence, notFound: true };
@@ -234,7 +309,9 @@ export async function extractPageFields(
 		const result = await runClairic(body, context.modelRegistry, signal ? AbortSignal.any([signal, timeout]) : timeout);
 		const answers = result.answers;
 		if (!isRecord(answers)) throw new Error("the response is invalid: answers are missing");
-		const results = Object.fromEntries(Object.entries(fields).map(([name, spec]) => [name, withPageLine(spec, fieldResult(spec, Object.hasOwn(answers, name) ? answers[name] : undefined), state)]));
+		let lines: PageLines | undefined;
+		const page = () => lines ??= indexLines(state);
+		const results = Object.fromEntries(Object.entries(fields).map(([name, spec]) => [name, withPageLine(spec, fieldResult(spec, Object.hasOwn(answers, name) ? answers[name] : undefined), page)]));
 		return { fields: results, cut: cut || result.truncated === true };
 	} catch (err) {
 		signal?.throwIfAborted();
