@@ -1966,8 +1966,11 @@ export default function (pi: ExtensionAPI) {
 	if (sourceCheckEnabled) pi.registerTool({
 		name: toolNames.sourceCheck,
 		label: "Source Check",
-		description: "Gather cited web passages about a claim for manual review.",
-		promptSnippet: "Gather source evidence with passage citations for a claim.",
+		// Set once per session from config, so the definition stays stable for the provider's prompt cache.
+		description: coreSettings.claimJudgeModel ? "Check a claim against cited web passages and return a verdict." : "Gather cited web passages about a claim for manual review.",
+		promptSnippet: coreSettings.claimJudgeModel
+			? "Check a claim against cited web passages: supported, contradicted or unclear, with the deciding passage."
+			: "Gather source evidence with passage citations for a claim.",
 		parameters: Type.Object({
 			claim: Type.String({ description: "Assertion to check" }),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Default: the claim" })),

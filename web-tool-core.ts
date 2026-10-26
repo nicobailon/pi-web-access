@@ -969,14 +969,23 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			const failedSearchCount = errors.length;
 			// The judge runs through Pi's model registry, so hosts without one (MCP) skip it.
 			const modelRegistry = ctx?.modelRegistry;
+			let judgeFailed = false;
 			if (settings.claimJudgeModel && modelRegistry && built.passages.length > 0 && !signal?.aborted) {
 				const titles = new Map(built.sources.map((source) => [source.rank, source.title || source.url]));
 				const passages = built.passages.map((passage) => ({ id: passage.passage_id, source: titles.get(passage.source_rank) ?? passage.source_url, text: passage.text }));
 				const judgment = await judgeClaim(settings.claimJudgeModel, claim, passages, modelRegistry, signal);
 				artifact = { ...built, claims: [judgment.assessment] };
-				if (judgment.error) errors.push({ query: "claim judge", error: judgment.error });
+				if (judgment.error) {
+					judgeFailed = true;
+					errors.push({ query: "claim judge", error: judgment.error });
+				}
 			} else {
 				artifact = withClaimAssessment(built, [claim]);
+			}
+			const assessment = artifact.claims![0]!;
+			// Snippets alone rarely settle a claim; a judge failure already names its own cause.
+			if (!params.fetchContent && assessment.status === "unclear" && !judgeFailed) {
+				artifact.claims = [{ ...assessment, rationale: `${assessment.rationale} Only search snippets were checked; retry with fetchContent: true to include the pages.` }];
 			}
 			if (errors.length > 0) artifact.errors = errors;
 			storeResearchArtifact(artifact);

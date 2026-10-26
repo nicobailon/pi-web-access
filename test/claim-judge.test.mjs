@@ -49,11 +49,11 @@ const stop = ([supported, contradicted, notAddressed], evidence) => ({
 	},
 });
 
-async function runSourceCheck(judgeModel, ctx, provider = "brave") {
+async function runSourceCheck(judgeModel, ctx, provider = "brave", params = {}) {
 	withConfig(judgeModel ? { sourceCheck: { judgeModel } } : {});
 	const tools = [];
 	initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
-	const result = await tools.find((tool) => tool.name === "source_check").execute("call", { claim: "The API supports streaming", provider }, undefined, undefined, ctx);
+	const result = await tools.find((tool) => tool.name === "source_check").execute("call", { claim: "The API supports streaming", provider, ...params }, undefined, undefined, ctx);
 	return { result, claim: result.details.artifact.claims[0], errors: result.details.artifact.errors };
 }
 
@@ -92,6 +92,17 @@ test("a confident verdict without a cited passage stays unclear", async () => {
 	const { claim } = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.97, 0.01, 0.02], "none")) });
 	assert.deepEqual([claim.status, claim.supporting_passages], ["unclear", []]);
 	assert.match(claim.rationale, /; evidence none\. No verdict reached its threshold/);
+});
+
+test("an unclear verdict from snippets alone suggests fetching the pages", async () => {
+	const hint = /Only search snippets were checked; retry with fetchContent: true to include the pages\.$/;
+	const snippets = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.5, 0.1, 0.4], "p-1-0")) });
+	assert.match(snippets.claim.rationale, hint);
+	assert.match(snippets.result.content[0].text, /\*\*Rationale:\*\* .*retry with fetchContent: true/);
+	const fetched = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.5, 0.1, 0.4], "p-1-0")) }, "brave", { fetchContent: true });
+	assert.doesNotMatch(fetched.claim.rationale, hint);
+	const supported = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.97, 0.01, 0.02], "p-1-0")) });
+	assert.doesNotMatch(supported.claim.rationale, hint);
 });
 
 test("a classifier error is unclear, recorded in the artifact errors, and does not flag the call as failed", async () => {

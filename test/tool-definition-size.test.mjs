@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,8 +8,9 @@ import { test } from "node:test";
 const indexUrl = new URL("../index.ts", import.meta.url).href;
 const CREDENTIALS = ["BRAVE_API_KEY", "EXA_API_KEY", "TAVILY_API_KEY"];
 
-function registrations(extraEnv = {}) {
+function registrations(extraEnv = {}, config) {
 	const home = mkdtempSync(join(tmpdir(), "pi-web-access-tool-size-"));
+	if (config) writeFileSync(join(home, "web-search.json"), JSON.stringify(config));
 	const env = { ...process.env, PI_CODING_AGENT_DIR: home, XDG_CONFIG_HOME: "", HOME: join(home, "home"), USERPROFILE: join(home, "home") };
 	for (const key of CREDENTIALS) delete env[key];
 	const result = spawnSync(process.execPath, ["--input-type=module"], {
@@ -54,4 +55,15 @@ test("tool definitions are byte-stable across registrations and provider credent
 	assert.equal(second, first);
 	const [withKeys] = registrations(Object.fromEntries(CREDENTIALS.map(key => [key, "test-key"])));
 	assert.equal(JSON.stringify(withKeys.map(tool => tool.definition)), first);
+});
+
+test("with the claim judge on, source_check says it returns a verdict and still fits the budget", () => {
+	const [defaults] = registrations();
+	const [judged] = registrations({}, { sourceCheck: { judgeModel: "cloudflare-workers-ai/@cf/cloudflare/clef" } });
+	const sourceCheck = (tools) => tools.find(tool => tool.definition.name === "source_check");
+	assert.match(sourceCheck(defaults).definition.description, /for manual review/);
+	assert.match(sourceCheck(judged).definition.description, /return a verdict/);
+	assert.match(sourceCheck(judged).promptSnippet, /supported, contradicted or unclear/);
+	const total = judged.reduce((sum, { definition }) => sum + JSON.stringify(definition).length, 0);
+	assert.ok(total <= 4400, `tool definitions with the judge total ${total} chars, budget 4400`);
 });

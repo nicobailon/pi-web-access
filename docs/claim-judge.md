@@ -30,6 +30,8 @@ The judge makes one call with the claim and the passages, each labeled with the 
 
 At most 48 passages and 24 KB, titles included, are sent; passages beyond that are left out from the lowest-ranked end, and the rationale says how many.
 
+With the judge on, the `source_check` tool description tells the agent it returns a verdict; the description is set when Pi loads the extension and doesn't change during a session. An `unclear` verdict from search snippets alone (no `fetchContent`) adds a hint to run the check again with `fetchContent: true`, since snippets rarely settle a claim. A judge failure doesn't get the hint.
+
 **Known limit:** when two products share a brand name, for example a claim about "Acme Agent" and a page about "Acme Dashboard", the models can wrongly answer `supported` with high confidence. Check the title of the cited passage's source before relying on a verdict.
 
 **Privacy:** when the judge is on, the claim, its passages and their page titles are sent to the reference's provider on every `source_check` call that finds passages. Nothing is sent when `sourceCheck` is not configured.
