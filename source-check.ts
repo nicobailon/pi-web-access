@@ -13,6 +13,8 @@ export interface ResearchSource {
 	url: string;
 	title: string;
 	snippet?: string;
+	/** "generated" when the snippet is the search provider's own answer text around a citation, not page text. */
+	snippet_source?: "generated";
 	fetch_timestamp?: number;
 	content_hash?: string;
 	quality: SourceQuality;
@@ -27,6 +29,8 @@ export interface ResearchPassage {
 	text: string;
 	extraction_span?: { start: number; end: number };
 	content_hash?: string;
+	/** "provider_summary" marks text written by the search provider (for example OpenAI or xAI answer text), not quoted from the page. */
+	origin?: "provider_summary";
 }
 
 export interface ClaimAssessment {
@@ -149,27 +153,30 @@ export function buildPassages(sources: ResearchSource[], fetched: ExtractedConte
 	const passages: ResearchPassage[] = [];
 	const fetchedByUrl = new Map(fetched.map((item) => [item.url, item]));
 	for (const source of sources) {
-		if (source.snippet) {
+		const page = fetchedByUrl.get(source.url);
+		const spans = page && !page.error && page.content ? extractRelevantSpans(page.content, claim, source.snippet ?? "") : [];
+		const generated = source.snippet_source === "generated";
+		// A generated snippet is the provider's paraphrase, not a quote. Keep it only when no page text is available,
+		// and label it so it is never presented as text from the source.
+		if (source.snippet && !(generated && spans.length > 0)) {
 			passages.push({
 				passage_id: passageId(source.rank, 0),
 				source_url: source.url,
 				source_rank: source.rank,
 				text: source.snippet,
 				content_hash: hashContent(source.snippet),
+				...(generated ? { origin: "provider_summary" as const } : {}),
 			});
 		}
-		const page = fetchedByUrl.get(source.url);
-		if (page && !page.error && page.content) {
-			for (const [index, span] of extractRelevantSpans(page.content, claim, source.snippet ?? "").entries()) {
-				passages.push({
-					passage_id: passageId(source.rank, index + 1),
-					source_url: source.url,
-					source_rank: source.rank,
-					text: span.text,
-					extraction_span: { start: span.start, end: span.end },
-					content_hash: hashContent(span.text),
-				});
-			}
+		for (const [index, span] of spans.entries()) {
+			passages.push({
+				passage_id: passageId(source.rank, index + 1),
+				source_url: source.url,
+				source_rank: source.rank,
+				text: span.text,
+				extraction_span: { start: span.start, end: span.end },
+				content_hash: hashContent(span.text),
+			});
 		}
 	}
 	return passages;
@@ -218,6 +225,7 @@ export function buildResearchArtifact(input: BuildArtifactInput): ResearchArtifa
 			url: result.url,
 			title: result.title,
 			snippet: result.snippet,
+			...(result.snippetSource === "generated" && result.snippet ? { snippet_source: "generated" as const } : {}),
 			quality: classifySource(result.url),
 			fetched,
 			...(page ? { fetch_timestamp: Date.now() } : {}),

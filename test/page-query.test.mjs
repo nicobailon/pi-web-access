@@ -262,3 +262,57 @@ test("answerFromPage runs when the provider authenticates without an API key", a
 	assert.equal(result.text, "The configured answer.");
 	assert.equal(getRequest().model, configured);
 });
+
+// Claude 5.x models reject thinking.type "disabled"; their thinkingLevelMap marks "off" unsupported.
+const CANNOT_DISABLE_THINKING = { off: null, minimal: null, low: "low", medium: "medium", high: "high" };
+
+test("answerFromPage keeps thinking off for models that can disable it", async () => {
+	await rm(configPath, { force: true });
+	for (const model of [pageModel("plain-model"), { ...pageModel("reasoning-model"), reasoning: true }]) {
+		const { ctx, getRequest } = contextFor([model], { sessionModel: model });
+		await answerFromPage({ question: "Q?", pageText: "Content", sourceUrl: "https://example.com" }, ctx);
+		assert.equal(getRequest().options.reasoning, undefined, model.id);
+		assert.equal(getRequest().options.reasoningEffort, undefined, model.id);
+	}
+});
+
+test("answerFromPage requests the lowest supported thinking level when a model cannot disable thinking", async () => {
+	await rm(configPath, { force: true });
+	const model = { ...pageModel("claude-opus-5-5"), reasoning: true, thinkingLevelMap: CANNOT_DISABLE_THINKING };
+	const { ctx, getRequest } = contextFor([model], { sessionModel: model });
+
+	await answerFromPage({ question: "Q?", pageText: "Content", sourceUrl: "https://example.com" }, ctx);
+
+	const options = getRequest().options;
+	assert.equal(options.reasoning, "low");
+	assert.equal(options.reasoningEffort, "low");
+	assert.equal(options.maxTokens, 2_000);
+	assert.equal(options.cacheRetention, "none");
+});
+
+test("answerFromPage passes the clamped thinking level through registry streamSimple", async () => {
+	await rm(configPath, { force: true });
+	const model = { ...pageModel("claude-sonnet-5-5"), reasoning: true, thinkingLevelMap: CANNOT_DISABLE_THINKING };
+	const plain = pageModel("plain-model");
+	const calls = [];
+	const ctx = {
+		model,
+		modelRegistry: {
+			find: (provider, id) => [model, plain].find(m => m.provider === provider && m.id === id),
+			getAvailable: () => [model, plain],
+			getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-key" }),
+			streamSimple: (calledModel, _context, options) => {
+				calls.push({ id: calledModel.id, options });
+				return { result: async () => ({ stopReason: "stop", content: [{ type: "text", text: "Answer." }] }) };
+			},
+		},
+		scopedModels: [],
+	};
+
+	await answerFromPage({ question: "Q?", pageText: "Content", sourceUrl: "https://example.com" }, ctx);
+	await answerFromPage({ question: "Q?", pageText: "Content", sourceUrl: "https://example.com", model: "test/plain-model" }, ctx);
+
+	assert.equal(calls[0].options.reasoning, "low");
+	assert.equal(calls[1].options.reasoning, undefined);
+	assert.equal(calls[1].options.maxTokens, 2_000);
+});
