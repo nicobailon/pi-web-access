@@ -274,6 +274,8 @@ const CATALOG = [
 	["A1 snake_case through Turndown escapes", turndown("<p>Install my_package_name now.</p>"), "text", "my_package_name", { line: "Install my\\_package\\_name now." }],
 	["A2 brackets through Turndown escapes", turndown("<p>Set [beta] mode.</p>"), "text", "[beta]", { line: "Set \\[beta\\] mode." }],
 	["A2 text around escaped brackets", turndown("<p>Set [beta] mode.</p>"), "text", "beta mode", { line: "Set \\[beta\\] mode." }],
+	["A2 a precomposed value on a decomposed page", "Meet at Café Rouge.", "text", "Café Rouge", { line: "Meet at Café Rouge." }],
+	["A2 a decomposed value on a precomposed page", "Meet at Café Rouge.", "text", "Café Rouge", { line: "Meet at Café Rouge." }],
 	["A3 a link target", "Get it from [the download page](https://example.com/file.zip).", "text", "https://example.com/file.zip", { line: "Get it from [the download page](https://example.com/file.zip)." }],
 	["A4 an image address", turndown('<img src="https://cdn.example.com/logo.png" alt="logo">'), "text", "https://cdn.example.com/logo.png", { line: "![logo](https://cdn.example.com/logo.png)" }],
 	["A5 link text past a titled target", "[setup guide](https://example.com/docs \"Docs\") — it’s short", "text", "setup guide - it's short", { line: "[setup guide](https://example.com/docs \"Docs\") — it’s short" }],
@@ -292,6 +294,8 @@ const CATALOG = [
 	["A17 text wrapped onto the next line", "Acme\nPro", "text", "Acme Pro", {}],
 	["A18 adversarial text page", adversarial, "text", "zzz", { status: "uncertain", notFound: true }],
 	["A18 adversarial number page", adversarial, "number", 7, {}],
+	["A18 alternating spaces", "a ".repeat(200_000), "text", "zzz", { status: "uncertain", notFound: true }],
+	["A18 a character NFKC expands 18-fold", "ﷺ".repeat(200_000), "text", "zzz", { status: "uncertain", notFound: true }],
 ];
 for (const [name, page, type, value, want] of CATALOG) {
 	test(`locator ${name}`, async (t) => {
@@ -302,6 +306,7 @@ for (const [name, page, type, value, want] of CATALOG) {
 		assert.ok(performance.now() - started < 500, `${name} took ${Math.round(performance.now() - started)} ms`);
 		assert.equal(f.status, want.status ?? "extracted");
 		assert.equal(f.notFound, want.notFound);
+		if (want.confidence !== undefined) assert.equal(f.confidence, want.confidence);
 		if (want.includes) {
 			assert.ok(f.line?.includes(want.includes), `${JSON.stringify(f.line)} lacks ${want.includes}`);
 			assert.ok(f.line.length <= 200);

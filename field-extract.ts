@@ -129,16 +129,20 @@ function comparable(raw: string, visible: boolean): Comparable {
 	const close = visible ? closingParens(raw) : undefined;
 	let text = "";
 	const map: number[] = [];
+	let space = false;
 	const emit = (chars: string, at: number) => {
-		for (const char of chars.normalize("NFKC")) {
+		// A character whose NFKC form is much longer (U+FDFA is 18 characters) stays as it is, on both sides.
+		const folded = chars.normalize("NFKC");
+		for (const char of folded.length > 4 * chars.length ? chars : folded) {
 			const plain = /[‘’‚‛′]/.test(char) ? "'" : /[“”„‟″]/.test(char) ? '"' : /[‐-―]/.test(char) ? "-" : char;
 			if (/[*_`[\]]/.test(plain)) continue;
 			if (/\s/.test(plain)) {
-				if (text && !text.endsWith(" ")) { text += " "; map.push(at); }
+				if (text && !space) { text += " "; map.push(at); space = true; }
 				continue;
 			}
 			const lower = plain.toLowerCase();
 			text += lower;
+			if (lower) space = false;
 			for (let unit = 0; unit < lower.length; unit++) map.push(at);
 		}
 	};
@@ -153,11 +157,13 @@ function comparable(raw: string, visible: boolean): Comparable {
 			i = target + 1;
 			continue;
 		}
-		const char = String.fromCodePoint(raw.codePointAt(i)!);
-		emit(char, i);
-		i += char.length;
+		// A character with its combining marks normalizes as one unit, so "e" + U+0301 meets "é".
+		let next = i + String.fromCodePoint(raw.codePointAt(i)!).length;
+		while (next < raw.length && /\p{M}/u.test(String.fromCodePoint(raw.codePointAt(next)!))) next += raw.codePointAt(next)! > 0xffff ? 2 : 1;
+		emit(raw.slice(i, next), i);
+		i = next;
 	}
-	if (text.endsWith(" ")) { text = text.slice(0, -1); map.pop(); }
+	if (space) { text = text.slice(0, -1); map.pop(); }
 	return { text, map };
 }
 
@@ -165,7 +171,8 @@ interface PageLines { lines: string[]; forms: Comparable[][]; whole: string[] }
 
 function indexLines(page: string): PageLines {
 	const lines = page.split("\n");
-	const forms = lines.map((line) => [comparable(line, true), comparable(line, false)]);
+	// Without "](" there is no link target to skip, so both forms are the same.
+	const forms = lines.map((line) => { const visible = comparable(line, true); return [visible, line.includes("](") ? comparable(line, false) : visible]; });
 	// Both forms of every line joined, for a value that wraps onto the next line.
 	const whole = [0, 1].map((form) => forms.map((pair) => pair[form].text).filter(Boolean).join(" "));
 	return { lines, forms, whole };
