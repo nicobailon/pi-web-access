@@ -39,9 +39,9 @@ for (const model of models) {
 		for (let round = 0; round < repeat; round++) {
 			for (const fixture of claims) {
 				const started = performance.now();
-				const { assessment, error, probabilities, otherSubject } = await judgeClaim(model, fixture.claim, fixture.passages, modelRegistry);
+				const { assessment, error, probabilities, evidence, otherSubject } = await judgeClaim(model, fixture.claim, fixture.passages, modelRegistry);
 				const ms = performance.now() - started;
-				runs.push({ round, fixture, assessment, error, ms, probabilities, otherSubject });
+				runs.push({ round, fixture, assessment, error, ms, probabilities, evidence, otherSubject });
 			}
 		}
 
@@ -75,9 +75,11 @@ for (const model of models) {
 		const latency = runs.map((run) => run.ms).sort((a, b) => a - b);
 		const verdictLatency = runs.filter((run) => run.otherSubject !== undefined || ["supported", "contradicted"].includes(run.assessment.status)).map((run) => run.ms).sort((a, b) => a - b);
 		const errors = runs.filter((run) => run.error).length;
-		// The other-subject threshold sits above the highest value on a page that backs a correct verdict.
+		// The other-subject threshold sits above the highest value on a page that backs a correct verdict: the verdict
+		// before the check matched the fixture and cited one of its evidence passages, even if the check removed it.
 		const asked = runs.filter((run) => run.otherSubject !== undefined);
-		const highestOnCorrect = Math.max(0, ...asked.filter((run) => run.fixture.expected !== "not_addressed").map((run) => run.otherSubject));
+		const correct = (run) => run.fixture.expected !== "not_addressed" && run.fixture.evidence.includes(run.evidence) && run.probabilities[run.fixture.expected] >= CLAIM_JUDGE_MODELS[model][run.fixture.expected];
+		const highestOnCorrect = Math.max(0, ...asked.filter(correct).map((run) => run.otherSubject));
 
 		console.log(`\n${model} · ${name} (${scored.length / repeat} scored claims × ${repeat} rounds)`);
 		console.log(`  pass ${passed}/${scored.length}  wrong supported ${wrongSupported}  wrong contradicted ${wrongContradicted}  errors ${errors}`);
