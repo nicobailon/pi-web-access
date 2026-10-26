@@ -22,14 +22,15 @@ const modelRegistry = new ModelRegistry(await ModelRuntime.create());
 
 const LABELS = ["supported", "contradicted", "not_addressed"];
 // Fixtures marked with a known limit are reported on their own and never count toward the pass or wrong numbers.
-const fixtureSets = ["calibration", "holdout"].map((name) => ({
+// sibling-holdout: sibling-product traps and controls written blind, after the other-subject question was frozen.
+const fixtureSets = ["calibration", "holdout", "sibling-holdout"].map((name) => ({
 	name,
 	claims: JSON.parse(readFileSync(new URL(`./fixtures/claims-${name}.json`, import.meta.url), "utf8")),
 }));
 
 const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
-const describe = ({ fixture, round, assessment, error, probabilities }, want) =>
-	`${fixture.id}${repeat > 1 ? ` round ${round + 1}` : ""}: want ${want}, got ${assessment.status}${error ? ` (${error})` : probabilities ? ` (${LABELS.map((label) => `${label} ${probabilities[label].toFixed(2)}`).join(", ")})` : ""}`;
+const describe = ({ fixture, round, assessment, error, probabilities, otherSubject }, want) =>
+	`${fixture.id}${repeat > 1 ? ` round ${round + 1}` : ""}: want ${want}, got ${assessment.status}${error ? ` (${error})` : probabilities ? ` (${LABELS.map((label) => `${label} ${probabilities[label].toFixed(2)}`).join(", ")}${otherSubject === undefined ? "" : `, other subject ${otherSubject.toFixed(2)}`})` : ""}`;
 const wanted = (fixture) => fixture.expected === "not_addressed" ? "unclear" : fixture.expected;
 
 for (const model of models) {
@@ -38,9 +39,9 @@ for (const model of models) {
 		for (let round = 0; round < repeat; round++) {
 			for (const fixture of claims) {
 				const started = performance.now();
-				const { assessment, error, probabilities } = await judgeClaim(model, fixture.claim, fixture.passages, modelRegistry);
+				const { assessment, error, probabilities, otherSubject } = await judgeClaim(model, fixture.claim, fixture.passages, modelRegistry);
 				const ms = performance.now() - started;
-				runs.push({ round, fixture, assessment, error, ms, probabilities });
+				runs.push({ round, fixture, assessment, error, ms, probabilities, otherSubject });
 			}
 		}
 
@@ -72,13 +73,18 @@ for (const model of models) {
 			if (base) drift = Math.max(drift, ...LABELS.map((label) => Math.abs(base[label] - run.probabilities[label])));
 		}
 		const latency = runs.map((run) => run.ms).sort((a, b) => a - b);
+		const verdictLatency = runs.filter((run) => run.otherSubject !== undefined || ["supported", "contradicted"].includes(run.assessment.status)).map((run) => run.ms).sort((a, b) => a - b);
 		const errors = runs.filter((run) => run.error).length;
+		// The other-subject threshold sits above the highest value on a page that backs a correct verdict.
+		const asked = runs.filter((run) => run.otherSubject !== undefined);
+		const highestOnCorrect = Math.max(0, ...asked.filter((run) => run.fixture.expected !== "not_addressed").map((run) => run.otherSubject));
 
 		console.log(`\n${model} · ${name} (${scored.length / repeat} scored claims × ${repeat} rounds)`);
 		console.log(`  pass ${passed}/${scored.length}  wrong supported ${wrongSupported}  wrong contradicted ${wrongContradicted}  errors ${errors}`);
 		console.log(`  highest wrong probability: supported ${highestWrong.supported.toFixed(2)}, contradicted ${highestWrong.contradicted.toFixed(2)}`);
+		console.log(`  other subject asked ${asked.length} times, highest on a correct verdict's page ${highestOnCorrect.toFixed(2)}`);
 		console.log(`  evidence matched ${evidenceMatched}/${verdicts}${repeat > 1 ? `  largest change across repeats ${drift.toFixed(2)}` : ""}`);
-		console.log(`  latency p50 ${Math.round(percentile(latency, 0.5))} ms, p95 ${Math.round(percentile(latency, 0.95))} ms`);
+		console.log(`  latency p50 ${Math.round(percentile(latency, 0.5))} ms, p95 ${Math.round(percentile(latency, 0.95))} ms; claims that reached a verdict p50 ${Math.round(percentile(verdictLatency, 0.5) ?? 0)} ms`);
 		for (const failure of failures) console.log(`  FAIL ${failure}`);
 		for (const limit of new Set(runs.map((run) => run.fixture.limit).filter(Boolean))) {
 			const limited = runs.filter((run) => run.fixture.limit === limit);

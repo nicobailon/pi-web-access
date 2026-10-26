@@ -837,5 +837,190 @@
     "text": "We now support image galleries."
    }
   ]
+ },
+ {
+  "id": "c34",
+  "claim": "Kestrel Agent runs on Windows.",
+  "expected": "not_addressed",
+  "evidence": [],
+  "limit": "sibling-product",
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Kestrel Dashboard — System requirements",
+    "text": "Runs on Windows, macOS and Linux."
+   }
+  ]
+ },
+ {
+  "id": "c35",
+  "claim": "Corvid Notes for iOS converts handwriting to text.",
+  "expected": "not_addressed",
+  "evidence": [],
+  "limit": "sibling-product",
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Corvid Notes for Android — Features",
+    "text": "Write by hand with a stylus and convert your handwriting to typed text."
+   },
+   {
+    "id": "p-2-0",
+    "source": "Corvid Notes for iOS — App Store listing",
+    "text": "Available for iPhone and iPad."
+   }
+  ]
+ },
+ {
+  "id": "c36",
+  "claim": "Halyard CLI supports single sign-on login.",
+  "expected": "not_addressed",
+  "evidence": [],
+  "limit": "sibling-product",
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Halyard Cloud Console — Authentication",
+    "text": "Sign in with SAML or OIDC single sign-on."
+   },
+   {
+    "id": "p-2-0",
+    "source": "Halyard CLI — Installation",
+    "text": "Install with npm i -g halyard."
+   }
+  ]
+ },
+ {
+  "id": "c37",
+  "claim": "Verdigris Free plan includes audit logs.",
+  "expected": "not_addressed",
+  "evidence": [],
+  "limit": "sibling-product",
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Verdigris Enterprise plan",
+    "text": "Includes audit logs, SSO and a 99.9% uptime SLA."
+   },
+   {
+    "id": "p-2-0",
+    "source": "Verdigris Free plan",
+    "text": "Up to 3 users and 1 project."
+   }
+  ]
+ },
+ {
+  "id": "c38",
+  "claim": "Pinnacle Python SDK does not support async requests.",
+  "expected": "not_addressed",
+  "evidence": [],
+  "limit": "sibling-product",
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Pinnacle Node SDK — Usage",
+    "text": "Every method returns a promise, so all requests are asynchronous."
+   },
+   {
+    "id": "p-2-0",
+    "source": "Pinnacle Python SDK — Installation",
+    "text": "Install with pip install pinnacle."
+   }
+  ]
+ },
+ {
+  "id": "c39",
+  "claim": "Kestrel Dashboard runs on macOS.",
+  "expected": "supported",
+  "evidence": [
+   "p-1-0"
+  ],
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Kestrel Dashboard — System requirements",
+    "text": "Runs on Windows, macOS and Linux."
+   }
+  ]
+ },
+ {
+  "id": "c40",
+  "claim": "Halyard Cloud Console supports single sign-on.",
+  "expected": "supported",
+  "evidence": [
+   "p-1-0"
+  ],
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Halyard Cloud Console — Authentication",
+    "text": "Sign in with SAML or OIDC single sign-on."
+   },
+   {
+    "id": "p-2-0",
+    "source": "Halyard CLI — Installation",
+    "text": "Install with npm i -g halyard."
+   }
+  ]
+ },
+ {
+  "id": "c41",
+  "claim": "Verdigris Enterprise plan includes audit logs.",
+  "expected": "supported",
+  "evidence": [
+   "p-1-0"
+  ],
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Verdigris Enterprise plan",
+    "text": "Includes audit logs, SSO and a 99.9% uptime SLA."
+   },
+   {
+    "id": "p-2-0",
+    "source": "Verdigris Free plan",
+    "text": "Up to 3 users and 1 project."
+   }
+  ]
+ },
+ {
+  "id": "c42",
+  "claim": "Corvid Notes for Android cannot convert handwriting to text.",
+  "expected": "contradicted",
+  "evidence": [
+   "p-1-0"
+  ],
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Corvid Notes for Android — Features",
+    "text": "Write by hand with a stylus and convert your handwriting to typed text."
+   },
+   {
+    "id": "p-2-0",
+    "source": "Corvid Notes for iOS — App Store listing",
+    "text": "Available for iPhone and iPad."
+   }
+  ]
+ },
+ {
+  "id": "c43",
+  "claim": "Pinnacle Python SDK supports async requests.",
+  "expected": "supported",
+  "evidence": [
+   "p-1-0"
+  ],
+  "passages": [
+   {
+    "id": "p-1-0",
+    "source": "Pinnacle docs — Async requests",
+    "text": "Every Pinnacle SDK, including Python and Node, can send requests asynchronously."
+   },
+   {
+    "id": "p-2-0",
+    "source": "Pinnacle Python SDK — Installation",
+    "text": "Install with pip install pinnacle."
+   }
+  ]
  }
 ]

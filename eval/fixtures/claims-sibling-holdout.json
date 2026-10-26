@@ -1,0 +1,226 @@
+[
+  {
+    "id": "s01",
+    "limit": "sibling-product",
+    "claim": "Nimbus Mobile can export notes as PDF files.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Nimbus Mobile — Getting started",
+        "text": "Sign in with your Nimbus account and your notes sync across all your devices."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Nimbus Desktop — Exporting notes",
+        "text": "Choose File › Export to save any note as a PDF or a Markdown file."
+      },
+      {
+        "id": "p-3-0",
+        "source": "Nimbus pricing",
+        "text": "The free plan includes 500 notes; Plus removes the limit."
+      }
+    ],
+    "expected": "not_addressed",
+    "evidence": []
+  },
+  {
+    "id": "s02",
+    "limit": "sibling-product",
+    "claim": "Orca CLI supports single sign-on through Okta.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Orca CLI — Installation",
+        "text": "Install it with npm, Homebrew, or a standalone binary from the releases page."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Orca Cloud — Authentication",
+        "text": "Sign in with SAML single sign-on through Okta, Azure AD or Google Workspace."
+      },
+      {
+        "id": "p-2-1",
+        "source": "Orca Cloud — Authentication",
+        "text": "Administrators can require single sign-on for every member of the organization."
+      }
+    ],
+    "expected": "not_addressed",
+    "evidence": []
+  },
+  {
+    "id": "s03",
+    "limit": "sibling-product",
+    "claim": "Ledgerline Starter includes an audit log of account changes.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Ledgerline Starter — Plan features",
+        "text": "Up to three users and one connected bank account."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Ledgerline Enterprise — Plan features",
+        "text": "Every change to an account is recorded in an exportable audit log, kept for seven years."
+      },
+      {
+        "id": "p-3-0",
+        "source": "Ledgerline — Compare plans",
+        "text": "Pick the plan that fits the size of your finance team."
+      }
+    ],
+    "expected": "not_addressed",
+    "evidence": []
+  },
+  {
+    "id": "s04",
+    "limit": "sibling-product",
+    "claim": "The Fernway Python SDK automatically retries rate-limited requests.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Fernway Python SDK — Installation",
+        "text": "Install with pip install fernway and set your key in FERNWAY_API_KEY."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Fernway REST API — Rate limits",
+        "text": "Throttled requests are queued and retried automatically once the Retry-After delay has passed."
+      }
+    ],
+    "expected": "not_addressed",
+    "evidence": []
+  },
+  {
+    "id": "s05",
+    "limit": "sibling-product",
+    "claim": "The Brightloom Router supports Wi-Fi 7.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Brightloom Router — Setup guide",
+        "text": "Plug the unit into your modem and follow the steps in the app."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Brightloom Mesh Node — Specifications",
+        "text": "Wi-Fi 6E tri-band radio. Wi-Fi 7 is not supported on this model."
+      },
+      {
+        "id": "p-3-0",
+        "source": "Brightloom support — Firmware updates",
+        "text": "Updates install automatically overnight."
+      }
+    ],
+    "expected": "not_addressed",
+    "evidence": []
+  },
+  {
+    "id": "s06",
+    "limit": "sibling-product",
+    "claim": "Halcyon Reader keeps working without an internet connection.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Halcyon Reader — FAQ",
+        "text": "Your library is stored in your Halcyon account and appears on every device you sign in to."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Halcyon Writer — Offline mode",
+        "text": "Every feature keeps working with no connection; changes sync as soon as you are back online."
+      }
+    ],
+    "expected": "not_addressed",
+    "evidence": []
+  },
+  {
+    "id": "s07",
+    "claim": "Kitebridge Agent runs on Windows Server 2022.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Kitebridge Agent — System requirements",
+        "text": "Supported on Windows Server 2019 and 2022, Ubuntu 22.04 and RHEL 9."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Kitebridge Dashboard — Browser support",
+        "text": "Works in current versions of Chrome, Firefox, Safari and Edge."
+      }
+    ],
+    "expected": "supported",
+    "evidence": [
+      "p-1-0"
+    ]
+  },
+  {
+    "id": "s08",
+    "claim": "The Marlow Team plan includes 50 GB of storage per user.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Marlow Business — Plan details",
+        "text": "Each seat comes with 1 TB of storage and unlimited version history."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Marlow Team — Plan details",
+        "text": "Each seat comes with 50 GB of storage and 90 days of version history."
+      },
+      {
+        "id": "p-3-0",
+        "source": "Marlow — Billing FAQ",
+        "text": "You can switch plans at any time; changes are prorated."
+      }
+    ],
+    "expected": "supported",
+    "evidence": [
+      "p-2-0"
+    ]
+  },
+  {
+    "id": "s09",
+    "claim": "The Quarry Go SDK supports streaming responses.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Quarry REST API — Streaming",
+        "text": "Set stream to true to receive the response as server-sent events."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Quarry Go SDK — Limitations",
+        "text": "Streaming responses are not available yet; every call returns once the full response is ready."
+      }
+    ],
+    "expected": "contradicted",
+    "evidence": [
+      "p-2-0"
+    ]
+  },
+  {
+    "id": "s10",
+    "claim": "Vantor Desktop can be installed on Linux.",
+    "passages": [
+      {
+        "id": "p-1-0",
+        "source": "Vantor Mobile — Downloads",
+        "text": "Get it from the App Store or Google Play."
+      },
+      {
+        "id": "p-2-0",
+        "source": "Vantor Desktop — Downloads",
+        "text": "Available for Windows 10 and later and macOS 13 and later. There is no Linux build."
+      },
+      {
+        "id": "p-3-0",
+        "source": "Vantor Desktop — Release notes",
+        "text": "Version 4.2 adds a dark theme and faster search."
+      }
+    ],
+    "expected": "contradicted",
+    "evidence": [
+      "p-2-0"
+    ]
+  }
+]

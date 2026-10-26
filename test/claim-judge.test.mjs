@@ -31,13 +31,18 @@ function withConfig(config) {
 	writeFileSync(join(agentDir, "web-search.json"), JSON.stringify(config) + "\n", "utf8");
 }
 
-// A stand-in for Pi's ctx.modelRegistry that records every lookup and classify call.
-function fakeRegistry(result, model = { id: "classifier" }) {
+// A stand-in for Pi's ctx.modelRegistry that records every lookup and classify call. The question about the
+// cited page's subject is answered with `otherSubject` (a probability, or a whole result object).
+function fakeRegistry(result, model = { id: "classifier" }, otherSubject = 0.02) {
 	const calls = { find: [], classify: [] };
 	return {
 		calls,
 		findOfType(...args) { calls.find.push(args); return model; },
-		async classify(found, context, options) { calls.classify.push({ found, context, options }); return result; },
+		async classify(found, context, options) {
+			calls.classify.push({ found, context, options });
+			if (!context.questions.other_subject) return result;
+			return typeof otherSubject === "number" ? { stopReason: "stop", answers: { other_subject: { type: "bool", probability: otherSubject } } } : otherSubject;
+		},
 	};
 }
 
@@ -74,7 +79,37 @@ test("the judge looks up the reference in Pi's catalog and sends the measured st
 		},
 	}));
 	assert.deepEqual([claim.status, claim.supporting_passages, claim.confidence], ["supported", ["p-1-0"], 0.97]);
-	assert.match(result.content[0].text, /\*\*Status:\*\* supported \(confidence 0\.97\)\n\*\*Rationale:\*\* Claim judge cloudflare-workers-ai\/@cf\/cloudflare\/clef: supported 0\.97, contradicted 0\.01, not_addressed 0\.02; evidence p-1-0\.\n\*\*Supporting passages:\*\* p-1-0/);
+	assert.match(result.content[0].text, /\*\*Status:\*\* supported \(confidence 0\.97\)\n\*\*Rationale:\*\* Claim judge cloudflare-workers-ai\/@cf\/cloudflare\/clef: supported 0\.97, contradicted 0\.01, not_addressed 0\.02; evidence p-1-0; other subject 0\.02\.\n\*\*Supporting passages:\*\* p-1-0/);
+});
+
+test("a verdict whose cited page is about another product becomes unclear", async () => {
+	const registry = fakeRegistry(stop([0.97, 0.01, 0.02], "p-1-0"), undefined, 0.29);
+	const { claim } = await runSourceCheck(CLEF, { modelRegistry: registry });
+	assert.equal(JSON.stringify(registry.calls.classify[1].context), JSON.stringify({
+		state: { claim: "The API supports streaming", passage: { source: "A", text: "Responses can be streamed with stream: true." } },
+		questions: { other_subject: { type: "bool", instructions: "The source is the title of the page the passage comes from. Does that title name a different product than the claim names, such as a sibling product of the same brand?", criteria: { true: null, false: null } } },
+	}));
+	assert.deepEqual([claim.status, claim.supporting_passages, claim.confidence], ["unclear", [], 0.97]);
+	assert.equal(claim.rationale, `Claim judge ${CLEF}: supported 0.97, contradicted 0.01, not_addressed 0.02; evidence p-1-0; other subject 0.29. The cited page "A" looks like it is about a different product than the claim; review the passages.`);
+	const below = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.97, 0.01, 0.02], "p-1-0"), undefined, 0.28) });
+	assert.equal(below.claim.status, "supported");
+	const jev = await runSourceCheck("typesafe/jev-latest", { modelRegistry: fakeRegistry(stop([0.02, 0.92, 0.06], "p-1-0"), undefined, 0.23) });
+	assert.equal(jev.claim.status, "unclear");
+});
+
+test("the cited page's subject is asked about only after a verdict, and not for Jev 1.13", async () => {
+	const noVerdict = fakeRegistry(stop([0.80, 0.05, 0.15], "p-1-0"));
+	await runSourceCheck(CLEF, { modelRegistry: noVerdict });
+	const jev113 = fakeRegistry(stop([0.02, 0.92, 0.06], "p-1-0"));
+	const { claim } = await runSourceCheck(JEV_113, { modelRegistry: jev113 });
+	assert.deepEqual([noVerdict.calls.classify.length, jev113.calls.classify.length, claim.status], [1, 1, "contradicted"]);
+});
+
+test("a failed or invalid answer about the cited page's subject is unclear, never a verdict", async () => {
+	const failed = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.97, 0.01, 0.02], "p-1-0"), undefined, { stopReason: "error", errorMessage: "Cloudflare Workers AI returned 500", answers: {} }) });
+	assert.deepEqual([failed.claim.status, failed.errors.at(-1).error], ["unclear", "Cloudflare Workers AI returned 500"]);
+	const invalid = await runSourceCheck(CLEF, { modelRegistry: fakeRegistry(stop([0.97, 0.01, 0.02], "p-1-0"), undefined, { stopReason: "stop", answers: { other_subject: { type: "bool" } } }) });
+	assert.deepEqual([invalid.claim.status, invalid.errors.at(-1).error], ["unclear", "the response is invalid: the other-subject probability must be a number from 0 to 1"]);
 });
 
 test("each reference applies its own thresholds", async () => {

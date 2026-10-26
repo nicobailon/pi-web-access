@@ -10,14 +10,21 @@ type Label = typeof LABELS[number];
 // The question texts and thresholds were measured together on claim fixtures; change one only after re-measuring.
 const VERDICT_INSTRUCTIONS = "Judge only from the passages. supported: a passage clearly states the claim or something that directly implies it. contradicted: a passage clearly states the opposite or an incompatible fact. not_addressed: anything else, including passages on the topic that do not settle the claim, weaker or stronger statements, another product or version, and rumors.";
 const EVIDENCE_INSTRUCTIONS = "Which passage id best justifies the verdict? Answer none if the verdict is not_addressed.";
+// Asked about the cited passage only, after a verdict clears its threshold: models confidently back a claim
+// about one product with a page about a sibling product of the same brand.
+const OTHER_SUBJECT_INSTRUCTIONS = "The source is the title of the page the passage comes from. Does that title name a different product than the claim names, such as a sibling product of the same brand?";
 
-/** The only Pi classifier references accepted. */
+/**
+ * The only Pi classifier references accepted. `otherSubject` turns a verdict into "unclear" when the model is at
+ * least that sure the cited page is about another product. It only removes verdicts, so it sits just above the
+ * highest value measured for a correct verdict's cited page. Without it (Jev 1.13, unmeasured) the question is not asked.
+ */
 export const CLAIM_JUDGE_MODELS = {
-	"cloudflare-workers-ai/@cf/cloudflare/clef": { supported: 0.85, contradicted: 0.87 },
-	"openrouter/cloudflare/clef": { supported: 0.85, contradicted: 0.87 },
-	"typesafe/jev-latest": { supported: 0.88, contradicted: 0.85 },
-	"openrouter/typesafe/jev-1.14": { supported: 0.88, contradicted: 0.85 },
-	"cloudflare-workers-ai/typesafe/jev-1.14.0": { supported: 0.88, contradicted: 0.85 },
+	"cloudflare-workers-ai/@cf/cloudflare/clef": { supported: 0.85, contradicted: 0.87, otherSubject: 0.29 },
+	"openrouter/cloudflare/clef": { supported: 0.85, contradicted: 0.87, otherSubject: 0.29 },
+	"typesafe/jev-latest": { supported: 0.88, contradicted: 0.85, otherSubject: 0.23 },
+	"openrouter/typesafe/jev-1.14": { supported: 0.88, contradicted: 0.85, otherSubject: 0.23 },
+	"cloudflare-workers-ai/typesafe/jev-1.14.0": { supported: 0.88, contradicted: 0.85, otherSubject: 0.23 },
 	"openrouter/typesafe/jev-1.13": { supported: 0.85, contradicted: 0.90 },
 } as const;
 export type ClaimJudgeModel = keyof typeof CLAIM_JUDGE_MODELS;
@@ -41,6 +48,8 @@ export interface ClaimJudgment {
 	/** The model's verdict probabilities and cited evidence, present whenever it gave a valid answer. */
 	probabilities?: Record<Label, number>;
 	evidence?: string;
+	/** How sure the model is that the cited page is about another product; present when that question was asked. */
+	otherSubject?: number;
 }
 
 // Criteria values are null, as measured; empty strings measurably changed Clef's answers.
@@ -118,17 +127,42 @@ export async function judgeClaim(
 	};
 	const timeout = new AbortController();
 	const timer = setTimeout(() => timeout.abort(), TIMEOUT_MS);
-	let probabilities: Record<Label, number>;
-	let evidenceChoice: string;
-	try {
-		const result = await modelRegistry.classify(classifier, context, { signal: signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal });
+	const options = { signal: signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal };
+	const ask = async (question: ClassifierContext): Promise<Record<string, unknown>> => {
+		const result = await modelRegistry.classify(classifier, question, options);
 		signal?.throwIfAborted();
-		if (timeout.signal.aborted) return failed(`timed out after ${TIMEOUT_MS / 1000} s`);
-		if (result.stopReason !== "stop") return failed(result.errorMessage || `the model stopped with ${result.stopReason}`);
+		if (timeout.signal.aborted) throw new Error(`timed out after ${TIMEOUT_MS / 1000} s`);
+		if (result.stopReason !== "stop") throw new Error(result.errorMessage || `the model stopped with ${result.stopReason}`);
 		const answers: unknown = result.answers;
 		if (!isRecord(answers)) invalid("answers are missing");
+		return answers;
+	};
+	const thresholds = CLAIM_JUDGE_MODELS[model];
+	let probabilities: Record<Label, number>;
+	let evidenceChoice: string;
+	let verdict: "supported" | "contradicted" | undefined;
+	let otherSubject: number | undefined;
+	let otherPage: string | undefined;
+	try {
+		const answers = await ask(context);
 		probabilities = verdictProbabilities(validChoice(answers.verdict, LABELS, "verdict"));
 		evidenceChoice = validChoice(answers.evidence, [...ids, "none"], "evidence").choice as string;
+		verdict = evidenceChoice === "none" ? undefined : (["supported", "contradicted"] as const).find((label) => probabilities[label] >= thresholds[label]);
+		if (verdict && "otherSubject" in thresholds) {
+			const cited = sent.find((passage) => passage.id === evidenceChoice)!;
+			const check = await ask({
+				state: { claim, passage: { source: cited.source, text: cited.text } },
+				// Criteria values are null, as measured.
+				questions: { other_subject: { type: "bool", instructions: OTHER_SUBJECT_INSTRUCTIONS, criteria: { true: null, false: null } as unknown as { true: string; false: string } } },
+			});
+			const probability = isRecord(check.other_subject) ? check.other_subject.probability : undefined;
+			if (typeof probability !== "number" || !(probability >= 0 && probability <= 1)) invalid("the other-subject probability must be a number from 0 to 1");
+			otherSubject = probability;
+			if (probability >= thresholds.otherSubject) {
+				otherPage = cited.source;
+				verdict = undefined;
+			}
+		}
 	} catch (err) {
 		signal?.throwIfAborted();
 		return failed(err instanceof Error ? err.message : String(err));
@@ -136,19 +170,22 @@ export async function judgeClaim(
 		clearTimeout(timer);
 	}
 
-	const verdict = evidenceChoice === "none" ? undefined : (["supported", "contradicted"] as const).find((label) => probabilities[label] >= CLAIM_JUDGE_MODELS[model][label]);
-	const scores = LABELS.map((label) => `${label} ${probabilities[label].toFixed(2)}`).join(", ");
+	const scores = `${LABELS.map((label) => `${label} ${probabilities[label].toFixed(2)}`).join(", ")}; evidence ${evidenceChoice}${otherSubject === undefined ? "" : `; other subject ${otherSubject.toFixed(2)}`}`;
 	const leftOut = omitted > 0 ? ` ${omitted} passage${omitted === 1 ? " was" : "s were"} left out to fit the request limit.` : "";
+	const why = otherPage !== undefined
+		? ` The cited page "${otherPage}" looks like it is about a different product than the claim; review the passages.`
+		: verdict ? "" : " No verdict reached its threshold with a cited passage; review the passages.";
 	return {
 		assessment: {
 			claim,
 			status: verdict ?? "unclear",
 			supporting_passages: verdict === "supported" ? [evidenceChoice] : [],
 			contradicting_passages: verdict === "contradicted" ? [evidenceChoice] : [],
-			rationale: `Claim judge ${model}: ${scores}; evidence ${evidenceChoice}.${verdict ? "" : " No verdict reached its threshold with a cited passage; review the passages."}${leftOut}`,
+			rationale: `Claim judge ${model}: ${scores}.${why}${leftOut}`,
 			confidence: verdict ? probabilities[verdict] : Math.max(...LABELS.map((label) => probabilities[label])),
 		},
 		probabilities,
 		evidence: evidenceChoice,
+		...(otherSubject !== undefined ? { otherSubject } : {}),
 	};
 }
