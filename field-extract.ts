@@ -114,16 +114,15 @@ function numberPattern(value: number): RegExp | undefined {
  * Turndown, which escapes markdown characters (`my\_package`, `\[beta\]`). Both sides are reduced the same way and
  * compared with includes(), so the cost stays linear whatever the value holds.
  */
-function comparable(text: string): string {
-	return text
-		.normalize("NFKC")
-		.replace(/\\([!-/:-@[-`{-~])/g, "$1")
-		// A link keeps its text: "[docs](https://x)" → "[docs]". The bound keeps a line of unclosed "](" linear.
-		.replace(/\]\([^()\s]{0,2048}\)/g, "]")
+function comparable(text: string, linkTextOnly = false): string {
+	const unescaped = text.normalize("NFKC").replace(/\\([!-/:-@[-`{-~])/g, "$1");
+	// A link keeps its text: "[docs](https://x)" → "[docs]". The bound keeps a line of unclosed "](" linear.
+	return (linkTextOnly ? unescaped.replace(/\]\([^()\s]{0,2048}\)/g, "]") : unescaped)
 		.replace(/[‘’‚‛′]/g, "'")
 		.replace(/[“”„‟″]/g, '"')
 		.replace(/[‐-―]/g, "-")
-		.replace(/[*_`[\]]/g, " ")
+		// Dropped, not spaced: "[the page]." must still read "the page.".
+		.replace(/[*_`[\]]/g, "")
 		.toLowerCase()
 		.replace(/\s+/g, " ")
 		.trim();
@@ -137,16 +136,20 @@ function cite(line: string, at: number): string {
 	return `${from > 0 ? "…" : ""}${line.slice(from, from + size).replace(/\s+/g, " ").trim()}${from + size < line.length ? "…" : ""}`;
 }
 
+// Every other step replaces characters the same way on both sides. Dropping link targets is page-only, so the page
+// matches in either form: a value can be a link's text or its target (an href, an image src).
+const onPage = (text: string, wanted: string) => comparable(text).includes(wanted) || comparable(text, true).includes(wanted);
+
 function textLine(value: string, page: string): string | undefined | null {
 	const wanted = comparable(value);
 	if (!wanted) return null;
 	for (const line of page.split("\n")) {
-		if (!comparable(line).includes(wanted)) continue;
+		if (!onPage(line, wanted)) continue;
 		const firstWord = wanted.split(" ")[0];
 		return cite(line, Math.max(0, line.toLowerCase().indexOf(firstWord)));
 	}
 	// A value that wraps across lines is on the page but has no single line to cite.
-	return comparable(page).includes(wanted) ? null : undefined;
+	return onPage(page, wanted) ? null : undefined;
 }
 
 /**

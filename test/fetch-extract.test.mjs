@@ -290,3 +290,20 @@ test("a value made of emphasis characters against a long run of them is checked 
 	const result = await extractPageFields(page, parseExtractFields({ total: "text" }), { modelRegistry: setUpRegistry });
 	assert.equal(result.fields.total.status, "uncertain");
 });
+
+test("a link's target and an image's address are found, as well as the link text", async (t) => {
+	const { default: TurndownService } = await import("turndown");
+	const page = new TurndownService({ headingStyle: "atx", codeBlockStyle: "fenced" })
+		.turndown('<p>Get it from <a href="https://example.com/file_v2.zip">the download page</a>.</p><p><img src="https://cdn.example.com/logo.png" alt="Logo"></p>');
+	t.mock.method(globalThis, "fetch", async () => Response.json({ success: true, result: { answers: {
+		download: { type: "text", value: "https://example.com/file_v2.zip", confidence: 0.99 },
+		logo: { type: "text", value: "https://cdn.example.com/logo.png", confidence: 0.99 },
+		label: { type: "text", value: "the download page.", confidence: 0.99 },
+	} } }));
+	const result = await extractPageFields(page, parseExtractFields({ download: "text", logo: "text", label: "text" }), { modelRegistry: setUpRegistry });
+	assert.deepEqual(Object.values(result.fields).map((field) => [field.status, field.line]), [
+		["extracted", "Get it from [the download page](https://example.com/file_v2.zip)."],
+		["extracted", "![Logo](https://cdn.example.com/logo.png)"],
+		["extracted", "Get it from [the download page](https://example.com/file_v2.zip)."],
+	]);
+});
