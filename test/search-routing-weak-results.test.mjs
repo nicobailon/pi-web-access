@@ -185,3 +185,24 @@ test("off-topic moves on only when the judge clears the model's threshold, and a
 		assert.deepEqual(out.errors, scores.B === "error" ? ["brave: off-topic check failed: judge down"] : []);
 	}
 });
+
+test("cancelling the search during the off-topic check rejects instead of keeping or skipping the response", async () => {
+	const child = await run({ providers: ["brave", "tavily"], fallbackOn: ["transient", "off-topic"], offTopicModel: "cloudflare-workers-ai/@cf/cloudflare/clef" }, `
+		const controller = new AbortController();
+		const modelRegistry = { findOfType: () => ({ id: "clef" }), async classify() {
+			controller.abort();
+			return { stopReason: "stop", answers: { relevance: { type: "choice", choice: "addresses", probabilities: { addresses: 0.9, off_topic: 0.1 }, confidence: 0.9 } } };
+		} };
+		globalThis.fetch = async (url) => {
+			calls.push(String(url).includes("brave") ? "brave" : "tavily");
+			return brave([{ title: "B", url: "https://example.com/b", description: "d" }]);
+		};
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		try { const result = await search("q", { provider: "auto", signal: controller.signal, extensionContext: { modelRegistry } }); console.log(JSON.stringify({ resolved: result.provider, calls })); }
+		catch (err) { console.log(JSON.stringify({ rejected: String(err.message), calls })); }
+	`);
+	assert.equal(child.status, 0, child.stderr);
+	const out = JSON.parse(child.stdout.trim());
+	assert.match(out.rejected ?? "", /abort/i);
+	assert.deepEqual(out.calls, ["brave"]);
+});

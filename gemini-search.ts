@@ -776,7 +776,7 @@ async function searchWithConfiguredRouting(
 			const registry = options.extensionContext?.modelRegistry;
 			if (!kind && !weak.empty && routing.offTopicModel && routing.fallbackOn.includes("off-topic") && registry) {
 				// A deadline during the check keeps the response: it is still a success.
-				const judgment = await untilDeadline(judgeOffTopic(routing.offTopicModel, query, response, registry, signal))
+				const judgment = await untilDeadline(judgeOffTopic(routing.offTopicModel, query, response, registry, options.signal))
 					.catch((err) => { if (timedOut()) return { error: `routing timeout after ${routing.timeoutMs}ms` }; throw err; });
 				if ("error" in judgment) {
 					const line = `${provider}: off-topic check failed: ${judgment.error}`;
