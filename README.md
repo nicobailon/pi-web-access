@@ -16,7 +16,7 @@
 
 https://github.com/user-attachments/assets/b3c57253-6c24-470b-a2af-381b1cce9c84
 
-The agent can now pull specific values off a page, like a price or a rate limit, instead of reading the whole thing. Each value comes back with the line it was found on, and a value that isn't on the page is reported as missing rather than guessed. Code mode scripts get those values as typed data, so one script can search and compare numbers across the top results. Search can also move on to the next provider when one comes back empty or off-topic, and the web tools take about 60% fewer tokens on every request. See the [changelog](CHANGELOG.md#0450---2026-10-25) for everything in this release.
+The agent can now pull specific values off a page, like a price or a rate limit, instead of reading the whole thing. Numbers and text come back with the line they were found on, and anything the model isn't sure of is marked as a guess or as not on the page. Code mode scripts get those values as typed data, so one script can search and compare numbers across the top results. Search can also move on to the next provider when one comes back empty or off-topic, and the web tools take about 60% fewer tokens on every request. See the [changelog](CHANGELOG.md#0450---2026-10-25) for everything in this release.
 
 ## Why Pi Web Access
 
