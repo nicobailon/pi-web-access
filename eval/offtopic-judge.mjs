@@ -30,7 +30,7 @@ const holdoutPath = values.holdout ?? (existsSync(defaultHoldout) ? defaultHoldo
 if (holdoutPath) fixtureSets.push({ name: "holdout", cases: JSON.parse(readFileSync(holdoutPath, "utf8")) });
 
 const percentile = (sorted, p) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
-// The rule the claim judge uses: a threshold sits above every probability the model gave a wrong answer.
+// A threshold sits above every probability the model gave a wrong answer, plus 0.05, and never below 0.85.
 const threshold = (highestWrong) => Math.ceil(Math.max(0.85, highestWrong + 0.05) * 100) / 100;
 
 // Only "off_topic" would ever act (a fallback), so its threshold is the one measured. Calibration sets it; the held-out set is judged at it.

@@ -12,7 +12,6 @@ import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import { normalizeFetchContentParams, type FetchContentParams } from "./fetch-params.ts";
 import { resolveAuthFetchProfile, type AuthFetchProfile } from "./auth-fetch.ts";
 import { findContent, type FindMode } from "./content-find.ts";
-import { CLAIM_JUDGE_MODELS, judgeClaim, type ClaimJudgeModel } from "./claim-judge.ts";
 import { extractPageFields, formatPageExtraction, parseExtractFields } from "./field-extract.ts";
 import {
 	assertSearchProviderSelectionAllowed,
@@ -25,7 +24,7 @@ import {
 } from "./gemini-search.ts";
 import { isOpenAISearchAvailable } from "./openai-search.ts";
 import type { SearchResult } from "./perplexity.ts";
-import { getWebSearchConfigPath, isRecord, runWithProxy } from "./utils.ts";
+import { getWebSearchConfigPath, runWithProxy } from "./utils.ts";
 import { deleteResult, generateId, getResult, storeResult, type QueryResultData, type StoredSearchData } from "./storage.ts";
 import {
 	buildResearchArtifact,
@@ -90,7 +89,6 @@ export interface WebSearchConfig {
 	summaryGenerationDeadlineMs?: unknown;
 	summaryInstructions?: unknown;
 	maxInlineContentChars?: unknown;
-	sourceCheck?: unknown;
 	fetch?: {
 		defaultMode?: unknown;
 		allowedModes?: unknown;
@@ -173,15 +171,6 @@ export function resolveFetchModeConfig(config: WebSearchConfig): FetchModeConfig
 		throw new Error(`fetch.defaultMode in ${WEB_SEARCH_CONFIG_PATH} must be one of fetch.allowedModes`);
 	}
 	return { defaultMode: defaultMode as FetchMode, allowedModes };
-}
-
-export function resolveClaimJudgeModel(config: WebSearchConfig): ClaimJudgeModel | undefined {
-	if (config.sourceCheck === undefined) return undefined;
-	const judgeModel = isRecord(config.sourceCheck) ? config.sourceCheck.judgeModel : undefined;
-	if (typeof judgeModel !== "string" || !Object.hasOwn(CLAIM_JUDGE_MODELS, judgeModel)) {
-		throw new Error(`sourceCheck.judgeModel in ${WEB_SEARCH_CONFIG_PATH} must be one of ${Object.keys(CLAIM_JUDGE_MODELS).map((model) => `"${model}"`).join(", ")}`);
-	}
-	return judgeModel as ClaimJudgeModel;
 }
 
 // Limit each batch independently so separate Pi tool calls can still run in parallel.
@@ -426,8 +415,6 @@ function formatSourceCheckResult(artifact: ResearchArtifact, getSearchContentToo
 	if (assessment) {
 		lines.push(`**Status:** ${assessment.status} (confidence ${assessment.confidence.toFixed(2)})`);
 		lines.push(`**Rationale:** ${assessment.rationale}`);
-		if (assessment.supporting_passages.length > 0) lines.push(`**Supporting passages:** ${assessment.supporting_passages.join(", ")}`);
-		if (assessment.contradicting_passages.length > 0) lines.push(`**Contradicting passages:** ${assessment.contradicting_passages.join(", ")}`);
 		lines.push("");
 	}
 	if (artifact.sources.length > 0) {
@@ -540,8 +527,6 @@ export interface WebToolCoreSettings {
 	/** Output ceiling for search results and stored-content pages. fetch_content rereads config per call. */
 	maxInlineContentChars: number;
 	fetchModes: FetchModeConfig;
-	/** Model that judges source_check claims; absent leaves every claim for manual review. */
-	claimJudgeModel?: ClaimJudgeModel;
 }
 
 export interface PageAnswerRequest {
@@ -956,7 +941,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					fetched = urls.map((url) => ({ url, title: "", content: "", error: err instanceof Error ? err.message : String(err) }));
 				}
 			}
-			const built = buildResearchArtifact({
+			const artifact = withClaimAssessment(buildResearchArtifact({
 				query: claim,
 				provider,
 				summary: summaries.length > 0 ? summaries.join("\n\n") : undefined,
@@ -964,29 +949,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				fetched,
 				recency: recencyFilter,
 				domainFilter,
-			});
-			let artifact: ResearchArtifact;
-			const failedSearchCount = errors.length;
-			// The judge runs through Pi's model registry, so hosts without one (MCP) skip it.
-			const modelRegistry = ctx?.modelRegistry;
-			let judgeFailed = false;
-			if (settings.claimJudgeModel && modelRegistry && built.passages.length > 0 && !signal?.aborted) {
-				const titles = new Map(built.sources.map((source) => [source.rank, source.title || source.url]));
-				const passages = built.passages.map((passage) => ({ id: passage.passage_id, source: titles.get(passage.source_rank) ?? passage.source_url, text: passage.text }));
-				const judgment = await judgeClaim(settings.claimJudgeModel, claim, passages, modelRegistry, signal);
-				artifact = { ...built, claims: [judgment.assessment] };
-				if (judgment.error) {
-					judgeFailed = true;
-					errors.push({ query: "claim judge", error: judgment.error });
-				}
-			} else {
-				artifact = withClaimAssessment(built, [claim]);
-			}
-			const assessment = artifact.claims![0]!;
-			// Snippets alone rarely settle a claim; a judge failure already names its own cause.
-			if (!params.fetchContent && assessment.status === "unclear" && !judgeFailed) {
-				artifact.claims = [{ ...assessment, rationale: `${assessment.rationale} Only search snippets were checked; retry with fetchContent: true to include the pages.` }];
-			}
+			}), [claim]);
 			if (errors.length > 0) artifact.errors = errors;
 			storeResearchArtifact(artifact);
 			host.publishResult?.({
@@ -997,7 +960,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			});
 			return {
 				content: [{ type: "text", text: formatSourceCheckResult(artifact, getSearchContentEnabled ? toolNames.getSearchContent : null) }],
-				details: { responseId: artifact.id, artifact, sourceCount: artifact.sources.length, passageCount: artifact.passages.length, searchCount: queries.length, failedSearchCount },
+				details: { responseId: artifact.id, artifact, sourceCount: artifact.sources.length, passageCount: artifact.passages.length, searchCount: queries.length },
 			};
 		});
 	}
@@ -1567,10 +1530,10 @@ function standaloneError(error: string): WebToolResult {
 // URL, or every source_check search failed. A working search with zero matches
 // is not.
 export function markToolError<T extends Omit<WebToolResult, "structuredContent">>(result: T): T {
-	const { error, queryCount, successfulQueries, urlCount, successful, searchCount, failedSearchCount } = result.details;
+	const { error, queryCount, successfulQueries, urlCount, successful, searchCount, artifact } = result.details;
 	const nothingSucceeded = (typeof queryCount === "number" && queryCount > 0 && successfulQueries === 0)
 		|| (typeof urlCount === "number" && urlCount > 0 && successful === 0)
-		|| (typeof searchCount === "number" && searchCount > 0 && failedSearchCount === searchCount);
+		|| (typeof searchCount === "number" && searchCount > 0 && (artifact as ResearchArtifact).errors?.length === searchCount);
 	return error !== undefined || nothingSucceeded ? { ...result, isError: true } : result;
 }
 
@@ -1626,7 +1589,6 @@ export function createStandaloneWebToolCore(): StandaloneWebToolCore {
 		},
 		maxInlineContentChars: getMaxInlineContentChars(config),
 		fetchModes: resolveFetchModeConfig(config),
-		claimJudgeModel: resolveClaimJudgeModel(config),
 	};
 	const storedIds: string[] = [];
 	const remember = (id: string) => {

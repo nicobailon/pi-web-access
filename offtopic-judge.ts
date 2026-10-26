@@ -45,7 +45,7 @@ export async function judgeOffTopic(
 			answer: response.answer.slice(0, MAX_ANSWER_CHARS),
 			results: response.results.slice(0, MAX_RESULTS).map(({ title, url, snippet }) => ({ title, url, snippet: snippet.slice(0, MAX_SNIPPET_CHARS) })),
 		},
-		// Null criteria, as the claim judge measured: empty strings changed Clef's answers.
+		// Null criteria: empty strings changed Clef's answers.
 		questions: { relevance: { type: "choice", instructions: INSTRUCTIONS, criteria: { addresses: null, off_topic: null } as unknown as Record<string, string> } },
 	};
 	const timeout = AbortSignal.timeout(TIMEOUT_MS);

@@ -28,7 +28,7 @@
 
 > A search engine returned this answer and these results for the query. addresses: the answer or at least one result is about what the query asks for, even if incomplete or outdated. off_topic: nothing is about what the query asks for, including results that only share words with it, a different meaning of the same word, or a different product.
 
-Only `off_topic` would ever act, so it is the only threshold measured. The rule is the claim judge's: `max(0.85, highest off_topic probability given to a response that addresses the query + 0.05)`, rounded up, set on the calibration set and then applied unchanged to the held-out set.
+Only `off_topic` would ever act, so it is the only threshold measured. The threshold is `max(0.85, highest off_topic probability given to a response that addresses the query + 0.05)`, rounded up, set on the calibration set and then applied unchanged to the held-out set.
 
 ## Calibration
 

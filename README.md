@@ -308,11 +308,7 @@ source_check({
 | `provider` | Same as `web_search`: `"auto"`, `"all"`, one name, or a list such as `"brave,exa"` |
 | `proxy` | http(s) or socks proxy URL for every request in this call; `""` forces a direct connection. See [Proxy](#proxy-proxy) |
 
-The artifact preserves the `supported`, `contradicted`, `unclear`, or `missing-evidence` claim status schema, source quality hints, SHA-256 content hashes, and passage IDs with exact source offsets. By default it does not judge the claim: retrieved passages produce `unclear` for manual review, while no passages produce `missing-evidence`. Search and fetch errors remain in the artifact instead of being silently discarded. Artifacts are stored with the session and retrieved through `get_search_content` using the returned `responseId`; paged artifact responses are JSON slices, so request the next `offset` when needed.
-
-To have a classifier model from Pi's catalog judge the claim, set `"sourceCheck": { "judgeModel": "cloudflare-workers-ai/@cf/cloudflare/clef" }` in `web-search.json`, or another reference listed in [docs/claim-judge.md](docs/claim-judge.md). The status is then `supported` or `contradicted` when the model is confident and cites one of the passages, and `unclear` otherwise, including when the cited page looks like it is about a different product of the same brand; the tool's description then tells the agent it returns a verdict. The claim, its passages and their page titles are sent to that model's provider with your Pi credentials. A sibling product the page title doesn't name can still slip through, so check the cited passage's source.
-
-An `unclear` result from search snippets alone, without `fetchContent`, says so in its rationale and suggests running the check again with `fetchContent: true`.
+The artifact preserves the `supported`, `contradicted`, `unclear`, or `missing-evidence` claim status schema, source quality hints, SHA-256 content hashes, and passage IDs with exact source offsets. It does not judge the claim: retrieved passages produce `unclear` for manual review, while no passages produce `missing-evidence`. Search and fetch errors remain in the artifact instead of being silently discarded. Artifacts are stored with the session and retrieved through `get_search_content` using the returned `responseId`; paged artifact responses are JSON slices, so request the next `offset` when needed.
 
 ### In codemode scripts
 
@@ -350,7 +346,7 @@ Add it to an `mcpServers` config (Claude Code, Cursor, and similar clients; Code
 ```
 
 - The server reads the same `web-search.json` and provider environment variables as the extension. It lists only the tools enabled there, under their default names; `toolNames` renames do not apply.
-- Pi-only features are not available: the curator and summaries (a configured `workflow` is ignored), Kimi search, OpenAI search through ChatGPT sign-in or the current Pi model, `fetch_content` answer and extract modes and video prompts or frames, and direct image fetches. Explicit requests for them return a tool error rather than a fallback, and automatic provider selection only uses providers that work outside Pi. The `source_check` claim judge does not run either, so claims stay `unclear` for manual review.
+- Pi-only features are not available: the curator and summaries (a configured `workflow` is ignored), Kimi search, OpenAI search through ChatGPT sign-in or the current Pi model, `fetch_content` answer and extract modes and video prompts or frames, and direct image fetches. Explicit requests for them return a tool error rather than a fallback, and automatic provider selection only uses providers that work outside Pi.
 - `includeContent` waits for the page fetch before `web_search` returns.
 - The server keeps the 50 most recent results in memory for `get_search_content`; they are gone when it exits. Restart the server to pick up config changes.
 - Install with npm's default settings or `--legacy-peer-deps`. `--omit=peer` leaves out `zod`, which the MCP SDK needs.
