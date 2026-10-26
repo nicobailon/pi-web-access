@@ -1128,8 +1128,9 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				const outputLimit = getMaxInlineContentChars();
 				if (output.length > outputLimit) output = `${output.slice(0, outputLimit)}\n\n[Results cut at ${outputLimit} characters; ask for fewer fields or URLs.]\n`;
 				// Extract rejects auth, so the pages are always stored.
+				const anyUncertain = extractions.some((extraction) => extraction && "fields" in extraction && Object.values(extraction.fields).some((field) => field.status === "uncertain"));
 				output += getSearchContentEnabled
-					? `\n---\nThe fetched pages are stored as responseId "${responseId}". Use ${toolNames.getSearchContent}({ responseId: "${responseId}", urlIndex: 0 }) to read the first one; urlIndex follows the order above.`
+					? `\n---\nThe fetched pages are stored as responseId "${responseId}". Use ${toolNames.getSearchContent}({ responseId: "${responseId}", urlIndex: 0 }) to read the first one; urlIndex follows the order above.${anyUncertain ? " To check an uncertain value, add findText with its guess." : ""}`
 					: "\n---\nContent retrieval is not registered.";
 				return {
 					// A page that fetched but could not be extracted still counts as fetched: its content is stored.

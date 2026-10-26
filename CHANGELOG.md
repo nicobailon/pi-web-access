@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `fetch_content` extract mode shows the page line each text or number value was found on, so you can check and cite it. Text the model is confident about but that isn't on the page is now shown as uncertain instead of extracted. ([#616](https://github.com/nicobailon/pi-web-access/issues/616))
 - After an update, the first Pi session shows the highlights of the releases you skipped, once, with a link to the full changelog. A fresh install or a downgrade shows nothing.
 - Search through a self-hosted [9router](https://github.com/decolua/9router) with `provider: "ninerouter"` and `ninerouterBaseUrl`, so every search backend set up in the router works from Pi. Thanks to [@giovannirandykusuma](https://github.com/giovannirandykusuma) for [PR #612](https://github.com/nicobailon/pi-web-access/pull/612).
 - Search routing can skip a provider whose results have nothing to do with your query. Add `"off-topic"` to `searchRouting.fallbackOn` and pick a classifier model in `searchRouting.offTopicModel`; it then checks each routed answer and moves on when the results are off-topic ([#619](https://github.com/nicobailon/pi-web-access/issues/619)).

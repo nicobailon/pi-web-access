@@ -21,8 +21,8 @@ interface FieldSpec {
 }
 
 export type FieldResult =
-	| { status: "extracted"; value: JsonValue; confidence: number }
-	| { status: "uncertain"; guess: JsonValue; confidence?: number }
+	| { status: "extracted"; value: JsonValue; confidence: number; line?: string }
+	| { status: "uncertain"; guess: JsonValue; confidence?: number; line?: string; notFound?: true }
 	| { status: "null" };
 
 export type PageExtraction =
@@ -95,6 +95,49 @@ function fieldResult(spec: FieldSpec, answer: unknown): FieldResult {
 	return { status: "uncertain", guess: value, ...(confidence !== undefined ? { confidence } : {}) };
 }
 
+const MAX_LINE_CHARS = 200;
+// Thousands separators seen on pages: comma, period, space, no-break and narrow no-break space, apostrophe.
+const THOUSANDS = "[,. \\u00a0\\u202f']?";
+
+// Text and numbers keep a form that can be found on the page. Dates, times and durations are normalized by Clairic, so they have none.
+function valuePattern(spec: FieldSpec, value: unknown): RegExp | undefined {
+	if (spec.type === "text" && typeof value === "string" && value.trim()) {
+		// Case and whitespace may differ, and markdown emphasis may sit between words.
+		return new RegExp(value.trim().split(/\s+/).map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s*_`]+"), "i");
+	}
+	if (spec.type === "number" && typeof value === "number") {
+		const match = /^(\d+)(?:\.(\d+))?$/.exec(String(Math.abs(value)));
+		if (!match) return undefined;
+		const groups = match[1].match(/\d{1,3}(?=(?:\d{3})*$)/g)!;
+		const fraction = match[2] ? `[.,]${match[2]}0*` : "(?:[.,]0+)?";
+		// Not part of a longer number: "299" must not match inside "1,299", nor "3" inside "5.3.1".
+		return new RegExp(`(?<!\\d[.,]?)${groups.join(THOUSANDS)}${fraction}(?![.,]?\\d)`);
+	}
+	return undefined;
+}
+
+function lineAround(page: string, match: RegExpExecArray): string {
+	const start = page.lastIndexOf("\n", match.index) + 1;
+	const end = page.indexOf("\n", match.index + match[0].length);
+	const line = page.slice(start, end === -1 ? undefined : end);
+	if (line.length <= MAX_LINE_CHARS) return line.replace(/\s+/g, " ").trim();
+	const from = Math.max(0, Math.min(match.index - start - 60, line.length - MAX_LINE_CHARS));
+	const window = line.slice(from, from + MAX_LINE_CHARS).replace(/\s+/g, " ").trim();
+	return `${from > 0 ? "…" : ""}${window}${from + MAX_LINE_CHARS < line.length ? "…" : ""}`;
+}
+
+/** Adds the page line a text or number value was found on. A number match only cites; it never changes the status. */
+function withPageLine(spec: FieldSpec, result: FieldResult, page: string): FieldResult {
+	if (result.status === "null") return result;
+	const pattern = valuePattern(spec, result.status === "extracted" ? result.value : result.guess);
+	if (!pattern) return result;
+	const match = pattern.exec(page);
+	if (match) return { ...result, line: lineAround(page, match) };
+	// Text that is not on the page was not read from it, however confident the model is.
+	if (result.status === "extracted" && spec.type === "text") return { status: "uncertain", guess: result.value, confidence: result.confidence, notFound: true };
+	return result;
+}
+
 /**
  * Clairic is not in Pi's model catalog, so it is called directly with Pi's `cloudflare-workers-ai` credential.
  * When Pi has an AI Gateway id (`CLOUDFLARE_GATEWAY_ID`), the request goes through that gateway.
@@ -142,9 +185,10 @@ export async function extractPageFields(
 	referenceDate = new Date().toISOString().slice(0, 10),
 ): Promise<PageExtraction> {
 	const cut = page.length > MAX_PAGE_CHARS;
+	const state = cut ? page.slice(0, MAX_PAGE_CHARS) : page;
 	const body = JSON.stringify({
 		model: "clairic",
-		state: cut ? page.slice(0, MAX_PAGE_CHARS) : page,
+		state,
 		fields,
 		reference_date: referenceDate,
 	});
@@ -153,7 +197,7 @@ export async function extractPageFields(
 		const result = await runClairic(body, context.modelRegistry, signal ? AbortSignal.any([signal, timeout]) : timeout);
 		const answers = result.answers;
 		if (!isRecord(answers)) throw new Error("the response is invalid: answers are missing");
-		const results = Object.fromEntries(Object.entries(fields).map(([name, spec]) => [name, fieldResult(spec, Object.hasOwn(answers, name) ? answers[name] : undefined)]));
+		const results = Object.fromEntries(Object.entries(fields).map(([name, spec]) => [name, withPageLine(spec, fieldResult(spec, Object.hasOwn(answers, name) ? answers[name] : undefined), state)]));
 		return { fields: results, cut: cut || result.truncated === true };
 	} catch (err) {
 		signal?.throwIfAborted();
@@ -172,8 +216,9 @@ const shown = (value: unknown) => {
 export function formatPageExtraction(extraction: PageExtraction): string {
 	if ("error" in extraction) return `Extraction failed: ${extraction.error}\n`;
 	const lines = Object.entries(extraction.fields).map(([name, result]) => {
-		if (result.status === "extracted") return `${name}: ${shown(result.value)} (${result.confidence.toFixed(2)})`;
-		if (result.status === "uncertain") return `${name}: uncertain (guess ${shown(result.guess)}${result.confidence !== undefined ? `, ${result.confidence.toFixed(2)}` : ""})`;
+		const from = result.status !== "null" && result.line ? ` from "${result.line}"` : "";
+		if (result.status === "extracted") return `${name}: ${shown(result.value)} (${result.confidence.toFixed(2)})${from}`;
+		if (result.status === "uncertain") return `${name}: uncertain (guess ${shown(result.guess)}${result.confidence !== undefined ? `, ${result.confidence.toFixed(2)}` : ""}${result.notFound ? "; not found on the page" : ""})${from}`;
 		return `${name}: not on the page`;
 	});
 	if (extraction.cut) lines.push(`(Only the first part of the page was read; it is longer than the model accepts.)`);

@@ -50,6 +50,12 @@ Each URL gets a heading and one line per field:
 - `invoice: uncertain (guess INV-2291, 0.55)`: the model found a value but isn't sure of it, so it is shown as a guess. This is what you get below 0.80, when the value has the wrong type (`"Oct 27"` for a date, `2.5` for an integer, `2026-13-45`, empty text, a negative duration), or when the model gave no confidence.
 - `coupon: not on the page`: the model decided the value is not on the page. Clairic still sends a fallback guess in that case; it is not shown, because it is not taken from the page.
 
+A text or number value that is found on the page is followed by the line it is on, such as `total: 42.1 (0.99) from "Order total $42.10."`, so it can be checked and cited; `details.extractions` has it as `line`. Text is matched ignoring case, spacing and markdown emphasis; numbers allow thousands separators and trailing zeros (`1,299`, `1 299`, `42.10`). Dates, times, durations and lists get no line, because the model rewrites them (`next Friday` becomes `2026-10-30`). A number match only adds the line and never changes the result, since the same digits can appear elsewhere on the page.
+
+Text the model reports with high confidence that is not on the page at all is shown as `uncertain (guess …, 0.97; not found on the page)`, because it was not read from the page. On the measurement sets below, every correct text and number value was found on its page, so this check withheld none of them.
+
+When any value is uncertain, the note at the end suggests checking it with `get_search_content` and `findText`.
+
 The typed results are also in `details.extractions`. In the text, a value longer than 1,000 characters is cut on its own, and the whole result is cut at `maxInlineContentChars`. Pages are fetched as in `readable` mode, including `proxy`, and PDFs are read from their text. Up to three pages are sent to Clairic at a time. The fetched pages are stored as usual, so `get_search_content` can read them afterwards.
 
 `auth` is refused, as with answer mode, so pages fetched with your browser cookies are never sent. GitHub repositories, issues and pull requests are read as in the other modes, with your signed-in `gh` account when you have one, so extracting from a private repository you can read sends its text to Cloudflare, just as answer mode sends it to your chat model.

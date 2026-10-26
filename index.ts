@@ -160,6 +160,8 @@ const fetchContentOutputSchema = Type.Object({
 					value: Type.Optional(Type.Unknown({ description: "Typed value when extracted" })),
 					guess: Type.Optional(Type.Unknown({ description: "Unconfirmed value when uncertain" })),
 					confidence: Type.Optional(Type.Number()),
+					line: Type.Optional(Type.String({ description: "Page line the text or number value was found on" })),
+					notFound: Type.Optional(Type.Boolean({ description: "Uncertain because the text is not on the page" })),
 				})),
 				cut: Type.Boolean({ description: "Only the first part of the page was read" }),
 			}),

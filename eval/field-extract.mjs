@@ -66,7 +66,7 @@ for (const { name, pages } of fixtureSets) {
 				if ((outcome === "wrongExtracted" || outcome === "wrongWithheld") && result.confidence !== undefined) highestWrong = Math.max(highestWrong, result.confidence);
 				if (outcome !== "correct" && outcome !== "correctNull") {
 					const shown = result.status === "extracted" ? result.value : result.status === "uncertain" ? result.guess : null;
-					notes.add(`${page.id}.${field}: ${outcome}, want ${JSON.stringify(want)}, got ${JSON.stringify(shown)}${result.confidence !== undefined ? ` at ${result.confidence.toFixed(3)}` : ""}`);
+					notes.add(`${page.id}.${field}: ${outcome}, want ${JSON.stringify(want)}, got ${JSON.stringify(shown)}${result.confidence !== undefined ? ` at ${result.confidence.toFixed(3)}` : ""}${result.notFound ? " (not found on the page)" : ""}`);
 				}
 			}
 		}
