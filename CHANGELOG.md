@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Search through the [Cloudflare Web Search API](https://developers.cloudflare.com/web-search/) with `provider: "cloudflare"`. It runs on Ceramic, Exa, or Linkup (`cloudflareSearchProvider`, default Ceramic) through your AI Gateway, billed to AI Gateway credits or a provider key stored on the gateway, and uses the `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` already set up for Pi's Cloudflare provider. It is explicit-only, so `auto` and `all` never spend on it.
+
 ## [0.45.0] - 2026-10-25
 
 ### Highlights
