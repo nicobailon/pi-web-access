@@ -321,7 +321,7 @@ export function parseProviderArgument(value: unknown): SearchProviderSelection |
 
 /** Validate the original arguments, before config can supply an implicit provider. */
 export function validateSearchModelOverride(provider: unknown, model: unknown): string | undefined {
-	if (model === undefined) return undefined;
+	if (model === undefined || model === "") return undefined;
 	if (typeof model !== "string" || !model.trim()) {
 		throw new Error("model must be a non-empty model ID");
 	}

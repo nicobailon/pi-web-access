@@ -77,6 +77,14 @@ for (const provider of ["openai", "xai", "mistral", "gemini"]) {
 	});
 }
 
+test("an empty model from optional-parameter coercion is treated as omitted", () => {
+	const requests = run({ ...keys, ...configured }, `
+		const result = await tool.execute("x", { query: "q", provider: "openai", model: "" });
+		assert.notEqual(result.isError, true, result.content[0].text);
+	`);
+	assert.deepEqual(requests.map(sentModel), ["configured-openai"]);
+});
+
 test("model is rejected before any request without one explicit supported provider", () => {
 	const requests = run({ ...keys, provider: "openai", braveApiKey: "brave-key" }, `
 		for (const params of [{}, { provider: "auto" }, { provider: "all" }, { provider: "brave" }]) {
