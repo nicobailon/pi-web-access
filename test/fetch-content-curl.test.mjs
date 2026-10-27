@@ -24,6 +24,7 @@ const headers = Object.entries(route.headers ?? {}).map(([name, value]) => name 
 fs.writeFileSync(valueAfter("-D"), "HTTP/2 " + route.status + "\\r\\n" + headers + "\\r\\n");
 fs.writeFileSync(valueAfter("--output"), route.body ?? "");
 process.stdout.write(JSON.stringify({ url_effective: url, num_redirects: 0 }));
+if (route.exitCode) { process.stderr.write(route.stderr ?? ""); process.exitCode = route.exitCode; }
 `);
 after(() => rm(fakeCurlDir, { recursive: true, force: true }));
 
@@ -75,7 +76,8 @@ test("fetchContent.curl sends the page fetch through the command without the def
 	assert.equal(output.calls.length, 1);
 	const args = output.calls[0];
 	assert.equal(args.at(-1), "https://example.com/article");
-	assert.ok(!args.includes("-x"), JSON.stringify(args));
+	// An empty -x keeps curl off proxy environment variables, as Node's fetch is.
+	assert.equal(args[args.indexOf("-x") + 1], "", JSON.stringify(args));
 	const headers = headerValues(args);
 	assert.ok(!headers.some((header) => /^user-agent:/i.test(header)), JSON.stringify(headers));
 	assert.ok(headers.some((header) => /^accept: text\/html/i.test(header)), JSON.stringify(headers));
@@ -101,7 +103,8 @@ test("a configured fetchContent.userAgent is still sent through fetchContent.cur
 });
 
 test("redirects through fetchContent.curl are followed and checked one hop at a time", async () => {
-	const followed = await runExtract({ fetchContent: { curl: curlCommand } }, {
+	// --no-location after the command's own arguments overrides a configured -L, since curl uses the last one.
+	const followed = await runExtract({ fetchContent: { curl: [...curlCommand, "-L"] } }, {
 		options: { mode: "raw" },
 		routes: {
 			"https://example.com/article": { status: 301, headers: { location: "/moved" } },
@@ -109,7 +112,7 @@ test("redirects through fetchContent.curl are followed and checked one hop at a 
 		},
 	});
 	assert.deepEqual(followed.calls.map((args) => args.at(-1)), ["https://example.com/article", "https://example.com/moved"]);
-	assert.ok(!followed.calls.some((args) => args.includes("-L") || args.includes("--location")));
+	for (const args of followed.calls) assert.ok(args.indexOf("--no-location") > args.indexOf("-L"), JSON.stringify(args));
 	assert.equal(followed.result.content, "curl body");
 
 	const blocked = await runExtract({ fetchContent: { curl: curlCommand } }, {
@@ -127,7 +130,16 @@ test("fetchContent.curl uses the configured proxy, and an empty per-call proxy c
 	assert.deepEqual(proxied.nodeFetches, []);
 
 	const direct = await runExtract(config, { options: { mode: "raw", proxy: "" }, configuredProxyScope: true });
-	assert.ok(!direct.calls[0].includes("-x"), JSON.stringify(direct.calls[0]));
+	assert.equal(direct.calls[0][direct.calls[0].indexOf("-x") + 1], "", JSON.stringify(direct.calls[0]));
+});
+
+test("a curl download that fails partway is an error, not a short page", async () => {
+	const output = await runExtract({ fetchContent: { curl: curlCommand } }, {
+		options: { mode: "raw" },
+		routes: { "https://example.com/article": { ...textRoute, body: "partial", exitCode: 18, stderr: "curl: (18) transfer closed with outstanding read data remaining" } },
+	});
+	assert.match(output.result.error, /exited with code 18: curl: \(18\) transfer closed/);
+	assert.equal(output.result.content, "");
 });
 
 test("a missing fetchContent.curl command fails the fetch by name without falling back", async () => {

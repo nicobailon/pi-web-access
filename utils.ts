@@ -508,8 +508,11 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 		"--silent",
 		"--show-error",
 		"--compressed",
+		// The caller checks each redirect, so curl must not follow one, even with -L in the command or ~/.curlrc.
+		"--no-location",
 		"--connect-timeout", "20",
-		...(proxy ? ["-x", proxy] : []),
+		// An empty proxy also stops curl from using proxy environment variables, which Node's fetch ignores.
+		"-x", proxy ?? "",
 		"-D", headerFile,
 		"--output", bodyFile,
 		"--write-out", "%{json}",
@@ -567,7 +570,8 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 			child.once("close", (code) => {
 				signal?.removeEventListener("abort", onAbort);
 				if (signal?.aborted) return reject(new DOMException("The operation was aborted.", "AbortError"));
-				if (code !== 0 && !out.trim()) {
+				// A failed transfer can still write headers, part of the body and the write-out JSON.
+				if (code !== 0) {
 					return reject(new CurlTransportError(`${command[0]} exited with code ${code ?? "unknown"}${proxy ? ` via ${redactProxyUrl(proxy)}` : ""}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
 				}
 				resolve(out);
