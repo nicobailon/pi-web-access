@@ -114,21 +114,24 @@ test("Cloudflare reports each documented error shape with its status and redacts
 		[400, { success: false, result: [], messages: [], error: [{ code: 2001, message: "Please configure AI Gateway in the Cloudflare dashboard" }], message: "Please configure AI Gateway in the Cloudflare dashboard" }],
 		[401, "token cf-secret is invalid"],
 		[200, { result: null, success: true }],
+		// Live body from 2026-10-27, which adds a readable message.
+		[402, { ok: false, error: { category: "gateway", code: "web_search_payment_required", status: 402, retryable: false, gatewayRequestId: "01a1", message: "Your AI Gateway credit balance is zero, so this search could not be billed." } }],
 	];
 	const output = await child(CREDENTIALS, `
 		const queue = ${JSON.stringify(responses)};
 		globalThis.fetch = async () => { const [status, value] = queue.shift(); return new Response(typeof value === "string" ? value : JSON.stringify(value), { status }); };
 		const { searchWithCloudflare } = await import(${moduleUrl("cloudflare-search")});
 		const errors = [];
-		for (let i = 0; i < 5; i++) { try { await searchWithCloudflare("q"); } catch (e) { errors.push(e.message); } }
+		for (let i = 0; i < 6; i++) { try { await searchWithCloudflare("q"); } catch (e) { errors.push(e.message); } }
 		console.log(JSON.stringify(errors));
 	`);
-	const [payment, validation, gateway, auth, malformed] = output;
+	const [payment, validation, gateway, auth, malformed, livePayment] = output;
 	assert.match(payment, /^Cloudflare Web Search error 402: web_search_payment_required \(no AI Gateway credits/);
 	assert.equal(validation, "Cloudflare Web Search error 400: Invalid web search request body; limit: Number must be less than or equal to 10");
 	assert.equal(gateway, "Cloudflare Web Search error 400: Please configure AI Gateway in the Cloudflare dashboard");
 	assert.equal(auth, "Cloudflare Web Search error 401: token [redacted] is invalid");
 	assert.match(malformed, /Cloudflare Web Search returned invalid response: expected items array/);
+	assert.equal(livePayment, "Cloudflare Web Search error 402: web_search_payment_required: Your AI Gateway credit balance is zero, so this search could not be billed.");
 });
 
 test("Cloudflare quota failures fall back through searchRouting", async () => {

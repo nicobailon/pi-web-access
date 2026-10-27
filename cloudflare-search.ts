@@ -124,6 +124,8 @@ function describeError(status: number, body: string): { status: number; detail: 
 	const error = parsed.error;
 	if (isRecord(error) && typeof error.code === "string") {
 		const errorStatus = typeof error.status === "number" ? error.status : status;
+		// Newer responses carry a readable `message` that says how to fix the problem.
+		if (text(error.message)) return { status: errorStatus, detail: `${error.code}: ${text(error.message)}` };
 		const hint = error.code === "web_search_payment_required"
 			? " (no AI Gateway credits and no provider key stored on the gateway)"
 			: error.code === "web_search_gateway_not_configured" ? " (create the AI Gateway or set cloudflareGatewayId)" : "";
