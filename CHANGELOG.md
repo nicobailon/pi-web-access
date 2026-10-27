@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `fetchContent.curl` in `web-search.json` sends the extension's own page fetch through a curl command instead of Node's fetch. Point it at [curl-impersonate](https://github.com/lexiforest/curl-impersonate), which connects the way Chrome does, and many sites that answer Node's fetch with HTTP 403 send the page instead. In a test of 68 pages, most of them behind bot protection, the number the extension could read went from 18 to about 31. Through curl, the extension leaves out its default `User-Agent` so the command's browser `User-Agent` is used. Without the setting, Node's fetch is used as before.
+
 ## [0.45.0] - 2026-10-25
 
 ### Highlights
