@@ -529,9 +529,7 @@ async function searchWithResolvedProvider(
 			"  4. Sign into gemini.google.com in a supported Chromium-based browser",
 		);
 	}
-	const result = await searchWithExa(query, options);
-	if (result) return { ...result, provider };
-	throw new Error("Exa search returned no results.");
+	return { ...(await searchWithExa(query, options)), provider };
 }
 
 async function isResolvedProviderAvailable(provider: ResolvedSearchProvider, options: FullSearchOptions, useCurrentModel = false): Promise<boolean> {

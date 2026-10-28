@@ -31,6 +31,7 @@ interface ExaSearchResponse {
 
 interface ExaMcpRpcResponse {
 	result?: {
+		_meta?: Record<string, unknown>;
 		content?: Array<{ type?: string; text?: string }>;
 		isError?: boolean;
 	};
@@ -39,8 +40,6 @@ interface ExaMcpRpcResponse {
 		message?: string;
 	};
 }
-
-export type ExaSearchResult = SearchResponse | null;
 
 export interface ExaSearchOptions extends SearchOptions {
 	includeContent?: boolean;
@@ -309,6 +308,13 @@ export async function callExaMcp(
 		throw new Error(`Exa MCP error${code}: ${message}`);
 	}
 
+	// The free endpoint answers a rate limit with HTTP 200 and this flag, not a 429.
+	if (parsed.result?._meta?.["ai.exa/rateLimited"] === true) {
+		throw new Error(
+			`Exa's free MCP search is rate-limited. Add "exaApiKey" to ${CONFIG_PATH} or set EXA_API_KEY for unthrottled Exa search.`,
+		);
+	}
+
 	if (parsed.result?.isError) {
 		const message = parsed.result.content
 			?.find(item => item.type === "text" && typeof item.text === "string")
@@ -401,7 +407,7 @@ function isAbortMessage(message: string): boolean {
 function parseJsonMcpResults(text: string): ExaSearchResponse["results"] | null {
 	try {
 		const results = (JSON.parse(text) as ExaSearchResponse).results;
-		return Array.isArray(results) && results.length > 0 ? results : null;
+		return Array.isArray(results) ? results : null;
 	} catch {
 		return null;
 	}
@@ -415,7 +421,7 @@ async function searchWithExaMcpTool(
 	tool: string,
 	args: Record<string, unknown>,
 	options: ExaSearchOptions,
-): Promise<SearchResponse | null> {
+): Promise<SearchResponse> {
 	const text = await callExaMcp(tool, args, options.signal);
 
 	const jsonResults = parseJsonMcpResults(text);
@@ -428,7 +434,9 @@ async function searchWithExaMcpTool(
 	}
 
 	const textResults = parseMcpResults(text);
-	if (!textResults) return null;
+	if (!textResults) {
+		throw new Error(`Exa MCP returned a reply without search results: ${text.trim().slice(0, 200)}`);
+	}
 
 	return toSearchResponse(
 		buildAnswerFromMcpResults(textResults),
@@ -442,7 +450,7 @@ async function searchWithFilteredExaMcp(
 	query: string,
 	options: ExaSearchOptions,
 	basicArgs: Record<string, unknown>,
-): Promise<SearchResponse | null> {
+): Promise<SearchResponse> {
 	try {
 		return await searchWithExaMcpTool(EXA_MCP_ADVANCED_TOOL, {
 			...exaSearchArgs(query, options),
@@ -457,7 +465,7 @@ async function searchWithFilteredExaMcp(
 	}
 }
 
-async function searchWithExaMcp(query: string, options: ExaSearchOptions = {}): Promise<SearchResponse | null> {
+async function searchWithExaMcp(query: string, options: ExaSearchOptions = {}): Promise<SearchResponse> {
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	const basicArgs = { query: buildMcpQuery(query, options), numResults: options.numResults ?? 5 };
 	const filtered = !!options.includeContent || !!options.recencyFilter || !!options.domainFilter?.length || !!options.category;
@@ -491,7 +499,7 @@ export function hasExaApiKey(): boolean {
 	});
 }
 
-export async function searchWithExa(query: string, options: ExaSearchOptions = {}): Promise<ExaSearchResult> {
+export async function searchWithExa(query: string, options: ExaSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
 	if (!apiKey) {
 		return searchWithExaMcp(query, options);
