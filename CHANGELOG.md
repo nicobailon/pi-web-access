@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- When no summary model can be used, the reason now lists every model that was tried and why each one failed, instead of naming only the last one. Before, a session with none of the default summary models set up showed one model as "not enabled", which pointed at the wrong fix.
+
 ## [0.45.0] - 2026-10-25
 
 ### Highlights
