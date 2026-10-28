@@ -16,6 +16,7 @@ All notable changes to this project will be documented in this file.
 
 - `fetch_content` recognizes mixed-case Content-Type headers, so HTML still goes through readable extraction and Cloudflare challenge detection, and PDF and binary types are handled like lowercase types ([#631](https://github.com/nicobailon/pi-web-access/issues/631)). Thanks to [@Nyarlathoteppppp](https://github.com/Nyarlathoteppppp) for [PR #632](https://github.com/nicobailon/pi-web-access/pull/632).
 - Searching without an Exa key no longer says that no search provider is set up when Exa's free search answered but couldn't be used. When the free Exa search is rate-limited, the error now says so and tells you to add an Exa API key; when Exa sends back something without search results, the error shows what it sent. Search routing treats these like any other rate limit or unreadable reply, so `fallbackOn` can move on to the next provider. A search that finds nothing is now an empty result, not an error. Thanks to [@vishwajeet7381](https://github.com/vishwajeet7381) for [issue #638](https://github.com/nicobailon/pi-web-access/issues/638).
+- A proxy you set could be skipped after Pi reloaded its extensions, so web requests went out directly instead of through it. Requests now go through the proxy you chose. Thanks to [@xiangsheng](https://github.com/xiangsheng) for [issue #643](https://github.com/nicobailon/pi-web-access/issues/643).
 
 ## [0.45.0] - 2026-10-25
 
