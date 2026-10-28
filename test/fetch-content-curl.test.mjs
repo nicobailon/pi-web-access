@@ -158,7 +158,16 @@ test("with ssrf.trustEnvProxy, fetchContent.curl goes through the env proxy that
 	});
 	const args = output.calls[0];
 	assert.equal(args[args.indexOf("-x") + 1], "http://proxy.corp:3128", JSON.stringify(args));
+	assert.equal(args[args.indexOf("--noproxy") + 1], "", JSON.stringify(args));
 	assert.equal(output.result.content, "curl body");
+
+	// An IP literal is checked locally, so it still connects directly.
+	const literal = await runExtract({ ssrf: { trustEnvProxy: true }, fetchContent: { curl: curlCommand } }, {
+		url: "http://93.184.216.34/article",
+		options: { mode: "raw" },
+		env: { HTTP_PROXY: "http://proxy.corp:3128", NO_PROXY: "" },
+	});
+	assert.equal(literal.calls[0][literal.calls[0].indexOf("-x") + 1], "", JSON.stringify(literal.calls[0]));
 });
 
 test("curl stops a download over the size limit and the fetch fails as too large", async () => {
@@ -169,6 +178,12 @@ test("curl stops a download over the size limit and the fetch fails as too large
 	const args = output.calls[0];
 	assert.equal(args[args.indexOf("--max-filesize") + 1], String(20 * 1024 * 1024), JSON.stringify(args));
 	assert.match(output.result.error, /^Response too large/);
+
+	// curl rejects a fractional byte count, so a fractional pdf.maxSizeMB must still fetch.
+	const fractional = await runExtract({ pdf: { maxSizeMB: 7.3 }, fetchContent: { curl: curlCommand } }, { options: { mode: "raw" } });
+	const fractionalArgs = fractional.calls[0];
+	assert.match(fractionalArgs[fractionalArgs.indexOf("--max-filesize") + 1], /^\d+$/, JSON.stringify(fractionalArgs));
+	assert.equal(fractional.result.content, "curl body");
 });
 
 test("a missing fetchContent.curl command fails the fetch by name without falling back", async () => {

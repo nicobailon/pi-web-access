@@ -1321,7 +1321,8 @@ async function extractViaHttp(
 					...(curl ? {
 						fetch: createCurlFetch(curl, {
 							// The type, and so the exact limit, is known only after the response; the size checks below still apply.
-							maxBytes: Math.max(5, loadPDFConfig().maxSizeMB) * 1024 * 1024,
+							// curl rejects a fractional --max-filesize, and pdf.maxSizeMB may be fractional.
+							maxBytes: Math.floor(Math.max(5, loadPDFConfig().maxSizeMB) * 1024 * 1024),
 							envProxy: (target) => trustedEnvProxyFor(target, ssrf.trustEnvProxy),
 						}),
 					} : {}),

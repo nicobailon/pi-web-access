@@ -401,6 +401,8 @@ function shouldTrustEnvProxy(url: URL, enabled: boolean): boolean {
 /** The env proxy validateRemoteUrl trusts to resolve this URL instead of checking DNS locally, or null.
  * A fetch that skipped the local check because of it must connect through it. */
 export function trustedEnvProxyFor(url: URL, trustEnvProxy: boolean): string | null {
+	// IP literals are always checked locally, so they keep connecting directly.
+	if (net.isIP(normalizeHostname(url.hostname))) return null;
 	return shouldTrustEnvProxy(url, trustEnvProxy) ? getProxyForProtocol(url.protocol) : null;
 }
 

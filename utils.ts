@@ -528,6 +528,8 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 		"--connect-timeout", "20",
 		// An empty proxy also stops curl from using proxy environment variables, which Node's fetch ignores.
 		"-x", proxy ?? "",
+		// The caller already chose the proxy; curl must not send a host direct because of its own NO_PROXY reading.
+		...(proxy ? ["--noproxy", ""] : []),
 		"-D", headerFile,
 		"--output", bodyFile,
 		"--write-out", "%{json}",
