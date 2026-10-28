@@ -1,8 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
-import type { ExtractedContent } from "./extract.ts";
+import type { ExtractedContent, ExtractOptions } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
+import { loadFetchContentDomainPolicy, loadSsrfConfig, validateRemoteUrl } from "./ssrf-protection.ts";
 import { fetchWithCredentialRedirects, getWebSearchConfigPath, isRecord, resolveApiBaseUrl } from "./utils.ts";
 
 const EXA_API_BASE_URL = "https://api.exa.ai";
@@ -10,6 +11,7 @@ const EXA_MCP_URL = "https://mcp.exa.ai/mcp";
 const CONFIG_PATH = getWebSearchConfigPath();
 const EXA_MCP_ADVANCED_TOOL = "web_search_advanced_exa";
 const EXA_MCP_BASIC_TOOL = "web_search_exa";
+const CONTENTS_TIMEOUT_MS = 60_000;
 
 interface WebSearchConfig {
 	exaApiKey?: unknown;
@@ -541,5 +543,72 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 		}
 		if (redactedMessage === message) throw err;
 		throw new Error(redactedMessage);
+	}
+}
+
+/**
+ * Read one page through Exa's /contents endpoint with the configured Exa key.
+ * Opt-in via `fetchRouting.providers`; returns null when Exa has no text for the page.
+ */
+export async function extractWithExa(
+	url: string,
+	signal?: AbortSignal,
+	options: Pick<ExtractOptions, "timeoutMs" | "lookup"> = {},
+): Promise<ExtractedContent | null> {
+	const apiKey = await getApiKey(signal);
+	if (!apiKey) throw new Error("Exa fetch requires exaApiKey or EXA_API_KEY");
+	const activityId = activityMonitor.logStart({ type: "fetch", url });
+	const timeoutMs = options.timeoutMs ?? CONTENTS_TIMEOUT_MS;
+	const timeoutSignal = AbortSignal.timeout(timeoutMs);
+	try {
+		const ssrf = loadSsrfConfig();
+		await validateRemoteUrl(url, {
+			allowRanges: ssrf.allowRanges,
+			trustEnvProxy: ssrf.trustEnvProxy,
+			domainPolicy: loadFetchContentDomainPolicy(),
+			...(options.lookup ? { lookup: options.lookup } : {}),
+		});
+		const response = await fetchWithCredentialRedirects(`${getApiBaseUrl()}/contents`, {
+			method: "POST",
+			headers: exaApiHeaders(apiKey),
+			body: JSON.stringify({ urls: [url], text: true }),
+			signal: signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal,
+		}, ["x-api-key"]);
+		if (!response.ok) {
+			throw new Error(`Exa contents error ${response.status}: ${redactCredential(await response.text(), apiKey).slice(0, 300)}`);
+		}
+		const data: unknown = await response.json();
+		if (!isRecord(data) || !Array.isArray(data.results)) {
+			throw new Error("Exa contents returned an unexpected response shape");
+		}
+		const failed = Array.isArray(data.statuses)
+			? data.statuses.find((status): status is Record<string, unknown> => isRecord(status) && status.status === "error")
+			: undefined;
+		if (failed) {
+			const detail = isRecord(failed.error) ? failed.error : {};
+			const tag = typeof detail.tag === "string" ? detail.tag : "unknown error";
+			const httpStatus = typeof detail.httpStatusCode === "number" ? ` (HTTP ${detail.httpStatusCode})` : "";
+			throw new Error(`Exa could not read ${url}: ${tag}${httpStatus}`);
+		}
+		const page: unknown = data.results[0];
+		const content = isRecord(page) && typeof page.text === "string" ? page.text.trim() : "";
+		activityMonitor.logComplete(activityId, response.status);
+		if (!content) return null;
+		return {
+			url,
+			title: isRecord(page) && typeof page.title === "string" ? page.title.trim() : "",
+			content,
+			error: null,
+		};
+	} catch (err) {
+		if (signal?.aborted) {
+			activityMonitor.logComplete(activityId, 0);
+			throw new Error("Aborted");
+		}
+		const message = timeoutSignal.aborted || (err instanceof Error && err.name === "TimeoutError")
+			? `Exa contents request timed out after ${Math.round(timeoutMs / 1000)}s`
+			: redactCredential(err instanceof Error ? err.message : String(err), apiKey);
+		activityMonitor.logError(activityId, message);
+		throw new Error(message);
 	}
 }
