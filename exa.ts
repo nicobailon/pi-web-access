@@ -570,7 +570,7 @@ export async function extractWithExa(
 			signal: signal ? AbortSignal.any([timeoutSignal, signal]) : timeoutSignal,
 		}, ["x-api-key"]);
 		if (!response.ok) {
-			throw new Error(`Exa contents error ${response.status}: ${(await response.text()).slice(0, 300)}`);
+			throw new Error(`Exa contents error ${response.status}: ${redactCredential(await response.text(), apiKey).slice(0, 300)}`);
 		}
 		const data: unknown = await response.json();
 		if (!isRecord(data) || !Array.isArray(data.results)) {

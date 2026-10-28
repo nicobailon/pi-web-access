@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- `fetch_content` can read a page through Exa when a site refuses the direct fetch, using the Exa key you already set for search (`exaApiKey` or `EXA_API_KEY`). Add `"exa"` to `fetchRouting.providers` and set `fetchRouting.allowRemoteHostedProviders` to `true`; the page address is sent to Exa, and Exa bills each page it reads. A page Exa can't read comes back as an Exa error, not an empty page ([#633](https://github.com/nicobailon/pi-web-access/issues/633)).
+- `fetch_content` can read a page through Exa when a site refuses the direct fetch, using the Exa key you already set for search (`exaApiKey` or `EXA_API_KEY`). Add `"exa"` to `fetchRouting.providers` and set `fetchRouting.allowRemoteHostedProviders` to `true`; the page address is sent to Exa, and Exa bills each page it reads. A page Exa can't read comes back as an Exa error, not an empty page. Thanks to [@ccc592](https://github.com/ccc592) for [issue #633](https://github.com/nicobailon/pi-web-access/issues/633).
 
 ## [0.45.0] - 2026-10-25
 
