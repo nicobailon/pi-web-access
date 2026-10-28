@@ -266,7 +266,11 @@ export function mapFfmpegError(err: unknown): string {
 	return snippet ? `ffmpeg failed: ${snippet}` : "ffmpeg failed";
 }
 
-const proxyStorage = new AsyncLocalStorage<string | null>();
+// Pi can load this module several times in one process (extension reloads use fresh module
+// instances), while the fetch wrapper below is process-global. Every instance must therefore write
+// the proxy context into the one store the installed wrapper reads.
+const sharedProxyState = globalThis as { [key: symbol]: AsyncLocalStorage<string | null> | undefined };
+const proxyStorage = sharedProxyState[Symbol.for("pi-web-access.proxyStorage")] ??= new AsyncLocalStorage<string | null>();
 
 export function normalizeProxyUrl(value: unknown, source: string): string | null {
 	if (value === undefined || value === null) return null;
@@ -369,13 +373,17 @@ export interface ProxiedRequestInit extends RequestInit {
 
 interface ProxiedFetch {
 	(input: RequestInfo | URL, init?: ProxiedRequestInit): Promise<Response>;
+	__piWebAccessSharedProxyFetch?: boolean;
+	/** Marker set by versions before the shared store. */
 	__piWebAccessProxyFetch?: boolean;
 }
 
 /** Wraps globalThis.fetch so every http(s) call routes through curl while a proxy is active. Idempotent. */
 export function installGlobalProxyFetch(): void {
 	const current = globalThis.fetch as ProxiedFetch;
-	if (typeof current !== "function" || current.__piWebAccessProxyFetch === true) return;
+	// Wrappers from versions before the shared store read their own module's context, so they are
+	// wrapped again rather than trusted; this wrapper passes direct calls through to them unchanged.
+	if (typeof current !== "function" || current.__piWebAccessSharedProxyFetch === true) return;
 	const nativeFetch = current;
 	const wrapped: ProxiedFetch = (async (input: RequestInfo | URL, init?: ProxiedRequestInit) => {
 		// Prefer caller-attached __proxy (survives pLimit context loss) over AsyncLocalStorage.
@@ -401,7 +409,9 @@ export function installGlobalProxyFetch(): void {
 		}
 		return fetchViaCurl(url, init ?? {}, proxy);
 	});
-	wrapped.__piWebAccessProxyFetch = true;
+	wrapped.__piWebAccessSharedProxyFetch = true;
+	// On top of a pre-fix wrapper, also carry its marker so that copy stops wrapping again.
+	if (current.__piWebAccessProxyFetch === true) wrapped.__piWebAccessProxyFetch = true;
 	globalThis.fetch = wrapped;
 }
 

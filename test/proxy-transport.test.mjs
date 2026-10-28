@@ -119,6 +119,55 @@ function proxyArg(args) {
 	return index === -1 ? undefined : args[index + 1];
 }
 
+test("a proxy set through a second loaded copy of the module is not skipped", async (t) => {
+	await withFakeCurl(t, {
+		"https://example.com/page": { status: 200, statusText: "OK", body: "through proxy" },
+	}, async (logPath) => {
+		let directCalls = 0;
+		globalThis.fetch = async () => {
+			directCalls++;
+			return new Response("direct");
+		};
+		installGlobalProxyFetch();
+		const reloaded = await import(`${utilsUrl}?reloaded`);
+		assert.notEqual(reloaded.runWithProxy, runWithProxy);
+
+		const response = await reloaded.runWithProxy("http://reload-proxy.example:8080", () => fetch("https://example.com/page"));
+		assert.equal(await response.text(), "through proxy");
+		assert.equal(directCalls, 0);
+		const calls = await readCurlCalls(logPath);
+		assert.equal(calls.length, 1);
+		assert.ok(["http://reload-proxy.example:8080", "http://reload-proxy.example:8080/"].includes(proxyArg(calls[0])));
+	});
+});
+
+test("wrapping stays bounded when an older copy of the module keeps installing its wrapper", async (t) => {
+	t.after(() => { globalThis.fetch = originalFetch; });
+	let directCalls = 0;
+	globalThis.fetch = async () => {
+		directCalls++;
+		return new Response("direct");
+	};
+	// Same skip rule as versions before the shared proxy store.
+	const installOldWrapper = () => {
+		const current = globalThis.fetch;
+		if (current.__piWebAccessProxyFetch === true) return;
+		const wrapped = (input, init) => current(input, init);
+		wrapped.__piWebAccessProxyFetch = true;
+		globalThis.fetch = wrapped;
+	};
+	installOldWrapper();
+	installGlobalProxyFetch();
+	const settled = globalThis.fetch;
+	for (let round = 0; round < 5; round++) {
+		installOldWrapper();
+		installGlobalProxyFetch();
+	}
+	assert.equal(globalThis.fetch, settled);
+	assert.equal(await (await fetch("https://example.com/page")).text(), "direct");
+	assert.equal(directCalls, 1);
+});
+
 test("extension initialization preserves fetch identity and installs proxy transport on first proxied tool call", async (t) => {
 	await withFakeCurl(t, {
 		"https://example.com/page": {
