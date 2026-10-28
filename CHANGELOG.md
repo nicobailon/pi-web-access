@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- When no summary model can be used, the reason now lists every model that was tried and why each one failed, instead of naming only the last one. Before, a session with none of the default summary models set up showed one model as "not enabled", which pointed at the wrong fix.
+- When no summary model can be used, the reason now lists every model that was tried and why each one failed, instead of naming only the last one. Before, a session with none of the default summary models set up showed one model as "not enabled", which pointed at the wrong fix. Thanks to [@vishwajeet7381](https://github.com/vishwajeet7381) for [issue #642](https://github.com/nicobailon/pi-web-access/issues/642).
 
 ## [0.45.0] - 2026-10-25
 
