@@ -72,6 +72,9 @@ export interface WebSearchConfig {
 	ninerouterBaseUrl?: unknown;
 	ninerouterApiKey?: unknown;
 	ninerouterProvider?: unknown;
+	cloudflareAccountId?: unknown;
+	cloudflareGatewayId?: unknown;
+	cloudflareSearchProvider?: unknown;
 	deepseekApiKey?: unknown;
 	degoogBaseUrl?: unknown;
 	degoogApiKey?: unknown;

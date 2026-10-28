@@ -4,8 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Search through the [Cloudflare Web Search API](https://developers.cloudflare.com/web-search/) with `provider: "cloudflare"`. It runs on Ceramic, Exa, or Linkup (`cloudflareSearchProvider`, default Ceramic) through your AI Gateway, billed to AI Gateway credits or a provider key stored on the gateway. It reads the `CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID` environment variables, or `cloudflareApiKey` and `cloudflareAccountId` in `web-search.json`; a Cloudflare key saved with Pi's `/login` is not used. It is explicit-only, so `auto` and `all` never spend on it. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #639](https://github.com/nicobailon/pi-web-access/pull/639).
+
+### Changed
+
+- The MCP server's tool definitions shrink from about 7,000 to about 3,500 characters (about 1,750 to 900 tokens) on every request to the model. `provider` is now `string | string[]` instead of listing every provider name twice, and an unknown name is still rejected before any request, with the valid names in the error. Parameter descriptions use the same short wording as the Pi tools. Thanks to [@mikeyobrien](https://github.com/mikeyobrien) for [PR #644](https://github.com/nicobailon/pi-web-access/pull/644).
+
 ### Fixed
 
+- `fetch_content` recognizes mixed-case Content-Type headers, so HTML still goes through readable extraction and Cloudflare challenge detection, and PDF and binary types are handled like lowercase types ([#631](https://github.com/nicobailon/pi-web-access/issues/631)). Thanks to [@Nyarlathoteppppp](https://github.com/Nyarlathoteppppp) for [PR #632](https://github.com/nicobailon/pi-web-access/pull/632).
 - Searching without an Exa key no longer says that no search provider is set up when Exa's free search answered but couldn't be used. When the free Exa search is rate-limited, the error now says so and tells you to add an Exa API key; when Exa sends back something without search results, the error shows what it sent. Search routing treats these like any other rate limit or unreadable reply, so `fallbackOn` can move on to the next provider. A search that finds nothing is now an empty result, not an error. Thanks to [@vishwajeet7381](https://github.com/vishwajeet7381) for [issue #638](https://github.com/nicobailon/pi-web-access/issues/638).
 
 ## [0.45.0] - 2026-10-25

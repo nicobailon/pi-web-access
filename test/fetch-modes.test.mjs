@@ -86,6 +86,27 @@ test("readable fetch prefers server markdown while raw mode keeps the normal rep
 	assert.match(accepts[1], /^text\/html/);
 });
 
+test("readable mode extracts Markdown from a mixed-case HTML content type", async () => {
+	const article = `<html><head><title>Guide</title></head><body><article><h1>Guide</h1>${"<p>The full guide explains every <strong>configuration</strong> option in detail.</p>".repeat(20)}</article></body></html>`;
+	globalThis.fetch = async () => new Response(article, { headers: { "content-type": "Text/HTML; charset=UTF-8" } });
+
+	const result = await extractContent("https://example.com/guide", undefined, { lookup });
+	assert.equal(result.error, null);
+	assert.equal(result.title, "Guide");
+	assert.match(result.content, /explains every \*\*configuration\*\* option/);
+	assert.doesNotMatch(result.content, /<(?:html|article|p|strong)\b/i);
+});
+
+test("readable mode rejects mixed-case binary content types like lowercase", async () => {
+	for (const contentType of ["application/zip", "Application/ZIP"]) {
+		globalThis.fetch = async () => new Response(new Uint8Array([80, 75, 3, 4]), { headers: { "content-type": contentType } });
+
+		const result = await extractContent("https://example.com/archive", undefined, { lookup });
+		assert.equal(result.error, "Unsupported content type: application/zip");
+		assert.equal(result.content, "");
+	}
+});
+
 test("a near-empty negotiated markdown reply falls back to the page's HTML", async () => {
 	const article = `<html><head><title>Guide</title></head><body><article><h1>Guide</h1>${"<p>The full guide explains every configuration option in detail.</p>".repeat(20)}</article></body></html>`;
 	globalThis.fetch = async (_url, init) => new Headers(init.headers).get("accept").startsWith("text/markdown")
