@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - `fetch_content` recognizes mixed-case Content-Type headers, so HTML still goes through readable extraction and Cloudflare challenge detection, and PDF and binary types are handled like lowercase types ([#631](https://github.com/nicobailon/pi-web-access/issues/631)). Thanks to [@Nyarlathoteppppp](https://github.com/Nyarlathoteppppp) for [PR #632](https://github.com/nicobailon/pi-web-access/pull/632).
 - When no summary model can be used, the reason now lists every model that was tried and why each one failed, instead of naming only the last one. Before, a session with none of the default summary models set up showed one model as "not enabled", which pointed at the wrong fix. Thanks to [@vishwajeet7381](https://github.com/vishwajeet7381) for [issue #642](https://github.com/nicobailon/pi-web-access/issues/642).
 - A proxy you set could be skipped after Pi reloaded its extensions, so web requests went out directly instead of through it. Requests now go through the proxy you chose. Thanks to [@xiangsheng](https://github.com/xiangsheng) for [issue #643](https://github.com/nicobailon/pi-web-access/issues/643).
+- `source_check` marks OpenAI and xAI citation snippets as `[provider summary, not page text]`. Those snippets are cut from the search provider's own answer, not from the cited page, and were shown as if they were quotes from it. Thanks to [@panchogn](https://github.com/panchogn) for [PR #629](https://github.com/nicobailon/pi-web-access/pull/629).
 
 ## [0.45.0] - 2026-10-25
 

@@ -83,17 +83,19 @@ test("generated provider snippets are labelled when no page text is available", 
   assert.equal(artifact.passages[1].origin, undefined);
 });
 
-test("page text replaces a generated provider snippet once the page is fetched", () => {
+test("a generated snippet stays labelled next to fetched page text", () => {
   const url = "https://docs.npmjs.com/semver";
   const artifact = buildResearchArtifact({
     query: "a 0.x minor bump is a breaking change",
     results: [{ ...result(url, GENERATED_SNIPPET), snippetSource: "generated" }],
     fetched: [{ url, title: "semver", content: SEMVER_PAGE, error: null }],
   });
-  assert.ok(artifact.passages.length > 0);
-  assert.ok(artifact.passages.every((passage) => passage.extraction_span && passage.origin === undefined));
-  assert.ok(artifact.passages.every((passage) => !passage.text.includes("effectively the breaking-change boundary")));
-  for (const passage of artifact.passages) {
+  const [snippet, ...pagePassages] = artifact.passages;
+  assert.equal(snippet.origin, "provider_summary");
+  assert.equal(snippet.text, GENERATED_SNIPPET);
+  assert.ok(pagePassages.length > 0);
+  for (const passage of pagePassages) {
+    assert.equal(passage.origin, undefined);
     assert.equal(SEMVER_PAGE.slice(passage.extraction_span.start, passage.extraction_span.end), passage.text);
   }
 });

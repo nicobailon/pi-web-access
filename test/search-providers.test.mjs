@@ -1119,7 +1119,8 @@ test("OpenAI search requires web_search and maps domain filters", async () => {
 	assert.deepEqual(output.results.map((result) => result.url), [
 		"https://openai.com/docs",
 		"https://openai.com/blog",
-	]);	// Citation snippets are cut from OpenAI's own answer text; raw source-list entries have none.
+	]);
+	// Citation snippets are cut from OpenAI's own answer text; raw source-list entries have none.
 	assert.equal(output.results[0].snippet, "Answer from the web");
 	assert.equal(output.results[0].snippetSource, "generated");
 	assert.equal(output.results[1].snippetSource, undefined);

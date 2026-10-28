@@ -153,30 +153,29 @@ export function buildPassages(sources: ResearchSource[], fetched: ExtractedConte
 	const passages: ResearchPassage[] = [];
 	const fetchedByUrl = new Map(fetched.map((item) => [item.url, item]));
 	for (const source of sources) {
-		const page = fetchedByUrl.get(source.url);
-		const spans = page && !page.error && page.content ? extractRelevantSpans(page.content, claim, source.snippet ?? "") : [];
-		const generated = source.snippet_source === "generated";
-		// A generated snippet is the provider's paraphrase, not a quote. Keep it only when no page text is available,
-		// and label it so it is never presented as text from the source.
-		if (source.snippet && !(generated && spans.length > 0)) {
+		if (source.snippet) {
 			passages.push({
 				passage_id: passageId(source.rank, 0),
 				source_url: source.url,
 				source_rank: source.rank,
 				text: source.snippet,
 				content_hash: hashContent(source.snippet),
-				...(generated ? { origin: "provider_summary" as const } : {}),
+				// The provider's paraphrase around a citation, not a quote, so it is never presented as page text.
+				...(source.snippet_source === "generated" ? { origin: "provider_summary" as const } : {}),
 			});
 		}
-		for (const [index, span] of spans.entries()) {
-			passages.push({
-				passage_id: passageId(source.rank, index + 1),
-				source_url: source.url,
-				source_rank: source.rank,
-				text: span.text,
-				extraction_span: { start: span.start, end: span.end },
-				content_hash: hashContent(span.text),
-			});
+		const page = fetchedByUrl.get(source.url);
+		if (page && !page.error && page.content) {
+			for (const [index, span] of extractRelevantSpans(page.content, claim, source.snippet ?? "").entries()) {
+				passages.push({
+					passage_id: passageId(source.rank, index + 1),
+					source_url: source.url,
+					source_rank: source.rank,
+					text: span.text,
+					extraction_span: { start: span.start, end: span.end },
+					content_hash: hashContent(span.text),
+				});
+			}
 		}
 	}
 	return passages;
