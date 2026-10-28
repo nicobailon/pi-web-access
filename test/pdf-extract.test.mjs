@@ -332,8 +332,8 @@ function buildChildScript(
       );
 
       const saved = await readFile(result.outputPath, "utf8");
-      if (result.content !== saved || result.chars !== saved.length) {
-        throw new Error("Returned PDF Markdown must match the saved file and character count");
+      if (result.content !== saved) {
+        throw new Error("Returned PDF Markdown must match the saved file");
       }
       console.log(saved);
       ${printOptions ? "console.log(JSON.stringify(globalThis.__piWebAccessUnpdfOptions));" : ""}

@@ -188,6 +188,37 @@ test("authenticated same-origin redirects recompute path-scoped cookies", (t) =>
 	}
 });
 
+test("authenticated fetch keeps Node fetch and its User-Agent when fetchContent.curl is set", (t) => {
+	if (!python) t.skip("fixture creation requires Python on macOS/Linux");
+	const root = mkdtempSync(join(tmpdir(), "pi-auth-fetch-curl-"));
+	const bin = mkdtempSync(join(tmpdir(), "pi-auth-fetch-bin-"));
+	try {
+		writePasswordCommand(bin);
+		createCookieFixture(root, [["sid", "session", ".example.com", "/", null, "20000000000000000", ""]]);
+		// If the auth fetch ran the curl command, it would fail with "fetchContent.curl command not found".
+		writeFileSync(join(root, "web-search.json"), JSON.stringify({ authFetch: { work: ["example.com"] }, fetchContent: { curl: join(bin, "missing-curl") } }) + "\n");
+		const output = runModule(root, `
+			const calls = [];
+			globalThis.fetch = async (url, init = {}) => {
+				calls.push({ url: String(url), cookie: init.headers?.cookie ?? null, userAgent: init.headers?.["User-Agent"] ?? null });
+				return new Response("private body", { status: 200, headers: { "content-type": "text/plain" } });
+			};
+			const { resolveAuthFetchProfile } = await import(${JSON.stringify(authFetchUrl)});
+			const { extractContent } = await import(${JSON.stringify(extractUrl)});
+			const result = await extractContent("https://app.example.com/private", undefined, { mode: "raw", authFetchProfile: resolveAuthFetchProfile("work"), lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
+			console.log(JSON.stringify({ calls, result }));
+		`, { PATH: `${bin}:${process.env.PATH ?? ""}` });
+		assert.equal(output.calls.length, 1);
+		assert.match(output.calls[0].cookie, /sid=session/);
+		assert.equal(output.calls[0].userAgent, "OpenAI File Downloader, XaiImageApiFetch/1.0");
+		assert.equal(output.result.error, null);
+		assert.equal(output.result.content, "private body");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+		rmSync(bin, { recursive: true, force: true });
+	}
+});
+
 test("authenticated fetch failure does not fall through to hosted providers", () => {
 	const root = mkdtempSync(join(tmpdir(), "pi-auth-fetch-no-fallback-"));
 	try {
