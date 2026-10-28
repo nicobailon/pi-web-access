@@ -13,6 +13,7 @@ const parallelModuleUrl = new URL("../parallel.ts", import.meta.url).href;
 const tinyfishModuleUrl = new URL("../tinyfish.ts", import.meta.url).href;
 const perplexityModuleUrl = new URL("../perplexity.ts", import.meta.url).href;
 const tavilyModuleUrl = new URL("../tavily.ts", import.meta.url).href;
+const tabstackModuleUrl = new URL("../tabstack.ts", import.meta.url).href;
 
 async function createHome(config) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-credential-source-"));
@@ -39,6 +40,7 @@ function runChild(script, env) {
 		"QUERIT_API_KEY",
 		"PERPLEXITY_API_KEY",
 		"TAVILY_API_KEY",
+		"TABSTACK_API_KEY",
 		"JINA_API_KEY",
 	]) delete childEnv[key];
 	Object.assign(childEnv, env);
@@ -53,16 +55,19 @@ function runChild(script, env) {
 test("previously unsupported providers resolve explicit env and command sources lazily", async () => {
 	const tavilyMarker = join(await mkdtemp(join(tmpdir(), "pi-web-access-credential-marker-")), "tavily-ran");
 	const openaiMarker = join(await mkdtemp(join(tmpdir(), "pi-web-access-credential-marker-")), "openai-ran");
+	const tabstackMarker = join(await mkdtemp(join(tmpdir(), "pi-web-access-credential-marker-")), "tabstack-ran");
 	const { home, agentDir } = await createHome({
 		braveApiKey: "${BRAVE_SCOPED_KEY}",
 		openaiApiKey: `!touch ${openaiMarker} && printf openai-command-key`,
 		tavilyApiKey: `!touch ${tavilyMarker} && printf tavily-command-key`,
+		tabstackApiKey: `!touch ${tabstackMarker} && printf tabstack-command-key`,
 	});
 	const child = runChild(`
 		import { existsSync } from "node:fs";
 		const { isBraveAvailable, searchWithBrave } = await import(${JSON.stringify(braveModuleUrl)});
 		const { isOpenAISearchAvailable, searchWithOpenAI } = await import(${JSON.stringify(openaiModuleUrl)});
 		const { isTavilyAvailable, searchWithTavily } = await import(${JSON.stringify(tavilyModuleUrl)});
+		const { isTabstackAvailable, searchWithTabstack } = await import(${JSON.stringify(tabstackModuleUrl)});
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
 			calls.push({ url: String(url), headers: Object.fromEntries(new Headers(init.headers)) });
@@ -72,8 +77,10 @@ test("previously unsupported providers resolve explicit env and command sources 
 			brave: isBraveAvailable(),
 			openai: await isOpenAISearchAvailable(),
 			tavily: isTavilyAvailable(),
+			tabstack: isTabstackAvailable(),
 			openaiMarker: existsSync(${JSON.stringify(openaiMarker)}),
 			tavilyMarker: existsSync(${JSON.stringify(tavilyMarker)}),
+			tabstackMarker: existsSync(${JSON.stringify(tabstackMarker)}),
 		};
 		await searchWithBrave("brave", { numResults: 1 });
 		globalThis.fetch = async (url, init = {}) => {
@@ -91,10 +98,16 @@ test("previously unsupported providers resolve explicit env and command sources 
 			return new Response(JSON.stringify({ results: [{ title: "Tavily", url: "https://example.com/tavily", content: "result" }] }), { status: 200 });
 		};
 		await searchWithTavily("tavily", { numResults: 1 });
+		globalThis.fetch = async (url, init = {}) => {
+			calls.push({ url: String(url), headers: Object.fromEntries(new Headers(init.headers)) });
+			return new Response("event: complete\\ndata: " + JSON.stringify({ report: "Tabstack answer", metadata: { citedPages: [] } }) + "\\n\\n", { status: 200 });
+		};
+		await searchWithTabstack("tabstack");
 		console.log(JSON.stringify({
 			availableBefore,
 			openaiMarkerAfter: existsSync(${JSON.stringify(openaiMarker)}),
 			tavilyMarkerAfter: existsSync(${JSON.stringify(tavilyMarker)}),
+			tabstackMarkerAfter: existsSync(${JSON.stringify(tabstackMarker)}),
 			calls,
 		}));
 	`, {
@@ -110,14 +123,18 @@ test("previously unsupported providers resolve explicit env and command sources 
 		brave: true,
 		openai: true,
 		tavily: true,
+		tabstack: true,
 		openaiMarker: false,
 		tavilyMarker: false,
+		tabstackMarker: false,
 	});
 	assert.equal(output.openaiMarkerAfter, true);
 	assert.equal(output.tavilyMarkerAfter, true);
+	assert.equal(output.tabstackMarkerAfter, true);
 	assert.equal(output.calls[0].headers["x-subscription-token"], "brave-scoped-key");
 	assert.equal(output.calls[1].headers.authorization, "Bearer openai-command-key");
 	assert.equal(output.calls[2].headers.authorization, "Bearer tavily-command-key");
+	assert.equal(output.calls[3].headers.authorization, "Bearer tabstack-command-key");
 });
 
 test("provider requests can resolve credentials through an inherited 1Password service-account token", async () => {
@@ -164,6 +181,7 @@ test("provider API errors redact resolved credential-source values", async () =>
 		tinyfishApiKey: "!printf tinyfish-redaction-secret",
 		perplexityApiKey: "!printf perplexity-redaction-secret",
 		tavilyApiKey: "!printf tavily-redaction-secret",
+		tabstackApiKey: "${TABSTACK_SCOPED_KEY}",
 	});
 	const child = runChild(`
 		const modules = {
@@ -174,6 +192,7 @@ test("provider API errors redact resolved credential-source values", async () =>
 			tinyfish: await import(${JSON.stringify(tinyfishModuleUrl)}),
 			perplexity: await import(${JSON.stringify(perplexityModuleUrl)}),
 			tavily: await import(${JSON.stringify(tavilyModuleUrl)}),
+			tabstack: await import(${JSON.stringify(tabstackModuleUrl)}),
 		};
 		const attempts = [
 			["brave", "brave-redaction-secret", () => modules.brave.searchWithBrave("query")],
@@ -182,6 +201,8 @@ test("provider API errors redact resolved credential-source values", async () =>
 			["tinyfish", "tinyfish-redaction-secret", () => modules.tinyfish.searchWithTinyFish("query")],
 			["perplexity", "perplexity-redaction-secret", () => modules.perplexity.searchWithPerplexity("query")],
 			["tavily", "tavily-redaction-secret", () => modules.tavily.searchWithTavily("query")],
+			["tabstack", "tabstack-redaction-secret", () => modules.tabstack.searchWithTabstack("query")],
+			["tabstack-extract", "tabstack-redaction-secret", () => modules.tabstack.extractWithTabstack("https://example.com")],
 			["cloudflare", "cf-redaction-secret", () => modules.geminiApi.queryGeminiApiWithVideo("prompt", "files/synthetic")],
 		];
 		const messages = {};
@@ -201,6 +222,7 @@ test("provider API errors redact resolved credential-source values", async () =>
 		PI_CODING_AGENT_DIR: agentDir,
 		BRAVE_SCOPED_KEY: "brave-redaction-secret",
 		CLOUDFLARE_SCOPED_KEY: "cf-redaction-secret",
+		TABSTACK_SCOPED_KEY: "tabstack-redaction-secret",
 	});
 
 	assert.equal(child.status, 0, child.stderr);

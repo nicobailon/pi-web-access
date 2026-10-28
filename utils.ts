@@ -111,8 +111,9 @@ export function resolveApiBaseUrl(options: ApiBaseUrlOptions): string {
 }
 
 // Other tools commonly set the bare OLLAMA_BASE_URL (a local Ollama server) and DEEPSEEK_BASE_URL
-// (an OpenAI-compatible root ending in /v1), so these providers read PI_-prefixed names instead.
-const PI_PREFIXED_ENVIRONMENT_STEMS = new Set(["ollama", "deepseek"]);
+// (an OpenAI-compatible root ending in /v1), and the Tabstack SDKs read TABSTACK_BASE_URL as a /v1 root,
+// so these providers read PI_-prefixed names instead.
+const PI_PREFIXED_ENVIRONMENT_STEMS = new Set(["ollama", "deepseek", "tabstack"]);
 
 /** Resolve a provider's API root without dropping its endpoint path or a gateway prefix. */
 export function resolveProviderApiUrl(configStem: string, defaultUrl: string, configuredValue: unknown): string {

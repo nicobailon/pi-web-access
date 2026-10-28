@@ -40,6 +40,7 @@ function runChild(script, env = {}) {
 		"FIRECRAWL_API_KEY",
 		"PARALLEL_API_KEY",
 		"TINYFISH_API_KEY",
+		"TABSTACK_API_KEY",
 		"GEMINI_API_KEY",
 	])
 		delete childEnv[key];

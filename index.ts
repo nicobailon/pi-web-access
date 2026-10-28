@@ -50,6 +50,7 @@ import { isSearch1APIAvailable } from "./search1api.ts";
 import { isSearchinfinityAvailable } from "./searchinfinity.ts";
 import { isQueritAvailable } from "./querit.ts";
 import { isTavilyAvailable } from "./tavily.ts";
+import { isTabstackAvailable } from "./tabstack.ts";
 import { isYouAvailable } from "./you.ts";
 import { isFirecrawlAvailable } from "./firecrawl.ts";
 import { isJinaSearchAvailable } from "./jina-search.ts";
@@ -342,6 +343,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		searchinfinity: allowedProviders.has("searchinfinity") && isSearchinfinityAvailable(),
 		querit: allowedProviders.has("querit") && isQueritAvailable(),
 		tavily: allowedProviders.has("tavily") && isTavilyAvailable(),
+		tabstack: allowedProviders.has("tabstack") && isTabstackAvailable(),
 		you: allowedProviders.has("you") && isYouAvailable(),
 		firecrawl: allowedProviders.has("firecrawl") && isFirecrawlAvailable(),
 		jina: allowedProviders.has("jina") && isJinaSearchAvailable(),

@@ -55,6 +55,7 @@ function buildProviderButtons(
 		{ value: "ceramic", label: "Ceramic", available: available.ceramic },
 		{ value: "linkup", label: "Linkup", available: available.linkup },
 		{ value: "ninerouter", label: "9router", available: available.ninerouter },
+		{ value: "tabstack", label: "Tabstack", available: available.tabstack },
 		{ value: "deepseek", label: "DeepSeek", available: available.deepseek },
 	];
 
@@ -742,6 +743,11 @@ main {
   color: #a6e3a1;
   background: rgba(166, 227, 161, 0.14);
   border-color: rgba(166, 227, 161, 0.3);
+}
+.provider-tag.provider-tabstack {
+  color: #f5c2e7;
+  background: rgba(245, 194, 231, 0.14);
+  border-color: rgba(245, 194, 231, 0.3);
 }
 .provider-tag.provider-jina {
   color: #f9e2af;
@@ -1482,7 +1488,7 @@ const SCRIPT = `(function() {
   var token = DATA.sessionToken;
   var timeoutSec = DATA.timeout;
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
-  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xcrawl", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "baizhi", "you", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter"];
+  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xcrawl", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "baizhi", "you", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "tabstack"];
   var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
   var workflow = "summary-review";
   var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";
@@ -1696,6 +1702,7 @@ const SCRIPT = `(function() {
     if (provider === "searchinfinity") return "Searchinfinity";
     if (provider === "querit") return "Querit";
     if (provider === "tavily") return "Tavily";
+    if (provider === "tabstack") return "Tabstack";
     if (provider === "firecrawl") return "Firecrawl";
     if (provider === "jina") return "Jina";
     if (provider === "serpdive") return "SERPdive";

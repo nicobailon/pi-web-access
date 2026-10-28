@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Search with [Tabstack](https://tabstack.ai) Research, which returns a cited answer with its sources, using `provider: "tabstack"` and `tabstackApiKey` (or `TABSTACK_API_KEY`). It is explicit-only: never chosen by `auto` or `all`. Research runs in `fast` mode unless `tabstackResearchMode` is `"balanced"`. Tabstack Extract can also fetch blocked or JavaScript-heavy pages once you add `"tabstack"` to `fetchRouting.providers` and turn on `fetchRouting.allowRemoteHostedProviders`.
+
 ## [0.45.0] - 2026-10-25
 
 ### Highlights

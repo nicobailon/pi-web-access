@@ -31,12 +31,14 @@ const providers = [
 	["serpbase", "serpbase", "searchWithSerpBase", "https://api.serpbase.dev/google/search", null],
 	["serpdive", "serpdive", "searchWithSerpdive", "https://api.serpdive.com/v1/search", "Authorization"],
 	["serply", "serply", "searchWithSerply", "https://api.serply.io/v1/search", "X-Api-Key"],
+	["tabstack", "tabstack", "searchWithTabstack", "https://api.tabstack.ai/v1/research", "Authorization",
+		["extractWithTabstack", "https://api.tabstack.ai/v1/extract/markdown"]],
 	["valyu", "valyu", "searchWithValyu", "https://api.valyu.ai/v1/search", "x-api-key"],
 	["xcrawl", "xcrawl", "searchWithXCrawl", "https://run.xcrawl.com/v1/serp", "Authorization"],
 	["you", "you", "searchWithYou", "https://ydc-index.io/v1/search", "X-API-Key"],
 ].map(([file, stem, name, url, header, extra]) => ({
 	file, stem, header, methods: [[name, url], ...(extra ? [extra] : [])],
-	envKey: (["ollama", "deepseek"].includes(stem) ? "PI_" : "")
+	envKey: (["ollama", "deepseek", "tabstack"].includes(stem) ? "PI_" : "")
 		+ stem.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase() + "_BASE_URL",
 }));
 
@@ -127,7 +129,7 @@ test("Jina dot queries cannot escape the configured gateway prefix", async (t) =
 	`, { jinaSearchBaseUrl: "https://gateway.example.com/proxy/jina" });
 });
 
-for (const file of ["ollama", "deepseek"]) {
+for (const file of ["ollama", "deepseek", "tabstack"]) {
 	test(`${file}: the bare ${file.toUpperCase()}_BASE_URL used by other tools leaves the official endpoint`, async (t) => {
 		const provider = providers.find(provider => provider.file === file);
 		await runFixture(t, provider, `
