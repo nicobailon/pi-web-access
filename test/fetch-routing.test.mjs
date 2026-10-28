@@ -14,6 +14,7 @@ function cleanProviderEnv(root) {
 		"CRAWL4AI_BASE_URL", "CRAWL4AI_API_TOKEN", "FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "PARALLEL_API_KEY", "TINYFISH_API_KEY",
 		"SEARCH1API_KEY", "SEARCH1API_API_KEY", "QUERIT_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "DEEPSEEK_API_KEY",
 		"BRIGHTDATA_API_KEY", "BRIGHTDATA_UNLOCKER_ZONE", "GEMINI_API_KEY", "GOOGLE_GEMINI_API_KEY", "GOOGLE_API_KEY",
+		"EXA_API_KEY", "EXA_BASE_URL",
 	]) delete childEnv[key];
 	return childEnv;
 }
@@ -357,4 +358,57 @@ test("DeepSeek Fetch is opt-in and honours the remote-hosted gate", async () => 
 	assert.equal(routed.result.error, null);
 	assert.equal(routed.result.title, "DeepSeek");
 	assert.match(routed.result.content, /Fetched content/);
+});
+
+async function runExaFetch(config, exaReply) {
+	const root = await mkdtemp(join(tmpdir(), "pi-fetch-routing-exa-"));
+	await writeFile(join(root, "web-search.json"), JSON.stringify(config) + "\n", "utf8");
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			const calls = [];
+			globalThis.fetch = async (url, init) => {
+				const text = String(url);
+				calls.push(text);
+				if (text === "https://example.com/routed") return new Response("blocked", { status: 403 });
+				if (text === "https://api.exa.ai/contents") {
+					calls.push({ key: new Headers(init.headers).get("x-api-key"), body: JSON.parse(init.body) });
+					return new Response(${JSON.stringify(JSON.stringify(exaReply))}, { status: 200 });
+				}
+				throw new Error("Unexpected fetch " + text);
+			};
+			const { extractContent } = await import(${JSON.stringify(extractUrl)});
+			const result = await extractContent("https://example.com/routed", undefined, { lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
+			console.log(JSON.stringify({ calls, result }));
+		`,
+		encoding: "utf8",
+		env: cleanProviderEnv(root),
+		maxBuffer: 2 * 1024 * 1024,
+	});
+	assert.equal(child.status, 0, child.stderr);
+	return JSON.parse(child.stdout.trim());
+}
+
+test("Exa fetch reads a refused page through /contents with the Exa key, only after the remote-hosted opt-in", async () => {
+	const page = { results: [{ url: "https://example.com/routed", title: "Routed", text: "Page text from Exa." }], statuses: [{ id: "https://example.com/routed", status: "success" }] };
+	const gated = await runExaFetch({ exaApiKey: "exa-key", fetchRouting: { providers: ["http", "exa"] } }, page);
+	assert.deepEqual(gated.calls, ["https://example.com/routed"]);
+	assert.match(gated.result.error, /HTTP 403/);
+
+	const routed = await runExaFetch({ exaApiKey: "exa-key", fetchRouting: { providers: ["http", "exa"], allowRemoteHostedProviders: true } }, page);
+	assert.deepEqual(routed.calls, [
+		"https://example.com/routed",
+		"https://api.exa.ai/contents",
+		{ key: "exa-key", body: { urls: ["https://example.com/routed"], text: true } },
+	]);
+	assert.equal(routed.result.error, null);
+	assert.equal(routed.result.title, "Routed");
+	assert.equal(routed.result.content, "Page text from Exa.");
+});
+
+test("Exa fetch reports a per-URL /contents failure instead of an empty page", async () => {
+	const output = await runExaFetch({ exaApiKey: "exa-key", fetchRouting: { providers: ["http", "exa"], allowRemoteHostedProviders: true } }, {
+		results: [],
+		statuses: [{ id: "https://example.com/routed", status: "error", error: { tag: "CRAWL_NOT_FOUND", httpStatusCode: 404 } }],
+	});
+	assert.match(output.result.error, /Exa fallback failed: Exa could not read https:\/\/example\.com\/routed: CRAWL_NOT_FOUND \(HTTP 404\)/);
 });
