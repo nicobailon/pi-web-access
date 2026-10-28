@@ -10,7 +10,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Requests sent through a `proxy` no longer follow redirects inside curl when `~/.curlrc` turns on `location`, so the extension checks each redirect again. A curl download that fails partway is now an error instead of a short response.
+- Requests sent through a `proxy` no longer follow redirects inside curl when `~/.curlrc` turns on `location`, so the extension checks each redirect again. A curl download that fails partway is now an error instead of a short response. A URL with `[ ]` or `{ }` in it, such as `?ids[]=1`, is now sent as written instead of failing or being turned into several requests.
 
 ## [0.45.0] - 2026-10-25
 

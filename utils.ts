@@ -407,14 +407,25 @@ export function installGlobalProxyFetch(): void {
 
 /** A fetch for the extension's own page requests that runs the `fetchContent.curl` command instead of
  * Node's fetch. It uses a proxy the way the proxy transport does: a per-call `__proxy` wins, `""`
- * connects directly, and loopback and NO_PROXY hosts are never proxied. Callers pass a URL. */
-export function createCurlFetch(command: readonly string[]): typeof fetch {
+ * connects directly, and loopback and NO_PROXY hosts are never proxied. With no proxy decision,
+ * `envProxy` names the env proxy the SSRF check trusted for the URL. Callers pass a URL. */
+export function createCurlFetch(
+	command: readonly string[],
+	{ maxBytes, envProxy }: { maxBytes: number; envProxy: (url: URL) => string | null },
+): typeof fetch {
 	return async (input: RequestInfo | URL, init?: ProxiedRequestInit) => {
 		const url = new URL(input instanceof Request ? input.url : input);
-		const proxy = init?.__proxy ?? getActiveProxy();
+		let proxy: string | null;
+		if (init?.__proxy !== undefined || hasScopedProxyDecision()) {
+			const chosen = init?.__proxy ?? getActiveProxy();
+			proxy = chosen && !isProxyBypassedUrl(url) ? chosen : null;
+		} else {
+			proxy = envProxy(url);
+		}
 		return fetchViaCurl(url, init ?? {}, {
 			command,
-			proxy: proxy && !isProxyBypassedUrl(url) ? proxy : null,
+			proxy,
+			maxBytes,
 			notFound: `fetchContent.curl command not found: ${command[0]}`,
 		});
 	};
@@ -456,6 +467,8 @@ interface CurlTransport {
 	proxy: string | null;
 	/** Error message when the executable is missing; defaults to the proxy transport's message. */
 	notFound?: string;
+	/** Largest body to download; curl stops a bigger one instead of saving all of it. */
+	maxBytes?: number;
 }
 
 async function fetchViaCurl(url: URL, init: RequestInit, transport: CurlTransport): Promise<Response> {
@@ -495,7 +508,7 @@ async function fetchViaCurl(url: URL, init: RequestInit, transport: CurlTranspor
 	}
 }
 
-async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, notFound }: CurlTransport): Promise<Response> {
+async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, notFound, maxBytes }: CurlTransport): Promise<Response> {
 	const method = (init.method ?? "GET").toUpperCase();
 	const headers = new Headers(init.headers);
 
@@ -510,6 +523,8 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 		"--compressed",
 		// The caller checks each redirect, so curl must not follow one, even with -L in the command or ~/.curlrc.
 		"--no-location",
+		// URLs are validated as written, so curl must send [ ] { } literally instead of expanding them into other URLs.
+		"--globoff",
 		"--connect-timeout", "20",
 		// An empty proxy also stops curl from using proxy environment variables, which Node's fetch ignores.
 		"-x", proxy ?? "",
@@ -520,6 +535,7 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 
 	if (method === "HEAD") args.push("--head");
 	else if (method !== "GET") args.push("-X", method);
+	if (maxBytes !== undefined) args.push("--max-filesize", String(maxBytes));
 
 	for (const [name, value] of headers.entries()) {
 		if (value === "") continue;
@@ -571,6 +587,10 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 				signal?.removeEventListener("abort", onAbort);
 				if (signal?.aborted) return reject(new DOMException("The operation was aborted.", "AbortError"));
 				// A failed transfer can still write headers, part of the body and the write-out JSON.
+				// Exit 63 is --max-filesize; report it like the size limit of a Node fetch.
+				if (code === 63 && maxBytes !== undefined) {
+					return reject(new CurlTransportError(`Response too large (over ${Math.round(maxBytes / 1024 / 1024)}MB)`));
+				}
 				if (code !== 0) {
 					return reject(new CurlTransportError(`${command[0]} exited with code ${code ?? "unknown"}${proxy ? ` via ${redactProxyUrl(proxy)}` : ""}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
 				}

@@ -33,7 +33,7 @@ const textRoute = { status: 200, headers: { "content-type": "text/plain" }, body
 
 // The config path is read at module load, so each case runs in a child process with
 // PI_CODING_AGENT_DIR pointed at a fresh config. Node's fetch is stubbed to record any use.
-async function runExtract(config, { url = "https://example.com/article", options = {}, routes = { [url]: textRoute }, configuredProxyScope = false } = {}) {
+async function runExtract(config, { url = "https://example.com/article", options = {}, routes = { [url]: textRoute }, configuredProxyScope = false, env = {} } = {}) {
 	const root = await mkdtemp(join(tmpdir(), "pi-fetch-content-curl-"));
 	const log = join(root, "curl-calls.jsonl");
 	await writeFile(join(root, "web-search.json"), JSON.stringify(config));
@@ -51,7 +51,7 @@ async function runExtract(config, { url = "https://example.com/article", options
 			console.log(JSON.stringify({ nodeFetches, result }));
 		`,
 		encoding: "utf8",
-		env: { ...process.env, PI_CODING_AGENT_DIR: root, FAKE_CURL_LOG: log, FAKE_CURL_ROUTES: JSON.stringify(routes) },
+		env: { ...process.env, ...env, PI_CODING_AGENT_DIR: root, FAKE_CURL_LOG: log, FAKE_CURL_ROUTES: JSON.stringify(routes) },
 	});
 	try {
 		assert.equal(child.status, 0, child.stderr);
@@ -140,6 +140,35 @@ test("a curl download that fails partway is an error, not a short page", async (
 	});
 	assert.match(output.result.error, /exited with code 18: curl: \(18\) transfer closed/);
 	assert.equal(output.result.content, "");
+});
+
+test("fetchContent.curl sends [ ] { } in a URL literally instead of letting curl expand them", async () => {
+	const url = "https://example.com/search?ids[]=1&x={a,b}";
+	const output = await runExtract({ fetchContent: { curl: curlCommand } }, { url, options: { mode: "raw" } });
+	assert.equal(output.calls.length, 1);
+	assert.ok(output.calls[0].includes("--globoff"), JSON.stringify(output.calls[0]));
+	assert.equal(output.calls[0].at(-1), url);
+});
+
+test("with ssrf.trustEnvProxy, fetchContent.curl goes through the env proxy that skipped the DNS check", async () => {
+	const output = await runExtract({ ssrf: { trustEnvProxy: true }, fetchContent: { curl: curlCommand } }, {
+		url: "http://example.com/article",
+		options: { mode: "raw" },
+		env: { HTTP_PROXY: "http://proxy.corp:3128", NO_PROXY: "" },
+	});
+	const args = output.calls[0];
+	assert.equal(args[args.indexOf("-x") + 1], "http://proxy.corp:3128", JSON.stringify(args));
+	assert.equal(output.result.content, "curl body");
+});
+
+test("curl stops a download over the size limit and the fetch fails as too large", async () => {
+	const output = await runExtract({ fetchContent: { curl: curlCommand } }, {
+		options: { mode: "raw" },
+		routes: { "https://example.com/article": { ...textRoute, exitCode: 63, stderr: "curl: (63) Maximum file size exceeded" } },
+	});
+	const args = output.calls[0];
+	assert.equal(args[args.indexOf("--max-filesize") + 1], String(20 * 1024 * 1024), JSON.stringify(args));
+	assert.match(output.result.error, /^Response too large/);
 });
 
 test("a missing fetchContent.curl command fails the fetch by name without falling back", async () => {

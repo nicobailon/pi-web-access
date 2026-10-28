@@ -398,6 +398,12 @@ function shouldTrustEnvProxy(url: URL, enabled: boolean): boolean {
 	return !noProxy.split(",").some(entry => hostnameMatchesNoProxy(hostname, port, entry));
 }
 
+/** The env proxy validateRemoteUrl trusts to resolve this URL instead of checking DNS locally, or null.
+ * A fetch that skipped the local check because of it must connect through it. */
+export function trustedEnvProxyFor(url: URL, trustEnvProxy: boolean): string | null {
+	return shouldTrustEnvProxy(url, trustEnvProxy) ? getProxyForProtocol(url.protocol) : null;
+}
+
 /** Only the operator's configured proxy qualifies: a model-supplied per-call proxy must not skip DNS validation. */
 function isConfiguredRemoteDnsProxy(url: URL, proxy: string | null): boolean {
 	return proxy !== null &&

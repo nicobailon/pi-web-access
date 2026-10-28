@@ -22,7 +22,7 @@ import { extractWithCrawl4ai, isCrawl4aiAvailable } from "./crawl4ai.ts";
 import { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } from "./brightdata-unlocker.ts";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./video-extract.ts";
 import { appendDeclaredWebLinks, discoverDeclaredWebLinks, type DeclaredWebLink } from "./declared-web-links.ts";
-import { fetchRemoteUrl, loadConfiguredFetchContentUserAgent, loadFetchContentCurl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadFetchContentUserAgent, loadSsrfConfig, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
+import { fetchRemoteUrl, loadConfiguredFetchContentUserAgent, loadFetchContentCurl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadFetchContentUserAgent, loadSsrfConfig, trustedEnvProxyFor, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
 import { createCurlFetch, formatSeconds, getWebSearchConfigPath, type ProxiedRequestInit } from "./utils.ts";
 import { isImageEnabled } from "./feature-config.ts";
 import { assertAuthFetchUrl, authFetchRedirectGuard, type AuthFetchProfile } from "./auth-fetch.ts";
@@ -1318,7 +1318,13 @@ async function extractViaHttp(
 					redirects,
 					proxy: options?.proxy,
 					...(options?.lookup ? { lookup: options.lookup } : {}),
-					...(curl ? { fetch: createCurlFetch(curl) } : {}),
+					...(curl ? {
+						fetch: createCurlFetch(curl, {
+							// The type, and so the exact limit, is known only after the response; the size checks below still apply.
+							maxBytes: Math.max(5, loadPDFConfig().maxSizeMB) * 1024 * 1024,
+							envProxy: (target) => trustedEnvProxyFor(target, ssrf.trustEnvProxy),
+						}),
+					} : {}),
 				},
 			);
 
