@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Reading a PDF with `fetch_content` now returns the PDF's text, with the path of the saved Markdown file above it. Before, the result was only a "saved to" notice, and `get_search_content` returned that same notice, so a model that cannot open local files had no way to read the PDF ([#634](https://github.com/nicobailon/pi-web-access/issues/634)).
+- Reading a PDF with `fetch_content` now returns the PDF's text, with the path of the saved Markdown file above it. Before, the result was only a "saved to" notice, and `get_search_content` returned that same notice, so a model that cannot open local files had no way to read the PDF. Thanks to [@ccc592](https://github.com/ccc592) for [issue #634](https://github.com/nicobailon/pi-web-access/issues/634).
 
 ## [0.45.0] - 2026-10-25
 
