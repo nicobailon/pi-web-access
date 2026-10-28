@@ -1341,7 +1341,7 @@ async function extractViaHttp(
 		}
 
 		const contentLengthHeader = response.headers.get("content-length");
-		const contentType = response.headers.get("content-type") || "";
+		const contentType = (response.headers.get("content-type") || "").toLowerCase();
 		const mimeType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 		const isPDFContent = isPDF(url, contentType);
 		const pdfConfig = isPDFContent ? loadPDFConfig() : null;

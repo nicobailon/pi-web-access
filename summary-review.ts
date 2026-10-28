@@ -31,6 +31,8 @@ export interface SummaryMeta {
 
 export type SummaryGenerationContext = Pick<ExtensionContext, "model" | "modelRegistry" | "sessionManager" | "scopedModels">;
 
+type SummaryModelFailure = { model: string; reason: string; message: string };
+
 function estimateTokens(text: string): number {
 	const trimmed = text.trim();
 	if (trimmed.length === 0) return 0;
@@ -216,14 +218,14 @@ async function resolveSummaryModelCandidates(
 	ctx: SummaryGenerationContext,
 	modelOverride: string | undefined,
 	preferredFallback: boolean,
-): Promise<{ candidates: Array<{ model: Model<Api>; apiKey?: string; headers?: ProviderHeaders; thinkingLevel?: SummaryThinkingLevel }>; errors: string[] }> {
+): Promise<{ candidates: Array<{ model: Model<Api>; apiKey?: string; headers?: ProviderHeaders; thinkingLevel?: SummaryThinkingLevel }>; failures: SummaryModelFailure[] }> {
 	const specs: Array<{ provider: string; id: string; thinkingLevel?: SummaryThinkingLevel }> = [];
-	const errors: string[] = [];
+	const failures: SummaryModelFailure[] = [];
 	const normalizedOverride = typeof modelOverride === "string" ? modelOverride.trim() : "";
 	if (normalizedOverride.length > 0) {
 		const spec = resolveHelperModelSelector(normalizedOverride, "summary model", ctx.model);
 		if (spec) specs.push(spec);
-		else errors.push(`Summary model not found: ${normalizedOverride} (no active Pi session model)`);
+		else failures.push({ model: normalizedOverride, reason: "no active Pi session model", message: `Summary model not found: ${normalizedOverride} (no active Pi session model)` });
 	}
 	if (preferredFallback) specs.push(...PREFERRED_SUMMARY_MODELS);
 
@@ -236,21 +238,29 @@ async function resolveSummaryModelCandidates(
 
 		const model = findModelWithProviderRouting(ctx.modelRegistry, spec.provider, spec.id);
 		if (!model) {
-			errors.push(`Summary model not found: ${value}`);
+			failures.push({ model: value, reason: "not found", message: `Summary model not found: ${value}` });
 			continue;
 		}
 		if (!isModelInScope(model, ctx.scopedModels)) {
-			errors.push(`Summary model is not enabled: ${value}`);
+			failures.push({ model: value, reason: "not enabled", message: `Summary model is not enabled: ${value}` });
 			continue;
 		}
 		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
 		if (!auth.ok) {
-			errors.push(`No API key available for summary model ${value}`);
+			failures.push({ model: value, reason: "no API key", message: `No API key available for summary model ${value}` });
 			continue;
 		}
 		candidates.push({ model, apiKey: auth.apiKey, headers: auth.headers, thinkingLevel: spec.thinkingLevel });
 	}
-	return { candidates, errors };
+	return { candidates, failures };
+}
+
+function summaryUnavailableReason(failures: SummaryModelFailure[], preferredFallback: boolean): string {
+	if (failures.length === 0) return "summary-model-unavailable";
+	if (failures.length === 1) return `summary-model-unavailable: ${failures[0].message}`;
+	const list = failures.map(failure => `${failure.model} (${failure.reason})`).join(", ");
+	const hint = preferredFallback ? "; set summaryModel in web-search.json to a model you can use" : "";
+	return `summary-model-unavailable: none of the ${failures.length} summary models could be used: ${list}${hint}`;
 }
 
 function buildFallbackSummary(
@@ -374,7 +384,7 @@ export async function generateSummaryDraft(
 			return buildFallbackSummary(results, `summary-model-settings-error: ${message}`, Date.now() - generationStartedAt);
 		}
 
-		let lastError = resolved.errors.at(-1);
+		const failures = resolved.failures;
 		for (const { model, apiKey, headers, thinkingLevel } of resolved.candidates) {
 			const startedAt = Date.now();
 			try {
@@ -443,13 +453,14 @@ export async function generateSummaryDraft(
 			} catch (err) {
 				checkSummaryDeadline();
 				if (isAbortError(err)) throw err;
-				lastError = err instanceof Error ? err.message : String(err);
+				const message = err instanceof Error ? err.message : String(err);
+				failures.push({ model: `${model.provider}/${model.id}`, reason: message, message });
 			}
 		}
 
 		return buildFallbackSummary(
 			results,
-			lastError ? `summary-model-unavailable: ${lastError}` : "summary-model-unavailable",
+			summaryUnavailableReason(failures, options.preferredFallback ?? true),
 			Date.now() - generationStartedAt,
 		);
 	} catch (err) {

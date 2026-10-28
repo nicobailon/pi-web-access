@@ -314,6 +314,7 @@ export function startCuratorServer(
 		if (provider === "ceramic") return availableProviders.ceramic;
 		if (provider === "linkup") return availableProviders.linkup;
 		if (provider === "ninerouter") return availableProviders.ninerouter;
+		if (provider === "cloudflare") return availableProviders.cloudflare;
 		if (provider === "deepseek") return availableProviders.deepseek;
 		return false;
 	}

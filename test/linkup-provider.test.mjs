@@ -258,18 +258,22 @@ test("Linkup is exposed in Pi and MCP schemas and Curator, and obeys the provide
 		const tools = [];
 		(await import(${JSON.stringify(moduleUrl("index"))})).default({ registerTool(t) { tools.push(t); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
 		const { MCP_TOOL_DEFINITIONS, validateMcpToolArguments } = await import(${JSON.stringify(moduleUrl("mcp-tool-definitions"))});
-		const mcpSchemas = MCP_TOOL_DEFINITIONS.filter(t => ["web_search", "source_check"].includes(t.name)).map(t => t.inputSchema.properties.provider.anyOf[0].enum);
-		const mcpErrors = validateMcpToolArguments(MCP_TOOL_DEFINITIONS.find(t => t.name === "web_search"), { query: "q", provider: "linkup" });
+		const mcpErrors = MCP_TOOL_DEFINITIONS.filter(t => ["web_search", "source_check"].includes(t.name)).flatMap(t => {
+			const base = t.name === "web_search" ? { query: "q" } : { claim: "q" };
+			return [
+				...validateMcpToolArguments(t, { ...base, provider: "linkup" }),
+				...validateMcpToolArguments(t, { ...base, provider: ["linkup"] }),
+			].map(problem => t.name + ": " + problem);
+		});
 		globalThis.fetch = async () => ${response([result()])};
 		const sourceCheck = await tools.find(t => t.name === "source_check").execute("call", { claim: "q", provider: "linkup" }, undefined, undefined, { modelRegistry: {} });
 		const { generateCuratorPage } = await import(${JSON.stringify(moduleUrl("curator-page"))});
 		const available = new Proxy({ all: false, linkup: true }, { get: (obj, key) => obj[key] ?? false });
 		const page = generateCuratorPage(["q"], "token", 20, available, "linkup", "linkup", [], null);
-		console.log(JSON.stringify({ mcpSchemas, mcpErrors, sourceProvider: sourceCheck.details.artifact.provider, schemas: tools.filter(t => ["web_search", "source_check"].includes(t.name)).map(t => t.parameters.properties.provider.description), button: page.includes('data-provider="linkup"'), label: page.includes('provider === "linkup") return "Linkup"') }));
+		console.log(JSON.stringify({ mcpErrors, sourceProvider: sourceCheck.details.artifact.provider, schemas: tools.filter(t => ["web_search", "source_check"].includes(t.name)).map(t => t.parameters.properties.provider.description), button: page.includes('data-provider="linkup"'), label: page.includes('provider === "linkup") return "Linkup"') }));
 	`);
 	assert.equal(output.schemas.length, 2);
 	for (const description of output.schemas) assert.match(description, /Allowed: linkup\./);
-	assert.ok(output.mcpSchemas.every(schema => schema.includes("linkup")));
 	assert.deepEqual(output.mcpErrors, []);
 	assert.equal(output.sourceProvider, "linkup");
 	assert.equal(output.button, true);
