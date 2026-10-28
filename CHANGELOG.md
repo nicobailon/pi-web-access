@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- A proxy you set could be skipped after Pi reloaded its extensions, so web requests went out directly instead of through it. Requests now always go through the proxy you chose.
+- A proxy you set could be skipped after Pi reloaded its extensions, so web requests went out directly instead of through it. Requests now go through the proxy you chose. Thanks to [@xiangsheng](https://github.com/xiangsheng) for [issue #643](https://github.com/nicobailon/pi-web-access/issues/643).
 
 ## [0.45.0] - 2026-10-25
 

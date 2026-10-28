@@ -374,6 +374,8 @@ export interface ProxiedRequestInit extends RequestInit {
 interface ProxiedFetch {
 	(input: RequestInfo | URL, init?: ProxiedRequestInit): Promise<Response>;
 	__piWebAccessSharedProxyFetch?: boolean;
+	/** Marker set by versions before the shared store. */
+	__piWebAccessProxyFetch?: boolean;
 }
 
 /** Wraps globalThis.fetch so every http(s) call routes through curl while a proxy is active. Idempotent. */
@@ -408,6 +410,8 @@ export function installGlobalProxyFetch(): void {
 		return fetchViaCurl(url, init ?? {}, proxy);
 	});
 	wrapped.__piWebAccessSharedProxyFetch = true;
+	// On top of a pre-fix wrapper, also carry its marker so that copy stops wrapping again.
+	if (current.__piWebAccessProxyFetch === true) wrapped.__piWebAccessProxyFetch = true;
 	globalThis.fetch = wrapped;
 }
 
