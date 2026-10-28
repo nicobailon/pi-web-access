@@ -107,7 +107,7 @@ function buildQuery(query: string, provider: CloudflareSearchProvider, filters: 
 	const sites = provider === "ceramic" ? filters.include.map(domain => `site:${domain}`) : [];
 	const built = sites.length === 0 ? query : `${query} ${sites.length === 1 ? sites[0] : `(${sites.join(" OR ")})`}`;
 	if (built.length > MAX_QUERY_CHARS) {
-		throw new Error(`Cloudflare Web Search invalid request: the query is ${built.length} characters with domain filters; Cloudflare Web Search accepts at most ${MAX_QUERY_CHARS}`);
+		throw new Error(`Cloudflare Web Search invalid request: the query is ${built.length} characters${sites.length > 0 ? " with domain filters" : ""}; Cloudflare Web Search accepts at most ${MAX_QUERY_CHARS}`);
 	}
 	return built;
 }
