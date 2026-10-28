@@ -1407,7 +1407,7 @@ async function extractViaHttp(
 					title: result.title,
 					content: options?.mode === "answer" || options?.mode === "extract"
 						? result.content
-						: `PDF extracted and saved to: ${result.outputPath}\n\n${result.pages > 0 ? `Pages: ${result.pages}\n` : ""}Characters: ${result.chars}`,
+						: `PDF extracted and saved to: ${result.outputPath}\n\n${result.content}`,
 					error: null,
 				};
 			} catch (err) {
