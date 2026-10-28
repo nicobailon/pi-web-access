@@ -311,7 +311,7 @@ export async function callExaMcp(
 	// The free endpoint answers a rate limit with HTTP 200 and this flag, not a 429.
 	if (parsed.result?._meta?.["ai.exa/rateLimited"] === true) {
 		throw new Error(
-			`Exa's free MCP search is rate-limited. Add "exaApiKey" to ${CONFIG_PATH} or set EXA_API_KEY for unthrottled Exa search.`,
+			`Exa's free MCP search hit its rate limit. Add "exaApiKey" to ${CONFIG_PATH} or set EXA_API_KEY for unthrottled Exa search.`,
 		);
 	}
 
@@ -414,16 +414,10 @@ function parseJsonMcpResults(text: string): ExaSearchResponse["results"] | null 
 }
 
 /**
- * Calls one Exa MCP search tool and normalizes its payload. `web_search_advanced_exa`
+ * Normalizes one Exa MCP search tool's payload. `web_search_advanced_exa`
  * returns the raw Exa search JSON; `web_search_exa` returns a formatted text block.
  */
-async function searchWithExaMcpTool(
-	tool: string,
-	args: Record<string, unknown>,
-	options: ExaSearchOptions,
-): Promise<SearchResponse> {
-	const text = await callExaMcp(tool, args, options.signal);
-
+function toMcpSearchResponse(text: string, options: ExaSearchOptions): SearchResponse {
 	const jsonResults = parseJsonMcpResults(text);
 	if (jsonResults) {
 		return toSearchResponse(
@@ -435,7 +429,7 @@ async function searchWithExaMcpTool(
 
 	const textResults = parseMcpResults(text);
 	if (!textResults) {
-		throw new Error(`Exa MCP returned a reply without search results: ${text.trim().slice(0, 200)}`);
+		throw new Error(`Exa MCP returned no parseable results: ${text.trim().slice(0, 200)}`);
 	}
 
 	return toSearchResponse(
@@ -451,18 +445,21 @@ async function searchWithFilteredExaMcp(
 	options: ExaSearchOptions,
 	basicArgs: Record<string, unknown>,
 ): Promise<SearchResponse> {
+	let text: string;
 	try {
-		return await searchWithExaMcpTool(EXA_MCP_ADVANCED_TOOL, {
+		text = await callExaMcp(EXA_MCP_ADVANCED_TOOL, {
 			...exaSearchArgs(query, options),
 			enableHighlights: true,
 			textMaxCharacters: options.includeContent ? 50000 : 3000,
-		}, options);
+		}, options.signal);
 	} catch (err) {
 		if (isAbortMessage(err instanceof Error ? err.message : String(err))) throw err;
 		// The basic tool ignores every argument except query/numResults, so the
 		// filters degrade into the query text.
-		return searchWithExaMcpTool(EXA_MCP_BASIC_TOOL, basicArgs, options);
+		return toMcpSearchResponse(await callExaMcp(EXA_MCP_BASIC_TOOL, basicArgs, options.signal), options);
 	}
+	// An unreadable advanced reply is not retried on the basic tool, which would drop the filters.
+	return toMcpSearchResponse(text, options);
 }
 
 async function searchWithExaMcp(query: string, options: ExaSearchOptions = {}): Promise<SearchResponse> {
@@ -473,7 +470,7 @@ async function searchWithExaMcp(query: string, options: ExaSearchOptions = {}): 
 	try {
 		const response = filtered
 			? await searchWithFilteredExaMcp(query, options, basicArgs)
-			: await searchWithExaMcpTool(EXA_MCP_BASIC_TOOL, basicArgs, options);
+			: toMcpSearchResponse(await callExaMcp(EXA_MCP_BASIC_TOOL, basicArgs, options.signal), options);
 		activityMonitor.logComplete(activityId, 200);
 		return response;
 	} catch (err) {

@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Searching without an Exa key no longer says that no search provider is set up when Exa's free search answered but couldn't be used. When the free Exa search is rate-limited, the error now says so and tells you to add an Exa API key; when Exa sends back something without search results, the error shows what it sent. A search that finds nothing is still an empty result, not an error ([#638](https://github.com/nicobailon/pi-web-access/issues/638)).
+- Searching without an Exa key no longer says that no search provider is set up when Exa's free search answered but couldn't be used. When the free Exa search is rate-limited, the error now says so and tells you to add an Exa API key; when Exa sends back something without search results, the error shows what it sent. Search routing treats these like any other rate limit or unreadable reply, so `fallbackOn` can move on to the next provider. A search that finds nothing is now an empty result, not an error. Thanks to [@vishwajeet7381](https://github.com/vishwajeet7381) for [issue #638](https://github.com/nicobailon/pi-web-access/issues/638).
 
 ## [0.45.0] - 2026-10-25
 
