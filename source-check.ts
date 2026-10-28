@@ -13,6 +13,8 @@ export interface ResearchSource {
 	url: string;
 	title: string;
 	snippet?: string;
+	/** "generated" when the snippet is the search provider's own answer text around a citation, not page text. */
+	snippet_source?: "generated";
 	fetch_timestamp?: number;
 	content_hash?: string;
 	quality: SourceQuality;
@@ -27,6 +29,8 @@ export interface ResearchPassage {
 	text: string;
 	extraction_span?: { start: number; end: number };
 	content_hash?: string;
+	/** "provider_summary" marks text written by the search provider (for example OpenAI or xAI answer text), not quoted from the page. */
+	origin?: "provider_summary";
 }
 
 export interface ClaimAssessment {
@@ -156,6 +160,8 @@ export function buildPassages(sources: ResearchSource[], fetched: ExtractedConte
 				source_rank: source.rank,
 				text: source.snippet,
 				content_hash: hashContent(source.snippet),
+				// The provider's paraphrase around a citation, not a quote, so it is never presented as page text.
+				...(source.snippet_source === "generated" ? { origin: "provider_summary" as const } : {}),
 			});
 		}
 		const page = fetchedByUrl.get(source.url);
@@ -218,6 +224,7 @@ export function buildResearchArtifact(input: BuildArtifactInput): ResearchArtifa
 			url: result.url,
 			title: result.title,
 			snippet: result.snippet,
+			...(result.snippetSource === "generated" && result.snippet ? { snippet_source: "generated" as const } : {}),
 			quality: classifySource(result.url),
 			fetched,
 			...(page ? { fetch_timestamp: Date.now() } : {}),

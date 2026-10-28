@@ -75,6 +75,8 @@ export interface WebSearchConfig {
 	cloudflareAccountId?: unknown;
 	cloudflareGatewayId?: unknown;
 	cloudflareSearchProvider?: unknown;
+	searchapiApiKey?: unknown;
+	searchapiBaseUrl?: unknown;
 	tabstackBaseUrl?: unknown;
 	tabstackApiKey?: unknown;
 	tabstackResearchMode?: unknown;
@@ -436,7 +438,8 @@ function formatSourceCheckResult(artifact: ResearchArtifact, getSearchContentToo
 				if (text.length > budget) omitted++;
 				else {
 					budget -= text.length;
-					lines.push(`   - ${passage.passage_id}: ${text}`);
+					const label = passage.origin === "provider_summary" ? " [provider summary, not page text]" : "";
+					lines.push(`   - ${passage.passage_id}${label}: ${text}`);
 				}
 			}
 		}

@@ -27,6 +27,7 @@ const providers = [
 		["extractWithQuerit", "https://api.querit.ai/v1/contents"]],
 	["search1api", "search1api", "searchWithSearch1API", "https://api.search1api.com/search", "Authorization",
 		["extractWithSearch1API", "https://api.search1api.com/crawl"]],
+	["searchapi", "searchapi", "searchWithSearchApi", "https://www.searchapi.io/api/v1/search", "Authorization"],
 	["searchinfinity", "searchinfinity", "searchWithSearchinfinity", "https://torchlight.byteintlapi.com/search_api/web_search", "Authorization"],
 	["serpbase", "serpbase", "searchWithSerpBase", "https://api.serpbase.dev/google/search", null],
 	["serpdive", "serpdive", "searchWithSerpdive", "https://api.serpdive.com/v1/search", "Authorization"],

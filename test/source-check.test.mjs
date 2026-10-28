@@ -64,6 +64,71 @@ test("fetched passages are picked by the claim, including short acronyms, even w
   ]);
 });
 
+// Reproduces a real OpenAI-provider result: the snippet was cut from OpenAI's answer, not from the npm docs page.
+const GENERATED_SNIPPET = "The minor number is effectively the breaking-change boundary. (docs.npmjs.com)";
+const SEMVER_PAGE = "Caret Ranges. Many authors treat a 0.x version as if the x were the major \"breaking-change\" indicator. Unrelated tail.";
+
+test("generated provider snippets are labelled when no page text is available", () => {
+  const artifact = buildResearchArtifact({
+    query: "a 0.x minor bump is breaking",
+    results: [
+      { ...result("https://docs.npmjs.com/semver", GENERATED_SNIPPET), snippetSource: "generated" },
+      result("https://example.org/page", "Exa page text about breaking changes.", 2),
+    ],
+  });
+  assert.equal(artifact.sources[0].snippet_source, "generated");
+  assert.equal(artifact.sources[1].snippet_source, undefined);
+  assert.equal(artifact.passages[0].origin, "provider_summary");
+  assert.equal(artifact.passages[0].text, GENERATED_SNIPPET);
+  assert.equal(artifact.passages[1].origin, undefined);
+});
+
+test("a generated snippet stays labelled next to fetched page text", () => {
+  const url = "https://docs.npmjs.com/semver";
+  const artifact = buildResearchArtifact({
+    query: "a 0.x minor bump is a breaking change",
+    results: [{ ...result(url, GENERATED_SNIPPET), snippetSource: "generated" }],
+    fetched: [{ url, title: "semver", content: SEMVER_PAGE, error: null }],
+  });
+  const [snippet, ...pagePassages] = artifact.passages;
+  assert.equal(snippet.origin, "provider_summary");
+  assert.equal(snippet.text, GENERATED_SNIPPET);
+  assert.ok(pagePassages.length > 0);
+  for (const passage of pagePassages) {
+    assert.equal(passage.origin, undefined);
+    assert.equal(SEMVER_PAGE.slice(passage.extraction_span.start, passage.extraction_span.end), passage.text);
+  }
+});
+
+test("a generated snippet is kept, labelled, when the page fetch fails", () => {
+  const url = "https://docs.npmjs.com/semver";
+  const artifact = buildResearchArtifact({
+    query: "breaking change",
+    results: [{ ...result(url, GENERATED_SNIPPET), snippetSource: "generated" }],
+    fetched: [{ url, title: "", content: "", error: "HTTP 503" }],
+  });
+  assert.deepEqual(artifact.passages.map((passage) => passage.origin), ["provider_summary"]);
+});
+
+test("source_check labels OpenAI citation snippets as provider summary text", async () => {
+  await withProviderKey("OPENAI_API_KEY", async () => new Response(JSON.stringify({
+    output: [{ type: "web_search_call", action: { sources: [] } }, {
+      type: "message",
+      content: [{
+        type: "output_text",
+        text: `For 0.x versions a minor bump can be breaking. ${GENERATED_SNIPPET}`,
+        annotations: [{ type: "url_citation", url: "https://docs.npmjs.com/semver", title: "semver", start_index: 10, end_index: 40 }],
+      }],
+    }],
+  }), { status: 200 }), async () => {
+    const { tool } = registerSourceCheck();
+    const response = await tool.execute("call", { claim: "0.x minor bump is breaking", provider: "openai" }, undefined, undefined, { modelRegistry: {} });
+    const passage = response.details.artifact.passages[0];
+    assert.equal(passage.origin, "provider_summary");
+    assert.match(response.content[0].text, /- p-1-0 \[provider summary, not page text\]: For 0\.x/);
+  });
+});
+
 test("artifact assembly handles omitted domain filters and failed fetches", () => {
   const artifact = buildResearchArtifact({
     query: "API claim",

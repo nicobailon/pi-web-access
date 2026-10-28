@@ -75,6 +75,7 @@ import { isCeramicAvailable } from "./ceramic.ts";
 import { isLinkupAvailable } from "./linkup.ts";
 import { isNineRouterAvailable } from "./ninerouter.ts";
 import { isCloudflareSearchAvailable } from "./cloudflare-search.ts";
+import { isSearchApiAvailable } from "./searchapi.ts";
 import { isDeepSeekAvailable } from "./deepseek.ts";
 import { isBaizhiAvailable } from "./baizhi.ts";
 import { isZaiAvailable } from "./zai.ts";
@@ -376,6 +377,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		linkup: allowedProviders.has("linkup") && isLinkupAvailable(),
 		ninerouter: allowedProviders.has("ninerouter") && isNineRouterAvailable(),
 		cloudflare: allowedProviders.has("cloudflare") && isCloudflareSearchAvailable(),
+		searchapi: allowedProviders.has("searchapi") && isSearchApiAvailable(),
 		deepseek: allowedProviders.has("deepseek") && isDeepSeekAvailable(),
 	};
 	return {
