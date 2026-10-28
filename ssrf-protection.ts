@@ -91,12 +91,28 @@ export function loadFetchContentRedirectPolicy(): RedirectPolicy | undefined {
 const DEFAULT_FETCH_CONTENT_USER_AGENT = "OpenAI File Downloader, XaiImageApiFetch/1.0";
 
 export function loadFetchContentUserAgent(): string {
+	return loadConfiguredFetchContentUserAgent() ?? DEFAULT_FETCH_CONTENT_USER_AGENT;
+}
+
+/** fetchContent.userAgent when it is set, without the default. */
+export function loadConfiguredFetchContentUserAgent(): string | undefined {
 	const userAgent = loadFetchContentConfig()?.userAgent;
-	if (userAgent === undefined || userAgent === null) return DEFAULT_FETCH_CONTENT_USER_AGENT;
+	if (userAgent === undefined || userAgent === null) return undefined;
 	if (typeof userAgent !== "string" || userAgent.trim().length === 0 || !/^[\t\x20-\x7e]+$/.test(userAgent)) {
 		throw new Error(`fetchContent.userAgent in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty string of printable ASCII characters`);
 	}
 	return userAgent.trim();
+}
+
+/** fetchContent.curl as an executable plus leading arguments, or null to use Node's fetch. */
+export function loadFetchContentCurl(): string[] | null {
+	const curl = loadFetchContentConfig()?.curl;
+	if (curl === undefined || curl === null) return null;
+	const command: unknown[] | null = typeof curl === "string" ? [curl] : Array.isArray(curl) ? curl : null;
+	if (!command || command.length === 0 || command.some((part) => typeof part !== "string" || part.trim().length === 0 || part.includes("\0"))) {
+		throw new Error(`fetchContent.curl in ${WEB_SEARCH_CONFIG_PATH} must be a command name or path, or a non-empty array of a command and its arguments`);
+	}
+	return command.map((part) => (part as string).trim());
 }
 
 export function loadFetchContentDomainPolicy(): DomainPolicy {
@@ -380,6 +396,14 @@ function shouldTrustEnvProxy(url: URL, enabled: boolean): boolean {
 	const port = url.port || (url.protocol === "https:" ? "443" : "80");
 	const noProxy = process.env.NO_PROXY || process.env.no_proxy || "";
 	return !noProxy.split(",").some(entry => hostnameMatchesNoProxy(hostname, port, entry));
+}
+
+/** The env proxy validateRemoteUrl trusts to resolve this URL instead of checking DNS locally, or null.
+ * A fetch that skipped the local check because of it must connect through it. */
+export function trustedEnvProxyFor(url: URL, trustEnvProxy: boolean): string | null {
+	// IP literals are always checked locally, so they keep connecting directly.
+	if (net.isIP(normalizeHostname(url.hostname))) return null;
+	return shouldTrustEnvProxy(url, trustEnvProxy) ? getProxyForProtocol(url.protocol) : null;
 }
 
 /** Only the operator's configured proxy qualifies: a model-supplied per-call proxy must not skip DNS validation. */

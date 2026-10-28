@@ -13,6 +13,7 @@ import { extractWithParallel, isParallelAvailable } from "./parallel.ts";
 import { extractWithParallelMcp } from "./parallel-mcp.ts";
 import { extractWithTinyFish, isTinyFishAvailable } from "./tinyfish.ts";
 import { extractWithDeepSeek, isDeepSeekAvailable } from "./deepseek.ts";
+import { extractWithExa, hasExaApiKey } from "./exa.ts";
 import { extractWithSearch1API, isSearch1APIAvailable } from "./search1api.ts";
 import { extractWithQuerit, isQueritAvailable } from "./querit.ts";
 import { extractWithTabstack, isTabstackAvailable } from "./tabstack.ts";
@@ -23,8 +24,8 @@ import { extractWithCrawl4ai, isCrawl4aiAvailable } from "./crawl4ai.ts";
 import { extractWithBrightDataUnlocker, isBrightDataUnlockerAvailable } from "./brightdata-unlocker.ts";
 import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } from "./video-extract.ts";
 import { appendDeclaredWebLinks, discoverDeclaredWebLinks, type DeclaredWebLink } from "./declared-web-links.ts";
-import { fetchRemoteUrl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadFetchContentUserAgent, loadSsrfConfig, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
-import { formatSeconds, getWebSearchConfigPath, type ProxiedRequestInit } from "./utils.ts";
+import { fetchRemoteUrl, loadConfiguredFetchContentUserAgent, loadFetchContentCurl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadFetchContentUserAgent, loadSsrfConfig, trustedEnvProxyFor, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
+import { createCurlFetch, formatSeconds, getWebSearchConfigPath, type ProxiedRequestInit } from "./utils.ts";
 import { isImageEnabled } from "./feature-config.ts";
 import { assertAuthFetchUrl, authFetchRedirectGuard, type AuthFetchProfile } from "./auth-fetch.ts";
 import { getBrowserCookiesForHosts, getLastBrowserCookieDiagnostic } from "./chrome-cookies.ts";
@@ -67,14 +68,14 @@ function loadFetchTimeoutMs(): number {
 	return Math.max(1, timeoutMs);
 }
 
-const NON_RECOVERABLE_ERRORS = ["Unsupported content type", "Response too large", "PDF extraction is disabled", "Image fetching is disabled"];
+const NON_RECOVERABLE_ERRORS = ["Unsupported content type", "Response too large", "PDF extraction is disabled", "Image fetching is disabled", "fetchContent.curl command not found"];
 const MIN_USEFUL_CONTENT = 500;
 const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const FETCH_PROVIDERS = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "tabstack"] as const;
+const FETCH_PROVIDERS = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack"] as const;
 type FetchProvider = typeof FETCH_PROVIDERS[number];
 type FetchRouting = { providers: FetchProvider[]; allowRemoteHostedProviders: boolean };
 const DEFAULT_FETCH_PROVIDER_ORDER: FetchProvider[] = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "brightdata", "gemini"];
-const REMOTE_HOSTED_FETCH_PROVIDERS = new Set<FetchProvider>(["jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "tabstack"]);
+const REMOTE_HOSTED_FETCH_PROVIDERS = new Set<FetchProvider>(["jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack"]);
 
 function isDefuddleConsoleError(args: Parameters<typeof console.error>): boolean {
 	const prefix = args[0];
@@ -571,8 +572,9 @@ export async function extractContent(
 		try {
 			const ssrf = loadSsrfConfig();
 			const domainPolicy = loadFetchContentDomainPolicy();
-			// An invalid configured User-Agent fails here, before any provider fallback runs.
+			// An invalid configured User-Agent or curl command fails here, before any provider fallback runs.
 			loadFetchContentUserAgent();
+			loadFetchContentCurl();
 			await validateRemoteUrl(remoteUrl, {
 				allowRanges: ssrf.allowRanges,
 				trustEnvProxy: ssrf.trustEnvProxy,
@@ -875,6 +877,7 @@ export async function extractContent(
 	let parallelMcpError: string | null = null;
 	let brightdataError: string | null = null;
 	let deepseekError: string | null = null;
+	let exaError: string | null = null;
 
 	if (remoteUrl && providerOrder[0] !== "http") {
 		const httpGateResult = await runHttpProvider();
@@ -1103,6 +1106,23 @@ export async function extractContent(
 			}
 			continue;
 		}
+
+		if (provider === "exa") {
+			try {
+				if (hasExaApiKey()) {
+					const exaResult = await extractWithExa(url, signal, {
+						timeoutMs: options?.timeoutMs,
+						...(options?.lookup ? { lookup: options.lookup } : {}),
+					});
+					if (exaResult) return withDeclaredLinks(exaResult);
+				}
+			} catch (err) {
+				if (isAbortError(err)) return abortedResult(url);
+				exaError = errorMessage(err);
+				if (isConfigParseError(err)) return parseErrorResult(exaError);
+			}
+			continue;
+		}
 	}
 
 	if (signal?.aborted) return abortedResult(url);
@@ -1133,6 +1153,7 @@ export async function extractContent(
 		...(parallelMcpError ? [`Parallel MCP fallback failed: ${parallelMcpError}`] : []),
 		...(brightdataError ? [`Bright Data fallback failed: ${brightdataError}`] : []),
 		...(deepseekError ? [`DeepSeek fallback failed: ${deepseekError}`] : []),
+		...(exaError ? [`Exa fallback failed: ${exaError}`] : []),
 		...(tabstackError ? [`Tabstack fallback failed: ${tabstackError}`] : []),
 		"",
 		"Fallback options:",
@@ -1147,6 +1168,7 @@ export async function extractContent(
 		`  • Set parallelApiKey in ${WEB_SEARCH_CONFIG_PATH} or PARALLEL_API_KEY`,
 		`  • Set brightdataApiKey and brightdataUnlockerZone in ${WEB_SEARCH_CONFIG_PATH} or BRIGHTDATA_API_KEY and BRIGHTDATA_UNLOCKER_ZONE`,
 		`  • Set deepseekApiKey in ${WEB_SEARCH_CONFIG_PATH} or DEEPSEEK_API_KEY and add "deepseek" to fetchRouting.providers`,
+		`  • Set exaApiKey in ${WEB_SEARCH_CONFIG_PATH} or EXA_API_KEY and add "exa" to fetchRouting.providers`,
 		`  • Set tabstackApiKey in ${WEB_SEARCH_CONFIG_PATH} or TABSTACK_API_KEY and add "tabstack" to fetchRouting.providers`,
 		`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`,
 		"  • Sign into gemini.google.com in Chrome",
@@ -1304,11 +1326,15 @@ async function extractViaHttp(
 		const domainPolicy = loadFetchContentDomainPolicy();
 		const redirects = options?.redirects ?? loadFetchContentRedirectPolicy();
 		const authProfile = options?.authFetchProfile;
+		// Auth fetches keep Node's fetch, so browser cookies never appear in a command line.
+		const curl = authProfile ? null : loadFetchContentCurl();
+		// Through curl only a configured User-Agent is sent, so curl-impersonate keeps its browser User-Agent.
+		const userAgent = curl ? loadConfiguredFetchContentUserAgent() : loadFetchContentUserAgent();
 		const requestInit: ProxiedRequestInit = {
 			signal: controller.signal,
 			__proxy: options?.proxy,
 			headers: {
-				"User-Agent": loadFetchContentUserAgent(),
+				...(userAgent ? { "User-Agent": userAgent } : {}),
 				"Accept": preferMarkdown ? MARKDOWN_FIRST_ACCEPT : BROWSER_ACCEPT,
 				"Accept-Language": "en-US,en;q=0.9",
 				"Cache-Control": "no-cache",
@@ -1331,6 +1357,14 @@ async function extractViaHttp(
 					redirects,
 					proxy: options?.proxy,
 					...(options?.lookup ? { lookup: options.lookup } : {}),
+					...(curl ? {
+						fetch: createCurlFetch(curl, {
+							// The type, and so the exact limit, is known only after the response; the size checks below still apply.
+							// curl rejects a fractional --max-filesize, and pdf.maxSizeMB may be fractional.
+							maxBytes: Math.floor(Math.max(5, loadPDFConfig().maxSizeMB) * 1024 * 1024),
+							envProxy: (target) => trustedEnvProxyFor(target, ssrf.trustEnvProxy),
+						}),
+					} : {}),
 				},
 			);
 
@@ -1346,7 +1380,7 @@ async function extractViaHttp(
 		}
 
 		const contentLengthHeader = response.headers.get("content-length");
-		const contentType = response.headers.get("content-type") || "";
+		const contentType = (response.headers.get("content-type") || "").toLowerCase();
 		const mimeType = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
 		const isPDFContent = isPDF(url, contentType);
 		const pdfConfig = isPDFContent ? loadPDFConfig() : null;
@@ -1425,7 +1459,7 @@ async function extractViaHttp(
 					title: result.title,
 					content: options?.mode === "answer" || options?.mode === "extract"
 						? result.content
-						: `PDF extracted and saved to: ${result.outputPath}\n\n${result.pages > 0 ? `Pages: ${result.pages}\n` : ""}Characters: ${result.chars}`,
+						: `PDF extracted and saved to: ${result.outputPath}\n\n${result.content}`,
 					error: null,
 				};
 			} catch (err) {
