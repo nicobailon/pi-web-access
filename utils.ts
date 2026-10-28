@@ -407,12 +407,38 @@ export function installGlobalProxyFetch(): void {
 			).arrayBuffer());
 			init = { ...init, method: request.method, headers: request.headers, body, signal: request.signal, redirect: request.redirect };
 		}
-		return fetchViaCurl(url, init ?? {}, proxy);
+		return fetchViaCurl(url, init ?? {}, { command: ["curl"], proxy });
 	});
 	wrapped.__piWebAccessSharedProxyFetch = true;
 	// On top of a pre-fix wrapper, also carry its marker so that copy stops wrapping again.
 	if (current.__piWebAccessProxyFetch === true) wrapped.__piWebAccessProxyFetch = true;
 	globalThis.fetch = wrapped;
+}
+
+/** A fetch for the extension's own page requests that runs the `fetchContent.curl` command instead of
+ * Node's fetch. It uses a proxy the way the proxy transport does: a per-call `__proxy` wins, `""`
+ * connects directly, and loopback and NO_PROXY hosts are never proxied. With no proxy decision,
+ * `envProxy` names the env proxy the SSRF check trusted for the URL. Callers pass a URL. */
+export function createCurlFetch(
+	command: readonly string[],
+	{ maxBytes, envProxy }: { maxBytes: number; envProxy: (url: URL) => string | null },
+): typeof fetch {
+	return async (input: RequestInfo | URL, init?: ProxiedRequestInit) => {
+		const url = new URL(input instanceof Request ? input.url : input);
+		let proxy: string | null;
+		if (init?.__proxy !== undefined || hasScopedProxyDecision()) {
+			const chosen = init?.__proxy ?? getActiveProxy();
+			proxy = chosen && !isProxyBypassedUrl(url) ? chosen : null;
+		} else {
+			proxy = envProxy(url);
+		}
+		return fetchViaCurl(url, init ?? {}, {
+			command,
+			proxy,
+			maxBytes,
+			notFound: `fetchContent.curl command not found: ${command[0]}`,
+		});
+	};
 }
 
 // GET bodies are decoded by --compressed, so their length/encoding headers no longer match.
@@ -444,11 +470,22 @@ function parseHeaderDump(dump: string, keepLengthHeaders: boolean): { status: nu
 
 class CurlTransportError extends Error {}
 
-async function fetchViaCurl(url: URL, init: RequestInit, proxyUrl: string): Promise<Response> {
+interface CurlTransport {
+	/** Executable and any leading arguments, e.g. ["curl"] or ["curl-impersonate", "--impersonate", "chrome146"]. */
+	command: readonly string[];
+	/** Proxy passed with -x, or null to connect directly. */
+	proxy: string | null;
+	/** Error message when the executable is missing; defaults to the proxy transport's message. */
+	notFound?: string;
+	/** Largest body to download; curl stops a bigger one instead of saving all of it. */
+	maxBytes?: number;
+}
+
+async function fetchViaCurl(url: URL, init: RequestInit, transport: CurlTransport): Promise<Response> {
 	let current = url;
 	let currentInit = init;
 	for (let redirects = 0; ; redirects++) {
-		const response = await fetchViaCurlOnce(current, currentInit, proxyUrl);
+		const response = await fetchViaCurlOnce(current, currentInit, transport);
 		const location = response.headers.get("location");
 		if (!location || ![301, 302, 303, 307, 308].includes(response.status)) {
 			if (redirects > 0) Object.defineProperty(response, "redirected", { value: true, configurable: true });
@@ -481,7 +518,7 @@ async function fetchViaCurl(url: URL, init: RequestInit, proxyUrl: string): Prom
 	}
 }
 
-async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): Promise<Response> {
+async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, notFound, maxBytes }: CurlTransport): Promise<Response> {
 	const method = (init.method ?? "GET").toUpperCase();
 	const headers = new Headers(init.headers);
 
@@ -494,8 +531,15 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 		"--silent",
 		"--show-error",
 		"--compressed",
+		// The caller checks each redirect, so curl must not follow one, even with -L in the command or ~/.curlrc.
+		"--no-location",
+		// URLs are validated as written, so curl must send [ ] { } literally instead of expanding them into other URLs.
+		"--globoff",
 		"--connect-timeout", "20",
-		"-x", proxyUrl,
+		// An empty proxy also stops curl from using proxy environment variables, which Node's fetch ignores.
+		"-x", proxy ?? "",
+		// The caller already chose the proxy; curl must not send a host direct because of its own NO_PROXY reading.
+		...(proxy ? ["--noproxy", ""] : []),
 		"-D", headerFile,
 		"--output", bodyFile,
 		"--write-out", "%{json}",
@@ -503,6 +547,7 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 
 	if (method === "HEAD") args.push("--head");
 	else if (method !== "GET") args.push("-X", method);
+	if (maxBytes !== undefined) args.push("--max-filesize", String(maxBytes));
 
 	for (const [name, value] of headers.entries()) {
 		if (value === "") continue;
@@ -535,7 +580,7 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 				reject(new DOMException("The operation was aborted.", "AbortError"));
 				return;
 			}
-			const child = spawn("curl", args, { windowsHide: true });
+			const child = spawn(command[0], [...command.slice(1), ...args], { windowsHide: true });
 			let out = "";
 			let stderr = "";
 			const onAbort = () => { try { child.kill(); } catch {} };
@@ -547,14 +592,19 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 			child.once("error", (err: NodeJS.ErrnoException) => {
 				signal?.removeEventListener("abort", onAbort);
 				reject(new CurlTransportError(err.code === "ENOENT"
-					? "curl executable not found on PATH; proxy transport requires curl"
-					: `curl failed to start: ${err.message}`));
+					? notFound ?? "curl executable not found on PATH; proxy transport requires curl"
+					: `${command[0]} failed to start: ${err.message}`));
 			});
 			child.once("close", (code) => {
 				signal?.removeEventListener("abort", onAbort);
 				if (signal?.aborted) return reject(new DOMException("The operation was aborted.", "AbortError"));
-				if (code !== 0 && !out.trim()) {
-					return reject(new CurlTransportError(`curl exited with code ${code ?? "unknown"} via ${redactProxyUrl(proxyUrl)}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
+				// A failed transfer can still write headers, part of the body and the write-out JSON.
+				// Exit 63 is --max-filesize; report it like the size limit of a Node fetch.
+				if (code === 63 && maxBytes !== undefined) {
+					return reject(new CurlTransportError(`Response too large (over ${Math.round(maxBytes / 1024 / 1024)}MB)`));
+				}
+				if (code !== 0) {
+					return reject(new CurlTransportError(`${command[0]} exited with code ${code ?? "unknown"}${proxy ? ` via ${redactProxyUrl(proxy)}` : ""}${stderr.trim() ? `: ${stderr.trim()}` : ""}`));
 				}
 				resolve(out);
 			});
@@ -577,7 +627,9 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, proxyUrl: string): 
 
 	const { status, statusText, headers: responseHeaders } = parseHeaderDump(dump, method === "HEAD");
 	if (status === 0) {
-		throw new Error(`Proxy fetch to ${url.toString()} via ${redactProxyUrl(proxyUrl)} returned no HTTP status`);
+		throw new Error(proxy
+			? `Proxy fetch to ${url.toString()} via ${redactProxyUrl(proxy)} returned no HTTP status`
+			: `${command[0]} fetch to ${url.toString()} returned no HTTP status`);
 	}
 
 	let finalUrl = url.toString();

@@ -101,19 +101,22 @@ test("PDF answer mode supplies extracted Markdown, saves the file, and retains o
 	assert.match(retrieved.content[0].text, /The annual fee is 42 dollars\./);
 });
 
-test("readable PDF mode preserves the file-path presentation without calling an answer model", async () => {
+test("readable PDF mode returns and stores the extracted text with the saved file path", async () => {
 	globalThis.fetch = async () => pdfResponse("Readable PDF body.");
 	const result = await execute({ url: "https://93.184.216.34/readable.pdf" });
 	assert.equal(result.details.successful, 1);
 	assert.equal(requests.length, 0);
-	const notice = result.content[0].text;
-	assert.match(notice, /^PDF extracted and saved to: .+\n\nPages: 1\nCharacters: \d+$/);
-	assert.doesNotMatch(notice, /Readable PDF body/);
-	const path = notice.split("\n")[0].slice("PDF extracted and saved to: ".length);
+	const text = result.content[0].text;
+	assert.match(text, /^PDF extracted and saved to: .+\n\n/);
+	assert.match(text, /Readable PDF body\./);
+	const path = text.split("\n")[0].slice("PDF extracted and saved to: ".length);
 	const saved = await readFile(path, "utf8");
 	assert.match(saved, /Readable PDF body\./);
-	assert.equal(Number(notice.match(/Characters: (\d+)/)[1]), saved.length);
-	assert.equal(getResult(result.details.responseId).urls[0].content, notice);
+	const retrieved = await getContentTool.execute("retrieve", {
+		responseId: result.details.responseId, urlIndex: 0, findText: "Readable PDF body",
+	});
+	assert.match(retrieved.content[0].text, /Readable PDF body\./);
+	assert.ok(getResult(result.details.responseId).urls[0].content.endsWith(saved));
 });
 
 test("batch PDF answers receive each document's own body even when output filenames collide", async () => {
