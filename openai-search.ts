@@ -559,7 +559,7 @@ function extractSnippetAround(text: string, start: unknown, end: unknown): strin
 	return snippet.length > 300 ? `${snippet.slice(0, 297)}...` : snippet;
 }
 
-function addResult(results: SearchResult[], seen: Set<string>, url: unknown, title: unknown, snippet = ""): void {
+function addResult(results: SearchResult[], seen: Set<string>, url: unknown, title: unknown, snippet = "", generated = false): void {
 	if (typeof url !== "string" || url.trim().length === 0) return;
 	const cleanUrl = cleanSourceUrl(url);
 	if (seen.has(cleanUrl)) return;
@@ -568,6 +568,7 @@ function addResult(results: SearchResult[], seen: Set<string>, url: unknown, tit
 		title: typeof title === "string" && title.trim().length > 0 ? title : cleanUrl,
 		url: cleanUrl,
 		snippet,
+		...(generated && snippet ? { snippetSource: "generated" as const } : {}),
 	});
 }
 
@@ -592,6 +593,7 @@ function extractSearchResults(output: unknown[], numResults: number | undefined)
 					(annotation as { url?: unknown }).url,
 					(annotation as { title?: unknown }).title,
 					extractSnippetAround(text, (annotation as { start_index?: unknown }).start_index, (annotation as { end_index?: unknown }).end_index),
+					true,
 				);
 			}
 		}

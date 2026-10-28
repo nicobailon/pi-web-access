@@ -21,6 +21,8 @@ export interface SearchResult {
 	title: string;
 	url: string;
 	snippet: string;
+	/** "generated" when the snippet is text from the provider's own answer around a citation, not text from the page. */
+	snippetSource?: "generated";
 }
 
 export interface SearchResponse {

@@ -114,6 +114,9 @@ test("xAI posts the verified minimal Responses body and reads citation source sh
 	// sources and response-level citations fill in what they missed.
 	assert.deepEqual(result.results.map((r) => r.url), ["https://x.ai/news/grok-imagine", "https://x.ai/news", "https://x.ai/citation-only"]);
 	assert.equal(result.results[0].title, "Grok Imagine");
+	// The annotation snippet is cut from xAI's own answer text; raw and citation-list sources have none.
+	assert.equal(result.results[0].snippetSource, "generated");
+	assert.deepEqual(result.results.slice(1).map((r) => r.snippetSource), [undefined, undefined]);
 });
 
 test("xAI opts into web and X tools and keeps annotation sources first", async () => {
