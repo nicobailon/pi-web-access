@@ -92,6 +92,20 @@ test("a valid call reaches the core with its arguments and returns the core's co
 	assert.deepEqual(calls[1].params, { responseId: "search-1", findText: ["x"] });
 });
 
+test("tools/list stays within the per-request size budget", async (t) => {
+	const { core } = fakeCore();
+	const client = await connect(t, core);
+	const { tools } = await client.listTools();
+	let total = 0;
+	for (const tool of tools) {
+		const chars = JSON.stringify(tool).length;
+		total += chars;
+		t.diagnostic(`${tool.name}: ${chars} chars (~${Math.round(chars / 4)} tokens)`);
+	}
+	t.diagnostic(`total: ${total} chars (~${Math.round(total / 4)} tokens)`);
+	assert.ok(total <= 4400, `tools/list total ${total} chars, budget 4400`);
+});
+
 test("invalid arguments return a tool error naming the problem without calling the core", async (t) => {
 	const { core, calls } = fakeCore();
 	const client = await connect(t, core);
@@ -101,6 +115,8 @@ test("invalid arguments return a tool error naming the problem without calling t
 		["web_search", { query: "q", provider: "bogus" }, "/provider"],
 		["web_search", { query: "q", provider: "kimi" }, "/provider"],
 		["web_search", { query: "q", provider: ["brave", "auto"] }, "/provider"],
+		["source_check", { claim: "c", provider: ["exa", "bogus"] }, "\"bogus\""],
+		["source_check", { claim: "c", provider: "bogus" }, "one or more of: "],
 		["fetch_content", { url: "https://example.com", mode: "answer" }, "/mode"],
 		["fetch_content", { url: "https://example.com", prompt: "summarize" }, "prompt"],
 		["get_search_content", { offset: 1 }, "responseId"],
