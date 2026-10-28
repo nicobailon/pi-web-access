@@ -12,6 +12,8 @@ import { fetchWithCredentialRedirects, getWebSearchConfigPath } from "./utils.ts
 const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 30_000;
 const MAX_REQUEST_RESULTS = 10;
+// The API rejects longer queries. String length counts UTF-16 units, which is never less than
+// the Unicode character count, so a query that passes this check is not too long either way.
 const MAX_QUERY_CHARS = 1024;
 const MAX_SNIPPET_CHARS = 500;
 const DEFAULT_GATEWAY_ID = "default";
@@ -100,10 +102,14 @@ function passesDomainFilters(url: URL, filters: DomainFilters): boolean {
 
 // The API has no domain parameters. Ceramic documents `site:` with `OR`, so allowed domains go
 // into its query; for every provider the returned results are filtered locally as well.
+// A query over the limit fails here instead of being cut, since cutting can break a `site:` clause.
 function buildQuery(query: string, provider: CloudflareSearchProvider, filters: DomainFilters): string {
-	if (provider !== "ceramic" || filters.include.length === 0) return query;
-	const sites = filters.include.map(domain => `site:${domain}`);
-	return `${query} ${sites.length === 1 ? sites[0] : `(${sites.join(" OR ")})`}`;
+	const sites = provider === "ceramic" ? filters.include.map(domain => `site:${domain}`) : [];
+	const built = sites.length === 0 ? query : `${query} ${sites.length === 1 ? sites[0] : `(${sites.join(" OR ")})`}`;
+	if (built.length > MAX_QUERY_CHARS) {
+		throw new Error(`Cloudflare Web Search invalid request: the query is ${built.length} characters with domain filters; Cloudflare Web Search accepts at most ${MAX_QUERY_CHARS}`);
+	}
+	return built;
 }
 
 function text(value: unknown): string {
@@ -171,7 +177,7 @@ export async function searchWithCloudflare(query: string, options: SearchOptions
 	const filters = parseDomainFilter(options.domainFilter);
 	const hasDomainFilters = filters.include.length > 0 || filters.exclude.length > 0;
 	const body = {
-		query: buildQuery(query, provider, filters).slice(0, MAX_QUERY_CHARS),
+		query: buildQuery(query, provider, filters),
 		provider,
 		// Results are filtered locally when domains are set, so ask for the most the API allows.
 		limit: hasDomainFilters ? MAX_REQUEST_RESULTS : Math.min(MAX_REQUEST_RESULTS, numResults),

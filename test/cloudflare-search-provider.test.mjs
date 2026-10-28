@@ -106,6 +106,20 @@ test("Cloudflare sends allowed domains as site: clauses for Ceramic only and fil
 	}
 });
 
+test("Cloudflare rejects a query over 1024 characters with its site: clause before sending, and sends one at the limit unchanged", async () => {
+	const atLimit = "a".repeat(1024 - " site:example.com".length);
+	const output = await child(CREDENTIALS, `
+		const sent = [];
+		globalThis.fetch = async (_url, init) => { sent.push(JSON.parse(init.body).query); return ${ok([])}; };
+		const { searchWithCloudflare } = await import(${moduleUrl("cloudflare-search")});
+		await searchWithCloudflare(${JSON.stringify(atLimit)}, { domainFilter: ["example.com"] });
+		let error; try { await searchWithCloudflare(${JSON.stringify(atLimit + "b")}, { domainFilter: ["example.com"] }); } catch (e) { error = e.message; }
+		console.log(JSON.stringify({ sent, error }));
+	`);
+	assert.deepEqual(output.sent, [`${atLimit} site:example.com`]);
+	assert.equal(output.error, "Cloudflare Web Search invalid request: the query is 1025 characters with domain filters; Cloudflare Web Search accepts at most 1024");
+});
+
 test("Cloudflare reports each documented error shape with its status and redacts the key", async () => {
 	// Error bodies as the live API returned them (cloudflare/agents web search tests, 2026-10-05).
 	const responses = [
