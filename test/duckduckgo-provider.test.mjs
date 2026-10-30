@@ -59,7 +59,7 @@ test("DuckDuckGo enforces local domain filters and accepts filtered empty result
 	const child = runChild(`
 		globalThis.fetch = async () => new Response(${JSON.stringify(RESULT_HTML)}, { status: 200 });
 		const { searchWithDuckDuckGo, resetDuckDuckGoRateLimit } = await import(${JSON.stringify(duckDuckGoModuleUrl)});
-		resetDuckDuckGoRateLimit({ minIntervalMs: 0, cooldownMs: 0 });
+		resetDuckDuckGoRateLimit({ minIntervalMs: 0, cooldownMs: 0, maxStrikes: 0 });
 		const allowed = await searchWithDuckDuckGo("example", { domainFilter: ["example.net"], numResults: 3 });
 		const filtered = await searchWithDuckDuckGo("example", { domainFilter: ["example.com", "-docs.example.com"] });
 		console.log(JSON.stringify({ allowed, filtered }));
@@ -83,7 +83,7 @@ test("DuckDuckGo invalid HTML fails directly and falls through configured invali
 			throw new Error("Unexpected fetch " + url);
 		};
 		const { searchWithDuckDuckGo, resetDuckDuckGoRateLimit } = await import(${JSON.stringify(duckDuckGoModuleUrl)});
-		resetDuckDuckGoRateLimit({ minIntervalMs: 0, cooldownMs: 0 });
+		resetDuckDuckGoRateLimit({ minIntervalMs: 0, cooldownMs: 0, maxStrikes: 0 });
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
 		let directError = "";
 		try { await searchWithDuckDuckGo("blocked"); } catch (error) { directError = String(error); }
@@ -135,7 +135,7 @@ test("DuckDuckGo reports bot checks distinctly and returns no-results pages as e
 			return new Response(body, { status });
 		};
 		const { searchWithDuckDuckGo, resetDuckDuckGoRateLimit } = await import(${JSON.stringify(duckDuckGoModuleUrl)});
-		resetDuckDuckGoRateLimit({ minIntervalMs: 0, cooldownMs: 0 });
+		resetDuckDuckGoRateLimit({ minIntervalMs: 0, cooldownMs: 0, maxStrikes: 0 });
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
 		const errors = {};
 		for (const q of ["status202", "anomaly200", "challenge200"]) {
@@ -176,7 +176,7 @@ test("DuckDuckGo skips the network after a bot check so routing falls through at
 	`, { PI_CODING_AGENT_DIR: home, TAVILY_API_KEY: "tavily-test-key" });
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.match(output.second, /not retrying for 5m .*rate limited/);
+	assert.match(output.second, /not retrying for 30m .*rate limited/);
 	assert.equal(output.routed, "tavily");
 	assert.deepEqual(output.calls, ["html.duckduckgo.com", "api.tavily.com"]);
 });

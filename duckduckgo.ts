@@ -1,13 +1,21 @@
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
-import { DuckDuckGoBotCheckError, DuckDuckGoRateLimit, type DuckDuckGoRateLimitOptions } from "./duckduckgo-rate-limit.ts";
+import { join } from "node:path";
+import { DuckDuckGoBotCheckError, DuckDuckGoRateLimit, FileDuckDuckGoGateStore, type DuckDuckGoRateLimitOptions } from "./duckduckgo-rate-limit.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
+import { getWebSearchConfigDir } from "./utils.ts";
 
 const SEARCH_URL = "https://html.duckduckgo.com/html/";
-let rateLimit = new DuckDuckGoRateLimit();
+/** Request slots and bot-check cooldown, shared by every Pi process using this config directory. */
+const STATE_FILE = "duckduckgo-rate-limit.json";
+let rateLimit: DuckDuckGoRateLimit | null = null;
 
-/** Replace the shared request spacing and bot-check cooldown state (for tests). */
+function getRateLimit(): DuckDuckGoRateLimit {
+	return rateLimit ??= new DuckDuckGoRateLimit({ store: new FileDuckDuckGoGateStore(join(getWebSearchConfigDir(), STATE_FILE)) });
+}
+
+/** Replace the request spacing and bot-check cooldown state (for tests); without a store it is per process. */
 export function resetDuckDuckGoRateLimit(options?: DuckDuckGoRateLimitOptions): void {
 	rateLimit = new DuckDuckGoRateLimit(options);
 }
@@ -60,7 +68,7 @@ export async function searchWithDuckDuckGo(query: string, options: SearchOptions
 	const activityId = activityMonitor.logStart({ type: "api", query });
 
 	try {
-		return await rateLimit.run(async signal => {
+		return await getRateLimit().run(async signal => {
 			const response = await fetch(url, {
 				method: "GET",
 				headers: {
