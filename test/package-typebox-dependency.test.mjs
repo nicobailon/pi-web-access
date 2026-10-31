@@ -16,7 +16,8 @@ test("packed installs keep typebox as a peer dependency (hosted by pi at runtime
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "pipe"],
 		});
-		const [{ filename, files }] = JSON.parse(packOutput);
+		const packResult = JSON.parse(packOutput);
+		const [{ filename, files }] = Array.isArray(packResult) ? packResult : Object.values(packResult);
 		const packedFiles = files.map((file) => file.path);
 		assert.ok(packedFiles.includes("index.ts"));
 		assert.ok(packedFiles.includes("CHANGELOG.md"));
@@ -33,6 +34,7 @@ test("packed installs keep typebox as a peer dependency (hosted by pi at runtime
 		const installedManifest = packageRequire("pi-web-access/package.json");
 		assert.equal(installedManifest.peerDependencies?.typebox, "*");
 		assert.equal(installedManifest.dependencies?.typebox, undefined);
+		assert.equal(installedManifest.devDependencies?.typebox, undefined);
 		assert.throws(() => packageRequire.resolve("typebox"), { code: "MODULE_NOT_FOUND" });
 	} finally {
 		await rm(tempDir, { recursive: true, force: true });
