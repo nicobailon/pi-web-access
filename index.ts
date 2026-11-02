@@ -76,6 +76,7 @@ import { isLinkupAvailable } from "./linkup.ts";
 import { isNineRouterAvailable } from "./ninerouter.ts";
 import { isCloudflareSearchAvailable } from "./cloudflare-search.ts";
 import { isSearchApiAvailable } from "./searchapi.ts";
+import { isOutcrawlAvailable } from "./outcrawl.ts";
 import { isDeepSeekAvailable } from "./deepseek.ts";
 import { isBaizhiAvailable } from "./baizhi.ts";
 import { isZaiAvailable } from "./zai.ts";
@@ -378,6 +379,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		ninerouter: allowedProviders.has("ninerouter") && isNineRouterAvailable(),
 		cloudflare: allowedProviders.has("cloudflare") && isCloudflareSearchAvailable(),
 		searchapi: allowedProviders.has("searchapi") && isSearchApiAvailable(),
+		outcrawl: allowedProviders.has("outcrawl") && isOutcrawlAvailable(),
 		deepseek: allowedProviders.has("deepseek") && isDeepSeekAvailable(),
 	};
 	return {

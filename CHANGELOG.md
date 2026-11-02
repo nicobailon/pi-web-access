@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Search with [Outcrawl](https://outcrawl.ai) using `provider: "outcrawl"`, configured with `outcrawlApiKey` or `OUTCRAWL_API_KEY` (and an optional `outcrawlBaseUrl` gateway). It runs only when you name it or list it in `searchRouting`: `auto` and `provider: "all"` never choose it. Domain filters become `site:` clauses and are reapplied locally; Outcrawl has no date filter, so recency is not applied. Each search returns at most 20 results.
+
 ## [0.46.0] - 2026-10-28
 
 ### Highlights
