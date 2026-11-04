@@ -233,7 +233,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | `includeContent` | Fetch full page content from sources in background |
 | `model` | Model ID for this call only, used instead of `openaiSearchModel`, `xaiSearchModel`, `mistralSearchModel`, or Gemini's `searchModel`. Requires `provider` set to exactly one of `openai`, `xai`, `mistral`, or `gemini`. A failure is reported as an error rather than retried with another model or provider, and Gemini uses only its API, never browser cookies. Listed only when `webSearch.allowedProviders` allows one of those providers; not available with `workflow: "summary-review"` or over MCP |
 | `workflow` | `none` (skip curator; fresh-install default), `summary-review` (open curator and auto-generate a summary draft), or `auto-summary` (generate a summary without opening the curator) |
-| `proxy` | http(s) or socks proxy URL for every request in this call; `""` forces a direct connection. `HTTP(S)_PROXY` env vars are ignored. See [Proxy](#proxy-proxy) |
+| `proxy` | http(s) or socks proxy URL for every request in this call; `""` forces a direct connection. Rejected when `lockProxy` is set, unless it matches the configured proxy. `HTTP(S)_PROXY` env vars are ignored. See [Proxy](#proxy-proxy) |
 
 Batch searches run up to three queries concurrently. Provider routing and fallback within each query remain sequential. Brave requests share an in-process queue and honor the rate-limit buckets returned in `X-RateLimit-*`; exhausted short windows delay the next request with a small safety margin, while long quota resets fail fast and keep the advertised cooldown active for later queued calls. HTTP 429 responses are retried once after the advertised `Retry-After` or rate-limit reset. Brave's 30-second search deadline covers queueing, cooldown waits, and both request attempts. The queue coordinates one Pi process; separate Pi processes still rely on Brave's 429 response.
 
@@ -268,7 +268,7 @@ fetch_content({ url: "https://example.com/diagram.png" })
 | `model` | Gemini model for video and YouTube analysis (default: config, else `gemini-3.6-flash`) |
 | `forceClone` | Clone GitHub repos that exceed the 350MB size threshold |
 | `auth` | `authFetch` profile name for local browser-cookie fetching, or `true` when exactly one profile exists. See [Blocked pages](#blocked-pages) |
-| `proxy` | Proxy URL for this fetch; `""` forces a direct connection. See [Proxy](#proxy-proxy) |
+| `proxy` | Proxy URL for this fetch; `""` forces a direct connection. Rejected when `lockProxy` is set, unless it matches the configured proxy. See [Proxy](#proxy-proxy) |
 | `redirects` | `"same-origin"` refuses redirects that change the scheme, hostname, or port. See `fetchContent.redirects` |
 
 For a standing answer-mode model, set both `fetch.answerProvider` and `fetch.answerModel` in `web-search.json`; a per-call `answerModel` takes precedence. Configured answer defaults are opt-in and can send fetched page text to a different provider/model, which may change privacy and cost behavior.
@@ -318,7 +318,7 @@ source_check({
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
 | `provider` | Same as `web_search`: `"auto"`, `"all"`, one name, or a list such as `"brave,exa"` |
-| `proxy` | http(s) or socks proxy URL for every request in this call; `""` forces a direct connection. See [Proxy](#proxy-proxy) |
+| `proxy` | http(s) or socks proxy URL for every request in this call; `""` forces a direct connection. Rejected when `lockProxy` is set, unless it matches the configured proxy. See [Proxy](#proxy-proxy) |
 
 The artifact preserves the `supported`, `contradicted`, `unclear`, or `missing-evidence` claim status schema, source quality hints, SHA-256 content hashes, and passage IDs with exact source offsets. It does not judge the claim: retrieved passages produce `unclear` for manual review, while no passages produce `missing-evidence`. Search and fetch errors remain in the artifact instead of being silently discarded. Artifacts are stored with the session and retrieved through `get_search_content` using the returned `responseId`; paged artifact responses are JSON slices, so request the next `offset` when needed.
 
@@ -453,10 +453,13 @@ An empty string (`""`) forces a direct connection even when a config-level proxy
 
 The config-level `proxy` applies only to requests made by this extension's tools. Other traffic in the host process — such as the coding agent's own model API calls — is never routed through it, so a configured proxy that is temporarily down cannot break unrelated requests.
 
+A tool call can override the config-level `proxy` with `""` or another proxy. Set `"lockProxy": true` to make the configured proxy the only route, for example when the proxy injects real API keys and the extension holds placeholders. Then a call that omits `proxy` or passes the same URL uses the configured proxy, and a call that passes `""` or a different proxy fails before any request is sent, with a message telling the caller to omit `proxy`. `lockProxy` without a configured `proxy` fails every call rather than connecting directly. It covers this extension's tools only, not other network access in the process.
+
 ```jsonc
 // ~/.pi/agent/web-search.json — global proxy for all tools
 {
-  "proxy": "http://mcr:4444"
+  "proxy": "http://mcr:4444",
+  "lockProxy": true // optional: reject per-call proxy overrides
 }
 ```
 

@@ -34,7 +34,7 @@ function providerProblem(value: unknown): string | undefined {
 const recencySchema = stringEnum(["day", "week", "month", "year"]);
 const domainFilterSchema = Type.Array(Type.String(), { description: "Prefix - to exclude" });
 const numResultsSchema = Type.Integer({ minimum: 1, maximum: 20, description: "Default 5" });
-const proxySchema = Type.String({ description: "http(s) or socks proxy URL; \"\" forces direct" });
+const proxySchema = Type.String({ description: "Proxy URL; omit by default; \"\" forces direct" });
 // Page fetches write a page cache and clone GitHub URLs into a temp directory,
 // including the fetches behind includeContent and fetchContent.
 const fetchingAnnotations = { readOnlyHint: false, destructiveHint: false, openWorldHint: true };
