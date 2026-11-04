@@ -98,7 +98,7 @@ async function fetchReadmeViaApi(owner: string, repo: string, ref: string): Prom
 				}
 				try {
 					const decoded = Buffer.from(stdout.trim(), "base64").toString("utf-8");
-					resolve(decoded.length > 8192 ? decoded.slice(0, 8192) + "\n\n[README truncated at 8K chars]" : decoded);
+					resolve(decoded.length > MAX_INLINE_FILE_CHARS ? `${decoded.slice(0, MAX_INLINE_FILE_CHARS)}\n\n[README truncated at 100K chars]` : decoded);
 				} catch {
 					resolve(null);
 				}

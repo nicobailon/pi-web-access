@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - On Windows, GitHub repositories cloned by `fetch_content` now go to your temp folder (`%TEMP%\pi-github-repos`) instead of `C:\tmp\pi-github-repos` next to Windows and Program Files. On macOS they move to your per-user temp folder; Linux is unchanged. A `githubClone.clonePath` you set still wins. Thanks to [@bLueriVerLHR](https://github.com/bLueriVerLHR) for [PR #655](https://github.com/nicobailon/pi-web-access/pull/655).
+- `fetch_content` on a GitHub repository now returns READMEs up to 100K characters instead of cutting them at 8K, the same limit used when you fetch a single file. Long results are still shortened to `maxInlineContentChars` in the reply, with the rest readable through `get_search_content`. Thanks to [@huiyi9420](https://github.com/huiyi9420) for [#658](https://github.com/nicobailon/pi-web-access/issues/658).
 
 ## [0.46.0] - 2026-10-28
 

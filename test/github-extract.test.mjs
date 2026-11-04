@@ -167,6 +167,53 @@ test("malformed GitHub identifiers cannot delete outside the clone cache", async
 	assert.equal(await readFile(join(victim, "marker.txt"), "utf8"), "preserve");
 });
 
+test("repository fetches return a README longer than 8K chars in full", { skip: process.platform === "win32" }, async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-web-access-github-readme-"));
+	const agentDir = join(root, "agent-dir");
+	const binDir = join(root, "bin");
+	await mkdir(agentDir, { recursive: true });
+	await mkdir(binDir, { recursive: true });
+	await writeFile(join(agentDir, "web-search.json"), JSON.stringify({ githubClone: { clonePath: join(root, "repos") } }), "utf8");
+	await writeFakeExecutable(binDir, "gh", `
+		const { mkdirSync, writeFileSync } = require("node:fs");
+		const { join } = require("node:path");
+		const args = process.argv.slice(2);
+		if (args[0] === "--version") process.exit(0);
+		if (args[0] === "repo" && args[1] === "clone") {
+			mkdirSync(args[3], { recursive: true });
+			writeFileSync(join(args[3], "README.md"), process.env.README_FIXTURE);
+			process.exit(0);
+		}
+		if (args[0] === "api" && args[1].includes("/readme?")) {
+			process.stdout.write(Buffer.from(process.env.README_FIXTURE).toString("base64"));
+			process.exit(0);
+		}
+		process.exit(1);
+	`);
+	const readme = `# Title\n${"x".repeat(21_751)}\nlast line`;
+
+	// A full commit SHA in the URL skips cloning and reads the README through the GitHub API.
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			const { extractGitHub } = await import(${JSON.stringify(extractModuleUrl)});
+			const cloned = await extractGitHub("https://github.com/owner/repo");
+			const viaApi = await extractGitHub("https://github.com/owner/repo/tree/${"a".repeat(40)}");
+			console.log(JSON.stringify([cloned.content, viaApi.content]));
+		`,
+		encoding: "utf8",
+		env: { ...process.env, PATH: `${binDir}${delimiter}${process.env.PATH || ""}`, PI_CODING_AGENT_DIR: agentDir, README_FIXTURE: readme },
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const [cloned, viaApi] = JSON.parse(child.stdout);
+	assert.match(cloned, /^Repository cloned to: /);
+	assert.match(viaApi, /API-only view/);
+	for (const content of [cloned, viaApi]) {
+		assert.ok(content.includes(readme));
+		assert.doesNotMatch(content, /README truncated/);
+	}
+});
+
 test("clearCloneCache removes only its runtime directory", { skip: process.platform === "win32" }, async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-web-access-github-cleanup-"));
 	const agentDir = join(root, "agent-dir");
