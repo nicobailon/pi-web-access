@@ -1451,7 +1451,7 @@ export default function (pi: ExtensionAPI) {
 					description: "Default none; summary-review opens the curator; auto-summary summarizes",
 				}),
 			),
-			proxy: Type.Optional(Type.String({ description: "http(s) or socks proxy URL (env proxy vars ignored); \"\" forces direct" })),
+			proxy: Type.Optional(Type.String({ description: "Proxy URL; omit by default (env proxy vars ignored); \"\" forces direct" })),
 		}),
 		outputSchema: webSearchOutputSchema,
 		exposure: toolExposure,
@@ -1996,7 +1996,7 @@ export default function (pi: ExtensionAPI) {
 			recencyFilter: Type.Optional(StringEnum(["day", "week", "month", "year"])),
 			domainFilter: Type.Optional(Type.Array(Type.String(), { description: "Prefix - to exclude" })),
 			provider: Type.Optional(Type.String({ description: providerDescription })),
-			proxy: Type.Optional(Type.String({ description: "http(s) or socks proxy URL; \"\" forces direct" })),
+			proxy: Type.Optional(Type.String({ description: "Proxy URL; omit by default; \"\" forces direct" })),
 		}),
 		exposure: toolExposure,
 		async execute(_callId, params, signal, _onUpdate, ctx) {
@@ -2044,7 +2044,7 @@ export default function (pi: ExtensionAPI) {
 			auth: Type.Optional(Type.Union([Type.String(), Type.Boolean()], {
 				description: "authFetch profile name, or true for the only one",
 			})),
-			proxy: Type.Optional(Type.String({ description: "http(s) or socks proxy URL; \"\" forces direct" })),
+			proxy: Type.Optional(Type.String({ description: "Proxy URL; omit by default; \"\" forces direct" })),
 			redirects: Type.Optional(StringEnum(["same-origin"], {
 				description: "Refuse cross-origin redirects",
 			})),

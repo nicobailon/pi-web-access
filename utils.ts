@@ -302,8 +302,8 @@ function redactProxyUrl(value: string): string {
 	return parsed.toString();
 }
 
-export function loadConfiguredProxy(): string | null {
-	let configured: unknown;
+function loadProxyConfig(): { proxy: string | null; locked: boolean } {
+	let config: { proxy?: unknown; lockProxy?: unknown } = {};
 	const path = getWebSearchConfigPath();
 	if (existsSync(path)) {
 		let raw: unknown;
@@ -313,20 +313,30 @@ export function loadConfiguredProxy(): string | null {
 			const message = err instanceof Error ? err.message : String(err);
 			throw new Error(`Failed to load proxy config from ${path}: ${message}`);
 		}
-		if (raw && typeof raw === "object" && !Array.isArray(raw)) configured = (raw as { proxy?: unknown }).proxy;
+		if (raw && typeof raw === "object" && !Array.isArray(raw)) config = raw as typeof config;
 	}
-	if (configured === undefined) return null;
-	return normalizeProxyUrl(configured, `proxy in ${getWebSearchConfigPath()}`);
+	if (config.lockProxy !== undefined && typeof config.lockProxy !== "boolean") throw new Error(`lockProxy in ${path} must be true or false`);
+	const locked = config.lockProxy === true;
+	const proxy = config.proxy === undefined ? null : normalizeProxyUrl(config.proxy, `proxy in ${path}`);
+	if (locked && proxy === null) throw new Error(`lockProxy is set in ${path} but no proxy is configured there; set proxy or remove lockProxy`);
+	return { proxy, locked };
+}
+
+export function loadConfiguredProxy(): string | null {
+	return loadProxyConfig().proxy;
 }
 
 export function runWithProxy<T>(proxy: string | undefined, fn: () => T): T {
+	const { proxy: configured, locked } = loadProxyConfig();
 	if (proxy === undefined) {
-		const configured = loadConfiguredProxy();
 		if (configured === null) return fn();
 		installGlobalProxyFetch();
 		return proxyStorage.run(configured, fn);
 	}
 	const normalized = normalizeProxyUrl(proxy, "proxy");
+	if (locked && normalized !== configured) {
+		throw new Error(`proxy argument rejected: lockProxy is set in ${getWebSearchConfigPath()}; omit proxy to use the configured proxy`);
+	}
 	if (normalized !== null) installGlobalProxyFetch();
 	return proxyStorage.run(normalized, fn);
 }

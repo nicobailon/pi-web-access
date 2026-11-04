@@ -353,6 +353,32 @@ test("configured proxy DNS trust never extends to a different per-call proxy", a
 	assert.match(untrusted[3], /^Failed to resolve internal\.example\.test: getaddrinfo ENOTFOUND\. If your configured proxy resolves hostnames, set ssrf\.trustEnvProxy to true/);
 });
 
+test("lockProxy rejects per-call proxy overrides before any request runs", async (t) => {
+	const dir = await mkdtemp(join(tmpdir(), "pi-proxy-lock-test-"));
+	t.after(async () => {
+		await rm(dir, { recursive: true, force: true });
+	});
+	const probe = `
+		let calls = 0;
+		const outcome = (proxy) => { try { return runWithProxy(proxy, () => { calls++; return getActiveProxy(); }); } catch (error) { return error.message; } };
+		console.log(JSON.stringify({ results: [outcome(undefined), outcome("http://credential-proxy.example:8080"), outcome(""), outcome("http://other-proxy.example:8080")], calls }));
+	`;
+
+	await writeFile(join(dir, "web-search.json"), JSON.stringify({ proxy: "http://credential-proxy.example:8080", lockProxy: true }));
+	const locked = runConfigProbe(dir, probe);
+	assert.deepEqual(locked.results.slice(0, 2), ["http://credential-proxy.example:8080/", "http://credential-proxy.example:8080/"]);
+	for (const message of locked.results.slice(2)) assert.match(message, /^proxy argument rejected: lockProxy is set in .*; omit proxy to use the configured proxy$/);
+	assert.equal(locked.calls, 2);
+
+	await writeFile(join(dir, "web-search.json"), JSON.stringify({ lockProxy: true }));
+	const unconfigured = runConfigProbe(dir, probe);
+	for (const message of unconfigured.results) assert.match(message, /lockProxy is set in .* but no proxy is configured there/);
+	assert.equal(unconfigured.calls, 0);
+
+	await writeFile(join(dir, "web-search.json"), JSON.stringify({ proxy: "http://credential-proxy.example:8080", lockProxy: "yes" }));
+	assert.match(runConfigProbe(dir, probe).results[0], /lockProxy in .* must be true or false/);
+});
+
 test("invalid configured proxy fails closed instead of direct fetching", async (t) => {
 	const dir = await mkdtemp(join(tmpdir(), "pi-proxy-invalid-config-test-"));
 	await writeFile(join(dir, "web-search.json"), JSON.stringify({ proxy: "ftp://proxy.example:21" }));
