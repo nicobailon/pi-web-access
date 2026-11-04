@@ -3,6 +3,7 @@ import { lstat as lstatAsync, open as openAsync, opendir as opendirAsync, readFi
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createHash } from "node:crypto";
 import { basename, dirname, extname, join, resolve as resolvePath, sep as pathSep } from "node:path";
+import { tmpdir } from "node:os";
 import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import { checkGhAvailable, checkRepoSize, fetchViaApi, showGhHint } from "./github-api.ts";
@@ -113,7 +114,7 @@ function loadGitHubConfig(): GitHubCloneConfig {
 		enabled: true,
 		maxRepoSizeMB: 350,
 		cloneTimeoutSeconds: 30,
-		clonePath: "/tmp/pi-github-repos",
+		clonePath: join(tmpdir(), "pi-github-repos"),
 	};
 
 	if (!existsSync(CONFIG_PATH)) {

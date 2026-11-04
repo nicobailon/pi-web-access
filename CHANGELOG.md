@@ -6,7 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
-- Search with [Outcrawl](https://outcrawl.ai) using `provider: "outcrawl"`, configured with `outcrawlApiKey` or `OUTCRAWL_API_KEY` (and an optional `outcrawlBaseUrl` gateway). It runs only when you name it or list it in `searchRouting`: `auto` and `provider: "all"` never choose it. Domain filters become `site:` clauses and are reapplied locally; Outcrawl has no date filter, so recency is not applied. Each search returns at most 20 results.
+- Search with [Outcrawl](https://outcrawl.ai) using `provider: "outcrawl"`, configured with `outcrawlApiKey` or `OUTCRAWL_API_KEY` (and an optional `outcrawlBaseUrl` gateway). It runs only when you name it or list it in `searchRouting`: `auto` and `provider: "all"` never choose it. Domain filters become `site:` clauses and are reapplied locally; Outcrawl has no date filter, so recency is not applied. Each search returns at most 20 results. Thanks to [@heydryft](https://github.com/heydryft) for [PR #656](https://github.com/nicobailon/pi-web-access/pull/656).
+
+### Fixed
+
+- On Windows, GitHub repositories cloned by `fetch_content` now go to your temp folder (`%TEMP%\pi-github-repos`) instead of `C:\tmp\pi-github-repos` next to Windows and Program Files. On macOS they move to your per-user temp folder; Linux is unchanged. A `githubClone.clonePath` you set still wins. Thanks to [@bLueriVerLHR](https://github.com/bLueriVerLHR) for [PR #655](https://github.com/nicobailon/pi-web-access/pull/655).
 
 ## [0.46.0] - 2026-10-28
 
