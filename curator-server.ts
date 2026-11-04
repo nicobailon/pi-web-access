@@ -318,6 +318,7 @@ export function startCuratorServer(
 		if (provider === "cloudflare") return availableProviders.cloudflare;
 		if (provider === "searchapi") return availableProviders.searchapi;
 		if (provider === "outcrawl") return availableProviders.outcrawl;
+		if (provider === "sofya") return availableProviders.sofya;
 		if (provider === "deepseek") return availableProviders.deepseek;
 		return false;
 	}
