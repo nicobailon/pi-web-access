@@ -21,6 +21,7 @@ const providers = [
 	["mistral-search", "mistralSearch", "searchWithMistral", "https://api.mistral.ai/v1/conversations", "Authorization"],
 	["ollama", "ollama", "searchWithOllama", "https://ollama.com/api/web_search", "Authorization",
 		["extractWithOllama", "https://ollama.com/api/web_fetch"]],
+	["outcrawl", "outcrawl", "searchWithOutcrawl", "https://api.outcrawl.ai/v1/search", "Authorization"],
 	["perplexity", "perplexity", "searchWithPerplexity", "https://api.perplexity.ai/search", "Authorization",
 		["askPerplexity", "https://api.perplexity.ai/chat/completions"]],
 	["querit", "querit", "searchWithQuerit", "https://api.querit.ai/v1/search", "Authorization",

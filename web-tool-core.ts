@@ -77,6 +77,8 @@ export interface WebSearchConfig {
 	cloudflareSearchProvider?: unknown;
 	searchapiApiKey?: unknown;
 	searchapiBaseUrl?: unknown;
+	outcrawlApiKey?: unknown;
+	outcrawlBaseUrl?: unknown;
 	tabstackBaseUrl?: unknown;
 	tabstackApiKey?: unknown;
 	tabstackResearchMode?: unknown;

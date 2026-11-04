@@ -317,6 +317,7 @@ export function startCuratorServer(
 		if (provider === "ninerouter") return availableProviders.ninerouter;
 		if (provider === "cloudflare") return availableProviders.cloudflare;
 		if (provider === "searchapi") return availableProviders.searchapi;
+		if (provider === "outcrawl") return availableProviders.outcrawl;
 		if (provider === "deepseek") return availableProviders.deepseek;
 		return false;
 	}
