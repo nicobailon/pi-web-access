@@ -167,6 +167,32 @@ test("malformed GitHub identifiers cannot delete outside the clone cache", async
 	assert.equal(await readFile(join(victim, "marker.txt"), "utf8"), "preserve");
 });
 
+test("a repository fetch returns a README longer than 8K chars in full", { skip: process.platform === "win32" }, async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-web-access-github-readme-"));
+	const agentDir = join(root, "agent-dir");
+	const binDir = join(root, "bin");
+	await mkdir(agentDir, { recursive: true });
+	await mkdir(binDir, { recursive: true });
+	await writeFile(join(agentDir, "web-search.json"), JSON.stringify({ githubClone: { clonePath: join(root, "repos") } }), "utf8");
+	await writeControlledGh(binDir);
+	const readme = `# Title\n${"x".repeat(21_751)}\nlast line`;
+
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			const { extractGitHub } = await import(${JSON.stringify(extractModuleUrl)});
+			const result = await extractGitHub("https://github.com/owner/repo");
+			console.log(JSON.stringify(result.content));
+		`,
+		encoding: "utf8",
+		env: { ...process.env, PATH: `${binDir}${delimiter}${process.env.PATH || ""}`, PI_CODING_AGENT_DIR: agentDir, GH_CLONE_CONTENT: readme },
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const content = JSON.parse(child.stdout);
+	assert.ok(content.includes(readme));
+	assert.doesNotMatch(content, /README truncated/);
+});
+
 test("clearCloneCache removes only its runtime directory", { skip: process.platform === "win32" }, async () => {
 	const root = await mkdtemp(join(tmpdir(), "pi-web-access-github-cleanup-"));
 	const agentDir = join(root, "agent-dir");
