@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- On Windows, GitHub repositories cloned by `fetch_content` now go to your temp folder (`%TEMP%\pi-github-repos`) instead of `C:\tmp\pi-github-repos` next to Windows and Program Files. On macOS they move to your per-user temp folder; Linux is unchanged. A `githubClone.clonePath` you set still wins. Thanks to [@bLueriVerLHR](https://github.com/bLueriVerLHR) for [PR #655](https://github.com/nicobailon/pi-web-access/pull/655).
+
 ## [0.46.0] - 2026-10-28
 
 ### Highlights
