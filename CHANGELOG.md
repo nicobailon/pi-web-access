@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.47.0] - 2026-11-04
+
+### Highlights
+
+- Two new search options, each used only when you pick it: Sofya, which can filter by site and date, and Outcrawl.
+- If your proxy adds your real API keys, you can now lock it in so the model can't skip it and end up with confusing "bad key" errors.
+- Fetching a GitHub repository now gives you READMEs up to 100K characters instead of cutting them off at 8K.
+- On Windows, cloned GitHub repositories go to your temp folder instead of C:\tmp.
+
 ### Added
 
 - Search with [Sofya](https://sofya.co) using `provider: "sofya"`, configured with `sofyaApiKey` or `SOFYA_API_KEY` (and an optional `sofyaBaseUrl` gateway). It runs only when you name it or list it in `searchRouting`: `auto` and `provider: "all"` never choose it. Domain filters map to Sofya's `include_domains`/`exclude_domains` and are reapplied locally; recency maps to its `freshness` filter. Each search returns at most 20 results. Thanks to [@yusufgurdogan](https://github.com/yusufgurdogan) for [PR #659](https://github.com/nicobailon/pi-web-access/pull/659).
