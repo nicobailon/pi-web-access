@@ -59,6 +59,7 @@ function buildProviderButtons(
 		{ value: "searchapi", label: "SearchApi", available: available.searchapi },
 		{ value: "outcrawl", label: "Outcrawl", available: available.outcrawl },
 		{ value: "sofya", label: "Sofya", available: available.sofya },
+		{ value: "cloro", label: "cloro", available: available.cloro },
 		{ value: "tabstack", label: "Tabstack", available: available.tabstack },
 		{ value: "deepseek", label: "DeepSeek", available: available.deepseek },
 	];
@@ -1492,7 +1493,7 @@ const SCRIPT = `(function() {
   var token = DATA.sessionToken;
   var timeoutSec = DATA.timeout;
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
-  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xcrawl", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "baizhi", "you", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "cloudflare", "searchapi", "outcrawl", "sofya", "tabstack"];
+  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xcrawl", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "baizhi", "you", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "cloudflare", "searchapi", "outcrawl", "sofya", "cloro", "tabstack"];
   var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
   var workflow = "summary-review";
   var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";
@@ -1741,6 +1742,7 @@ const SCRIPT = `(function() {
     if (provider === "searchapi") return "SearchApi";
     if (provider === "outcrawl") return "Outcrawl";
     if (provider === "sofya") return "Sofya";
+    if (provider === "cloro") return "cloro";
     if (provider === "deepseek") return "DeepSeek";
     return "Unknown";
   }

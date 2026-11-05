@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Search Google through [cloro](https://cloro.dev/?utm_source=pi-web-access&utm_medium=byok) with `provider: "cloro"`, configured with `cloroApiKey` or `CLORO_API_KEY` (and an optional `cloroBaseUrl` gateway). It is explicit-only: never chosen by `auto` or `provider: "all"`, but it can be the named provider or part of `searchRouting`. Domain filters become `site:` clauses and are reapplied locally; recency is not applied. Each search returns at most one Google results page. Set `cloroMode: "aimode"` to get a Google AI Mode answer and its sources instead.
+
 ## [0.47.0] - 2026-11-04
 
 ### Highlights

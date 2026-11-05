@@ -81,6 +81,9 @@ export interface WebSearchConfig {
 	outcrawlBaseUrl?: unknown;
 	sofyaApiKey?: unknown;
 	sofyaBaseUrl?: unknown;
+	cloroApiKey?: unknown;
+	cloroBaseUrl?: unknown;
+	cloroMode?: unknown;
 	tabstackBaseUrl?: unknown;
 	tabstackApiKey?: unknown;
 	tabstackResearchMode?: unknown;

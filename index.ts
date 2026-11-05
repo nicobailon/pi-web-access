@@ -78,6 +78,7 @@ import { isCloudflareSearchAvailable } from "./cloudflare-search.ts";
 import { isSearchApiAvailable } from "./searchapi.ts";
 import { isOutcrawlAvailable } from "./outcrawl.ts";
 import { isSofyaAvailable } from "./sofya.ts";
+import { isCloroAvailable } from "./cloro.ts";
 import { isDeepSeekAvailable } from "./deepseek.ts";
 import { isBaizhiAvailable } from "./baizhi.ts";
 import { isZaiAvailable } from "./zai.ts";
@@ -382,6 +383,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		searchapi: allowedProviders.has("searchapi") && isSearchApiAvailable(),
 		outcrawl: allowedProviders.has("outcrawl") && isOutcrawlAvailable(),
 		sofya: allowedProviders.has("sofya") && isSofyaAvailable(),
+		cloro: allowedProviders.has("cloro") && isCloroAvailable(),
 		deepseek: allowedProviders.has("deepseek") && isDeepSeekAvailable(),
 	};
 	return {
