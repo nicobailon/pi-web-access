@@ -200,6 +200,8 @@ test("DuckDuckGo bot-check pause recorded by one gate stops another using the sa
 	assert.equal(ran, false);
 	clock.now += 60_000;
 	assert.equal(await second.run(async () => "ok"), "ok");
+	await assert.rejects(first.run(async () => { throw new DuckDuckGoBotCheckError(202); }));
+	await assert.rejects(second.run(async () => {}), /not retrying for 1m/, "the success in the second gate reset the pause for the first");
 });
 
 test("DuckDuckGo searches still work when the state file is garbled or cannot be written", async () => {
@@ -207,6 +209,8 @@ test("DuckDuckGo searches still work when the state file is garbled or cannot be
 	const garbled = join(dir, "duckduckgo-cooldown.json");
 	writeFileSync(garbled, "not json");
 	assert.equal(await new DuckDuckGoRateLimit({ minIntervalMs: 0, statePath: garbled }).run(async () => "ok"), "ok");
+	writeFileSync(garbled, JSON.stringify({ blockedUntil: Date.now() + 24 * 3_600_000, nextCooldownMs: 60_000 }));
+	assert.equal(await new DuckDuckGoRateLimit({ minIntervalMs: 0, statePath: garbled }).run(async () => "ok"), "ok", "a pause beyond the cap is ignored");
 
 	const notADirectory = join(dir, "file");
 	writeFileSync(notADirectory, "");

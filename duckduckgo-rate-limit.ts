@@ -8,8 +8,8 @@ import { defaultSleep, formatWait } from "./brave-rate-limit.ts";
 // minutes. Changing the User-Agent, TLS fingerprint or endpoint does not help. Tests from
 // one home IP: 2s apart was blocked after 3 to 34 searches, 5s apart after 22 searches in
 // 10 minutes, 10s apart back to back after 47 searches; 10s apart with at most 10 per 10
-// minutes ran 60 searches in 54 minutes from three processes with no bot check. A retry
-// soon after a block brings it back, hence the long, doubling pause.
+// minutes ran 60 searches in 54 minutes from three processes sharing one budget with no
+// bot check. A retry soon after a block brings it back, hence the long, doubling pause.
 
 const DEFAULT_MIN_INTERVAL_MS = 10_000;
 const DEFAULT_WINDOW_MS = 10 * 60_000;
@@ -185,7 +185,11 @@ export class DuckDuckGoRateLimit {
 			const saved = JSON.parse(readFileSync(this.statePath, "utf8")) as Partial<Cooldown>;
 			const { blockedUntil, nextCooldownMs } = saved;
 			if (typeof blockedUntil !== "number" || typeof nextCooldownMs !== "number" || !(nextCooldownMs > 0)) return;
-			if (blockedUntil >= this.cooldown.blockedUntil) this.cooldown = { blockedUntil, nextCooldownMs };
+			// A pause longer than the cap comes from a clock that has since moved back, or a damaged file.
+			if (!(blockedUntil <= this.now() + this.maxCooldownMs)) return;
+			if (blockedUntil >= this.cooldown.blockedUntil) {
+				this.cooldown = { blockedUntil, nextCooldownMs: Math.min(nextCooldownMs, this.maxCooldownMs) };
+			}
 		} catch {}
 	}
 
