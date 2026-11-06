@@ -288,6 +288,7 @@ test("AnySearch applies the shared domainFilter locally without adding request p
 	assert.deepEqual(output.included.results.map(result => result.url), ["https://example.com/on", "https://news.example.com/sub"]);
 	assert.deepEqual(output.included.inlineContent.map(entry => entry.url), ["https://example.com/on", "https://news.example.com/sub"]);
 	assert.equal(output.included.answer, "on\nSource: On domain (https://example.com/on)\n\nsub\nSource: On subdomain (https://news.example.com/sub)");
+	// The unparseable URL is dropped in both directions, matching XCrawl.
 	assert.deepEqual(output.excluded.results.map(result => result.url), ["https://example.com/on", "https://news.example.com/sub", "https://blog.example.com/post"]);
 	assert.deepEqual(output.nothing.results, []);
 	assert.equal(output.nothing.answer, "");
@@ -313,22 +314,27 @@ test("AnySearch filters before slicing to numResults", async () => {
 	assert.deepEqual(output.results.map(result => result.url), ["https://example.com/c"]);
 });
 
-test("a domainFilter that removes every AnySearch result feeds the existing domain-miss fallback", async () => {
+test("a domainFilter that removes every AnySearch result feeds the existing fallback kinds", async () => {
 	const results = JSON.stringify([{ title: "Off domain", url: "https://other.org/page", snippet: "off" }]);
-	const script = (routing) => `
-		globalThis.fetch = async (url) => {
-			if (String(url) === "https://api.anysearch.com/v1/search") return new Response(JSON.stringify({ code: 0, data: { results: ${results}, metadata: {} } }), { status: 200 });
-			return new Response(JSON.stringify({ web: { results: [{ title: "Brave", url: "https://example.com/brave", description: "fallback" }] } }), { status: 200 });
-		};
-		const { search } = await import(${JSON.stringify(searchModuleUrl)});
-		const result = await search("domain miss", { provider: "auto", domainFilter: ["example.com"] });
-		console.log(JSON.stringify({ provider: result.provider, results: result.results.map(entry => entry.url) }));
-	`;
-	const optedIn = runChild(script(), { PI_CODING_AGENT_DIR: await createHome({ searchRouting: { providers: ["anysearch", "brave"], fallbackOn: ["domain-miss"] } }), BRAVE_API_KEY: "brave-key" });
-	assert.equal(optedIn.status, 0, optedIn.stderr);
-	assert.deepEqual(JSON.parse(optedIn.stdout.trim()), { provider: "brave", results: ["https://example.com/brave"] });
+	const run = async (routing, domainFilter) => {
+		const home = await createHome({ searchRouting: { providers: ["anysearch", "brave"], fallbackOn: routing } });
+		const child = runChild(`
+			globalThis.fetch = async (url) => {
+				if (String(url) === "https://api.anysearch.com/v1/search") return new Response(JSON.stringify({ code: 0, data: { results: ${results}, metadata: {} } }), { status: 200 });
+				return new Response(JSON.stringify({ web: { results: [{ title: "Brave", url: "https://example.com/brave", description: "fallback" }] } }), { status: 200 });
+			};
+			const { search } = await import(${JSON.stringify(searchModuleUrl)});
+			const result = await search("domain miss", { provider: "auto", domainFilter: ${JSON.stringify(domainFilter)} });
+			console.log(JSON.stringify({ provider: result.provider, results: result.results.map(entry => entry.url) }));
+		`, { PI_CODING_AGENT_DIR: home, BRAVE_API_KEY: "brave-key" });
+		assert.equal(child.status, 0, child.stderr);
+		return JSON.parse(child.stdout.trim());
+	};
 
-	const notOptedIn = runChild(script(), { PI_CODING_AGENT_DIR: await createHome({ searchRouting: { providers: ["anysearch", "brave"], fallbackOn: ["quota"] } }), BRAVE_API_KEY: "brave-key" });
-	assert.equal(notOptedIn.status, 0, notOptedIn.stderr);
-	assert.deepEqual(JSON.parse(notOptedIn.stdout.trim()), { provider: "anysearch", results: [] });
+	// An include domain that matches nothing is both empty and a domain miss.
+	assert.deepEqual(await run(["domain-miss"], ["example.com"]), { provider: "brave", results: ["https://example.com/brave"] });
+	assert.deepEqual(await run(["quota"], ["example.com"]), { provider: "anysearch", results: [] });
+	// An exclude-only filter has no include domain to miss, so it needs the empty kind.
+	assert.deepEqual(await run(["domain-miss"], ["-other.org"]), { provider: "anysearch", results: [] });
+	assert.deepEqual(await run(["empty"], ["-other.org"]), { provider: "brave", results: ["https://example.com/brave"] });
 });
