@@ -11,6 +11,7 @@ const providers = [
 	["brightdata", "brightdata", "searchWithBrightData", "https://api.brightdata.com/request", "Authorization"],
 	["brightdata-unlocker", "brightdata", "extractWithBrightDataUnlocker", "https://api.brightdata.com/request", "Authorization"],
 	["ceramic", "ceramic", "searchWithCeramic", "https://api.ceramic.ai/search", "Authorization"],
+	["cloro", "cloro", "searchWithCloro", "https://api.cloro.dev/v1/monitor/google", "Authorization"],
 	["deepseek", "deepseek", "searchWithDeepSeek", "https://api.deepseek.com/v1/tools/search", "Authorization",
 		["extractWithDeepSeek", "https://api.deepseek.com/v1/tools/fetch"]],
 	["jina-search", "jinaSearch", "searchWithJina", "https://s.jina.ai/gateway%20query", "Authorization"],

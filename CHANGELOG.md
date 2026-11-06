@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- Search Google through [cloro](https://cloro.dev) with `provider: "cloro"`, configured with `cloroApiKey` or `CLORO_API_KEY` (and an optional `cloroBaseUrl` gateway). It is explicit-only: never chosen by `auto` or `provider: "all"`, but it can be the named provider or part of `searchRouting`. Domain filters become `site:` clauses and are reapplied locally; recency is not applied. Each search returns at most one Google results page. Set `cloroMode: "aimode"` to get a Google AI Mode answer and its sources instead. Thanks to [@rbatista191](https://github.com/rbatista191) for [PR #662](https://github.com/nicobailon/pi-web-access/pull/662).
+
 ### Fixed
 
 - DuckDuckGo search no longer gets the IP address blocked after a few searches. Spacing searches 2 seconds apart was not enough: in testing, DuckDuckGo showed its bot check after 3 to 34 searches at that pace, and after 22 searches in 10 minutes even at 5 seconds apart. Searches in one Pi process now start at least 10 seconds apart, with at most 10 in any 10 minutes, and a search that would have to wait more than 20 seconds to start fails at once with a `quota` error so routing moves on. After a bot check the provider pauses for 30 minutes, doubling up to 2 hours, since the block lasts 7 to 30 minutes and comes back after a few searches when it is retried too soon. Parallel subagents and other Pi processes now share that pause through a `duckduckgo-cooldown.json` file next to `web-search.json`, so one bot check stops them all instead of each retrying on its own timer. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #661](https://github.com/nicobailon/pi-web-access/pull/661).
