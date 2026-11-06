@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { DuckDuckGoBotCheckError, DuckDuckGoRateLimit } from "../duckduckgo-rate-limit.ts";
 
@@ -14,25 +17,91 @@ function fakeClock() {
 	return clock;
 }
 
-test("DuckDuckGo requests run one at a time with a minimum gap between starts", async () => {
+/** A clock whose sleeps only end when the test wakes them. */
+function manualClock() {
+	const clock = { now: 0, wakeups: [] };
+	clock.options = { now: () => clock.now, sleep: () => new Promise(resolve => clock.wakeups.push(resolve)) };
+	clock.wakeAt = async (now) => {
+		clock.now = now;
+		for (const wake of clock.wakeups.splice(0)) wake();
+		await settle();
+	};
+	return clock;
+}
+
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
+function tempDir() {
+	return mkdtempSync(join(tmpdir(), "pi-web-access-ddg-gate-"));
+}
+
+test("DuckDuckGo searches start at least the minimum gap apart", async () => {
 	const clock = fakeClock();
 	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 2000 });
 	const starts = [];
-	let active = 0;
-	let maxActive = 0;
 	const operation = async () => {
 		starts.push(clock.now);
-		maxActive = Math.max(maxActive, ++active);
 		clock.now += 500;
-		await Promise.resolve();
-		active--;
 		return starts.length;
 	};
-	const results = await Promise.all([gate.run(operation), gate.run(operation), gate.run(operation)]);
-	assert.deepEqual(results, [1, 2, 3]);
+	assert.equal(await gate.run(operation), 1);
+	assert.equal(await gate.run(operation), 2);
+	assert.equal(await gate.run(operation), 3);
 	assert.deepEqual(starts, [0, 2000, 4000]);
-	assert.equal(maxActive, 1);
 	assert.deepEqual(clock.sleeps, [1500, 1500]);
+});
+
+test("DuckDuckGo searches called together start one gap apart", async () => {
+	const clock = fakeClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 2000 });
+	const starts = [];
+	await Promise.all([1, 2, 3].map(() => gate.run(async () => { starts.push(clock.now); })));
+	assert.deepEqual(starts, [0, 2000, 4000]);
+});
+
+test("DuckDuckGo searches woken late still start a full gap after the previous start", async () => {
+	const clock = manualClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 10_000, timeoutMs: 120_000 });
+	const starts = [];
+	const runs = [1, 2, 3].map(() => gate.run(async () => { starts.push(clock.now); }));
+	await settle();
+	assert.deepEqual(starts, [0]);
+	// The process was suspended past two slots; every pending timer fires on resume.
+	await clock.wakeAt(21_000);
+	assert.deepEqual(starts, [0, 21_000]);
+	await clock.wakeAt(31_000);
+	await Promise.all(runs);
+	assert.deepEqual(starts, [0, 21_000, 31_000]);
+});
+
+test("DuckDuckGo limits starts per window and fails at once when the slot is past the deadline", async () => {
+	const clock = fakeClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 0, windowMs: 10_000, maxStarts: 2, timeoutMs: 60_000 });
+	let calls = 0;
+	const ok = async () => { calls++; };
+	await gate.run(ok);
+	await gate.run(ok);
+	await gate.run(ok);
+	assert.deepEqual(clock.sleeps, [10_000], "the third start waits until the first leaves the window");
+
+	const tight = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 0, windowMs: 10_000, maxStarts: 2, timeoutMs: 15_000 });
+	await tight.run(ok);
+	await tight.run(ok);
+	await assert.rejects(tight.run(ok), /2 every 10s .*next free slot is in 10s \(rate limited\)/);
+	assert.equal(calls, 5, "a search past its deadline never runs");
+});
+
+test("DuckDuckGo fails a search at once when the searches queued ahead of it fill its deadline", async () => {
+	const clock = manualClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 10_000, timeoutMs: 30_000 });
+	let calls = 0;
+	const queued = [1, 2, 3].map(() => gate.run(async () => { calls++; }));
+	await assert.rejects(gate.run(async () => { calls++; }), /one search every 10s .*next free slot is in 30s \(rate limited\)/);
+	await settle();
+	await clock.wakeAt(10_000);
+	await clock.wakeAt(20_000);
+	await Promise.all(queued);
+	assert.equal(calls, 3, "the three searches that fit before their deadline ran");
 });
 
 test("DuckDuckGo bot check starts a cooldown that fails fast, doubles, and resets after success", async () => {
@@ -63,6 +132,20 @@ test("DuckDuckGo bot check starts a cooldown that fails fast, doubles, and reset
 	assert.equal(calls, 6);
 });
 
+test("DuckDuckGo counts one bot check when searches already in flight see it too", async () => {
+	const clock = fakeClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 0, cooldownMs: 60_000 });
+	const releases = [];
+	const blockedLater = () => new Promise((_, reject) => releases.push(() => reject(new DuckDuckGoBotCheckError(202))));
+	const first = assert.rejects(gate.run(blockedLater));
+	const second = assert.rejects(gate.run(blockedLater));
+	await settle();
+	assert.equal(releases.length, 2);
+	for (const release of releases) release();
+	await Promise.all([first, second]);
+	await assert.rejects(gate.run(async () => {}), /not retrying for 1m/, "the second bot check did not double the cooldown");
+});
+
 test("DuckDuckGo errors other than bot checks do not start a cooldown", async () => {
 	const clock = fakeClock();
 	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 0 });
@@ -70,33 +153,28 @@ test("DuckDuckGo errors other than bot checks do not start a cooldown", async ()
 	assert.equal(await gate.run(async () => "ok"), "ok");
 });
 
-test("DuckDuckGo queued requests can be aborted without running", async () => {
-	const gate = new DuckDuckGoRateLimit({ minIntervalMs: 60_000 });
+test("DuckDuckGo waiting searches can be aborted without running", async () => {
+	const gate = new DuckDuckGoRateLimit({ minIntervalMs: 60_000, timeoutMs: 120_000 });
 	let calls = 0;
 	await gate.run(async () => { calls++; });
 	const controller = new AbortController();
-	const queued = gate.run(async () => { calls++; }, controller.signal);
+	const waiting = gate.run(async () => { calls++; }, controller.signal);
 	controller.abort();
-	await assert.rejects(queued, /Aborted/);
+	await assert.rejects(waiting, /Aborted/);
 	await assert.rejects(gate.run(async () => { calls++; }, AbortSignal.abort()), /Aborted/);
 	assert.equal(calls, 1);
 });
 
-test("DuckDuckGo deadline counts time spent queued and reports a timeout, not an abort", async () => {
+test("DuckDuckGo deadline reports a timeout, not an abort", async () => {
 	// AbortSignal.timeout does not keep Node running; a real request's socket would.
 	const keepAlive = setTimeout(() => {}, 5000);
 	const gate = new DuckDuckGoRateLimit({ minIntervalMs: 0, timeoutMs: 100 });
 	const started = Date.now();
-	let secondRan = false;
-	// The first request ignores its signal and holds the queue for 300ms.
-	const first = gate.run(() => new Promise(resolve => setTimeout(resolve, 300)));
-	const second = gate.run(async () => { secondRan = true; });
-	const firstRejected = assert.rejects(first, /DuckDuckGo request timed out after 1s/);
-	await assert.rejects(second, /DuckDuckGo request timed out after 1s/);
-	assert.ok(Date.now() - started < 250, "the queued search gave up at its own deadline instead of waiting for the first");
-	await firstRejected;
-	await new Promise(resolve => setTimeout(resolve, 350));
-	assert.equal(secondRan, false, "a search whose deadline passed in the queue never runs");
+	await assert.rejects(
+		gate.run(signal => new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }))),
+		/DuckDuckGo request timed out after 1s/,
+	);
+	assert.ok(Date.now() - started < 1000);
 	clearTimeout(keepAlive);
 });
 
@@ -108,4 +186,38 @@ test("DuckDuckGo caller aborts still report an abort", async () => {
 	}), controller.signal);
 	controller.abort();
 	await assert.rejects(pending, /abort/i);
+});
+
+test("DuckDuckGo bot-check pause recorded by one gate stops another using the same state file", async () => {
+	const statePath = join(tempDir(), "config", "duckduckgo-cooldown.json");
+	const clock = fakeClock();
+	const options = { ...clock.options, minIntervalMs: 0, cooldownMs: 60_000, statePath };
+	const first = new DuckDuckGoRateLimit(options);
+	const second = new DuckDuckGoRateLimit(options);
+	await assert.rejects(first.run(async () => { throw new DuckDuckGoBotCheckError(202); }));
+	let ran = false;
+	await assert.rejects(second.run(async () => { ran = true; }), /not retrying for 1m/);
+	assert.equal(ran, false);
+	clock.now += 60_000;
+	assert.equal(await second.run(async () => "ok"), "ok");
+	await assert.rejects(first.run(async () => { throw new DuckDuckGoBotCheckError(202); }));
+	await assert.rejects(second.run(async () => {}), /not retrying for 1m/, "the success in the second gate reset the pause for the first");
+});
+
+test("DuckDuckGo searches still work when the state file is garbled or cannot be written", async () => {
+	const dir = tempDir();
+	const garbled = join(dir, "duckduckgo-cooldown.json");
+	writeFileSync(garbled, "not json");
+	assert.equal(await new DuckDuckGoRateLimit({ minIntervalMs: 0, statePath: garbled }).run(async () => "ok"), "ok");
+	writeFileSync(garbled, JSON.stringify({ blockedUntil: Date.now() + 24 * 3_600_000, nextCooldownMs: 60_000 }));
+	assert.equal(await new DuckDuckGoRateLimit({ minIntervalMs: 0, statePath: garbled }).run(async () => "ok"), "ok", "a pause beyond the cap is ignored");
+
+	const notADirectory = join(dir, "file");
+	writeFileSync(notADirectory, "");
+	const clock = fakeClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 0, cooldownMs: 60_000, statePath: join(notADirectory, "duckduckgo-cooldown.json") });
+	await assert.rejects(gate.run(async () => { throw new DuckDuckGoBotCheckError(202); }), /bot check/);
+	await assert.rejects(gate.run(async () => {}), /not retrying for 1m/, "the pause still holds in this process");
+	clock.now += 60_000;
+	assert.equal(await gate.run(async () => "ok"), "ok", "a failed write does not discard the result");
 });

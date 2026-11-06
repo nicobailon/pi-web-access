@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -165,8 +165,7 @@ test("DuckDuckGo skips the network after a bot check so routing falls through at
 			if (String(url) === "https://api.tavily.com/search") return new Response(JSON.stringify({ answer: "fallback", results: [] }), { status: 200 });
 			return new Response("<p>please wait</p>", { status: 202 });
 		};
-		const { searchWithDuckDuckGo, resetDuckDuckGoRateLimit } = await import(${JSON.stringify(duckDuckGoModuleUrl)});
-		resetDuckDuckGoRateLimit({ minIntervalMs: 0 });
+		const { searchWithDuckDuckGo } = await import(${JSON.stringify(duckDuckGoModuleUrl)});
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
 		await searchWithDuckDuckGo("first").catch(() => {});
 		let second = "";
@@ -176,9 +175,11 @@ test("DuckDuckGo skips the network after a bot check so routing falls through at
 	`, { PI_CODING_AGENT_DIR: home, TAVILY_API_KEY: "tavily-test-key" });
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.match(output.second, /not retrying for 5m .*rate limited/);
+	assert.match(output.second, /not retrying for 30m .*rate limited/);
 	assert.equal(output.routed, "tavily");
 	assert.deepEqual(output.calls, ["html.duckduckgo.com", "api.tavily.com"]);
+	const shared = JSON.parse(await readFile(join(home, "duckduckgo-cooldown.json"), "utf8"));
+	assert.ok(shared.blockedUntil > Date.now(), "the pause is written for other Pi processes");
 });
 
 test("DuckDuckGo timeout falls through configured network routing instead of counting as an abort", async () => {
