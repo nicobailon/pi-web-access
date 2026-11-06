@@ -7,7 +7,7 @@ import { canAttachImages } from "./feature-config.ts";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { queryGeminiApiWithVideo, getApiKey, fetchGeminiApi, getVersionedApiBase, getUploadBase, redactGeminiApiResponse, rewriteUploadUrlOrigin } from "./gemini-api.ts";
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.ts";
-import { readExecError, trimErrorText, mapFfmpegError, getWebSearchConfigPath } from "./utils.ts";
+import { readExecError, trimErrorText, mapFfmpegError, getWebSearchConfigPath, FRAME_SCALE_FILTER } from "./utils.ts";
 
 const CONFIG_PATH = getWebSearchConfigPath();
 
@@ -212,7 +212,7 @@ export async function extractVideoFrame(filePath: string, seconds: number = 1): 
 	try {
 		const buffer = execFileSync("ffmpeg", [
 			"-ss", String(seconds), "-i", filePath,
-			"-frames:v", "1", "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
+			"-frames:v", "1", "-vf", FRAME_SCALE_FILTER, "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1",
 		], { maxBuffer: 5 * 1024 * 1024, timeout: 10000, stdio: ["pipe", "pipe", "pipe"] });
 		if (buffer.length === 0) return { error: "ffmpeg failed: empty output" };
 		return { data: buffer.toString("base64"), mimeType: "image/jpeg" };
