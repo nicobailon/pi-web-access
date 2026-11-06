@@ -5,9 +5,12 @@ import { normalizeSearchResultCount } from "./search-result-count-normalization.
 import type { ExtractedContent } from "./extract.ts";
 import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { redactCredential, resolveCredential } from "./credential-source.ts";
+import { applyDomainFilter } from "./domain-filter-normalization.ts";
 import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
 
 const ANYSEARCH_API_URL = "https://api.anysearch.com/v1/search";
+// AnySearch caps max_results at 10; asking for more returns 10 silently.
+const ANYSEARCH_MAX_RESULTS = 10;
 const CONFIG_PATH = getWebSearchConfigPath();
 const SEARCH_TIMEOUT_MS = 30_000;
 
@@ -117,7 +120,7 @@ export function isAnySearchAvailable(): boolean {
 
 export async function searchWithAnySearch(query: string, options: AnySearchSearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await getApiKey(options.signal);
-	const numResults = normalizeSearchResultCount(options.numResults);
+	const numResults = Math.min(normalizeSearchResultCount(options.numResults), ANYSEARCH_MAX_RESULTS);
 	const body = { query, max_results: numResults };
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	let response: Response;
@@ -168,14 +171,15 @@ export async function searchWithAnySearch(query: string, options: AnySearchSearc
 	}
 
 	activityMonitor.logComplete(activityId, response.status);
-	const results = data.data.results.slice(0, numResults).map((result) => ({
+	const filtered = applyDomainFilter(data.data.results, options.domainFilter).slice(0, numResults);
+	const results = filtered.map((result) => ({
 		title: result.title,
 		url: result.url,
 		snippet: result.snippet,
 	}));
 	const mapped: SearchResponse = { answer: formatSearchResultsAsAnswer(results), results };
 	if (options.includeContent) {
-		const inlineContent: ExtractedContent[] = data.data.results.slice(0, numResults)
+		const inlineContent: ExtractedContent[] = filtered
 			.filter(result => result.content.length > 0)
 			.map(result => ({ url: result.url, title: result.title, content: result.content, error: null }));
 		if (inlineContent.length > 0) mapped.inlineContent = inlineContent;

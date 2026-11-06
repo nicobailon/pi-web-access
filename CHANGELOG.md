@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - Search Google through [cloro](https://cloro.dev) with `provider: "cloro"`, configured with `cloroApiKey` or `CLORO_API_KEY` (and an optional `cloroBaseUrl` gateway). It is explicit-only: never chosen by `auto` or `provider: "all"`, but it can be the named provider or part of `searchRouting`. Domain filters become `site:` clauses and are reapplied locally; recency is not applied. Each search returns at most one Google results page. Set `cloroMode: "aimode"` to get a Google AI Mode answer and its sources instead. Thanks to [@rbatista191](https://github.com/rbatista191) for [PR #662](https://github.com/nicobailon/pi-web-access/pull/662).
 
+### Fixed
+
+- AnySearch now applies `domainFilter` locally instead of returning off-domain results, and clamps `max_results` to the API's maximum of 10. A `numResults` above 10 used to come back with 10 results and no warning. Results removed by the local filter read as an empty response, so `searchRouting.fallbackOn: ["empty"]` can move to the next provider, and an include domain that matches nothing also counts as `["domain-miss"]`. Thanks to [@Arcobalneo](https://github.com/Arcobalneo) for [PR #665](https://github.com/nicobailon/pi-web-access/pull/665).
+
 ## [0.47.0] - 2026-11-04
 
 ### Highlights
