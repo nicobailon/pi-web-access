@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+
+- AnySearch now applies `domainFilter` locally instead of returning off-domain results, and clamps `max_results` to the API's maximum of 10. A `numResults` above 10 used to come back with 10 results and no warning. Results removed by the local filter read as an empty response, so `searchRouting.fallbackOn: ["empty"]` or `["domain-miss"]` can move to the next provider.
+
 ## [0.47.0] - 2026-11-04
 
 ### Highlights

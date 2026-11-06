@@ -238,3 +238,97 @@ test("AnySearch HTTP errors redact keyed credentials", async () => {
 	assert.doesNotMatch(output.error, /anysearch-secret/);
 	assert.match(output.error, /\[redacted\]/);
 });
+
+test("AnySearch clamps max_results to the API maximum of 10", async () => {
+	const home = await createHome({});
+	const child = runChild(`
+		const bodies = [];
+		globalThis.fetch = async (_url, init) => { bodies.push(JSON.parse(init.body)); return new Response(${JSON.stringify(successBody())}, { status: 200 }); };
+		const { searchWithAnySearch } = await import(${JSON.stringify(anysearchModuleUrl)});
+		await searchWithAnySearch("clamp high", { numResults: 20 });
+		await searchWithAnySearch("clamp very high", { numResults: 50 });
+		await searchWithAnySearch("keep small", { numResults: 3 });
+		await searchWithAnySearch("default count");
+		console.log(JSON.stringify(bodies));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	const bodies = JSON.parse(child.stdout.trim());
+	assert.deepEqual(bodies.map(body => body.max_results), [10, 10, 3, 5]);
+	assert.deepEqual(bodies.map(body => Object.keys(body).sort()), [["max_results", "query"], ["max_results", "query"], ["max_results", "query"], ["max_results", "query"]]);
+});
+
+test("AnySearch applies the shared domainFilter locally without adding request parameters", async () => {
+	const home = await createHome({});
+	const results = [
+		{ title: "On domain", url: "https://example.com/on", snippet: "on", content: "on page" },
+		{ title: "On subdomain", url: "https://news.example.com/sub", snippet: "sub", content: "sub page" },
+		{ title: "Excluded blog", url: "https://blog.example.com/post", snippet: "blog", content: "blog page" },
+		{ title: "Off domain", url: "https://other.org/page", snippet: "off", content: "off page" },
+		{ title: "Unparseable", url: "example.com/no-scheme", snippet: "bad", content: "bad page" },
+	];
+	const child = runChild(`
+		const bodies = [];
+		globalThis.fetch = async (_url, init) => {
+			bodies.push(JSON.parse(init.body));
+			return new Response(JSON.stringify({ code: 0, data: { results: ${JSON.stringify(results)}, metadata: {} } }), { status: 200 });
+		};
+		const { searchWithAnySearch } = await import(${JSON.stringify(anysearchModuleUrl)});
+		const included = await searchWithAnySearch("include", { domainFilter: ["example.com", "-blog.example.com"], includeContent: true });
+		const excluded = await searchWithAnySearch("exclude", { domainFilter: ["-other.org"] });
+		const nothing = await searchWithAnySearch("nothing", { domainFilter: ["nowhere.test"] });
+		console.log(JSON.stringify({ bodies, included, excluded, nothing }));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.bodies, [
+		{ query: "include", max_results: 5 },
+		{ query: "exclude", max_results: 5 },
+		{ query: "nothing", max_results: 5 },
+	]);
+	assert.deepEqual(output.included.results.map(result => result.url), ["https://example.com/on", "https://news.example.com/sub"]);
+	assert.deepEqual(output.included.inlineContent.map(entry => entry.url), ["https://example.com/on", "https://news.example.com/sub"]);
+	assert.equal(output.included.answer, "on\nSource: On domain (https://example.com/on)\n\nsub\nSource: On subdomain (https://news.example.com/sub)");
+	assert.deepEqual(output.excluded.results.map(result => result.url), ["https://example.com/on", "https://news.example.com/sub", "https://blog.example.com/post"]);
+	assert.deepEqual(output.nothing.results, []);
+	assert.equal(output.nothing.answer, "");
+	assert.equal(output.nothing.inlineContent, undefined);
+});
+
+test("AnySearch filters before slicing to numResults", async () => {
+	const home = await createHome({});
+	const results = [
+		{ title: "Off one", url: "https://one.test/a", snippet: "a" },
+		{ title: "Off two", url: "https://two.test/b", snippet: "b" },
+		{ title: "On one", url: "https://example.com/c", snippet: "c" },
+		{ title: "On two", url: "https://example.com/d", snippet: "d" },
+	];
+	const child = runChild(`
+		globalThis.fetch = async () => new Response(JSON.stringify({ code: 0, data: { results: ${JSON.stringify(results)}, metadata: {} } }), { status: 200 });
+		const { searchWithAnySearch } = await import(${JSON.stringify(anysearchModuleUrl)});
+		const result = await searchWithAnySearch("sliced", { domainFilter: ["example.com"], numResults: 1 });
+		console.log(JSON.stringify(result));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.results.map(result => result.url), ["https://example.com/c"]);
+});
+
+test("a domainFilter that removes every AnySearch result feeds the existing domain-miss fallback", async () => {
+	const results = JSON.stringify([{ title: "Off domain", url: "https://other.org/page", snippet: "off" }]);
+	const script = (routing) => `
+		globalThis.fetch = async (url) => {
+			if (String(url) === "https://api.anysearch.com/v1/search") return new Response(JSON.stringify({ code: 0, data: { results: ${results}, metadata: {} } }), { status: 200 });
+			return new Response(JSON.stringify({ web: { results: [{ title: "Brave", url: "https://example.com/brave", description: "fallback" }] } }), { status: 200 });
+		};
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const result = await search("domain miss", { provider: "auto", domainFilter: ["example.com"] });
+		console.log(JSON.stringify({ provider: result.provider, results: result.results.map(entry => entry.url) }));
+	`;
+	const optedIn = runChild(script(), { PI_CODING_AGENT_DIR: await createHome({ searchRouting: { providers: ["anysearch", "brave"], fallbackOn: ["domain-miss"] } }), BRAVE_API_KEY: "brave-key" });
+	assert.equal(optedIn.status, 0, optedIn.stderr);
+	assert.deepEqual(JSON.parse(optedIn.stdout.trim()), { provider: "brave", results: ["https://example.com/brave"] });
+
+	const notOptedIn = runChild(script(), { PI_CODING_AGENT_DIR: await createHome({ searchRouting: { providers: ["anysearch", "brave"], fallbackOn: ["quota"] } }), BRAVE_API_KEY: "brave-key" });
+	assert.equal(notOptedIn.status, 0, notOptedIn.stderr);
+	assert.deepEqual(JSON.parse(notOptedIn.stdout.trim()), { provider: "anysearch", results: [] });
+});
