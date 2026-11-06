@@ -550,6 +550,8 @@ export interface PageAnswerRequest {
 	pageText: string;
 	sourceUrl: string;
 	model?: string;
+	/** Video frames or a fetched image, sent to the answer model as image input. */
+	images?: Array<{ data: string; mimeType: string; label?: string }>;
 }
 
 /** Everything that differs between hosts. Pi supplies session persistence, background
@@ -1054,11 +1056,12 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				...(authFetchProfile ? { authFetchProfile } : {}),
 			};
 			const fetchResults = await fetchAllContent(urlList, signal, fetchOptions(requestOptions, options.proxy));
-			// Reject image-as-payload results (direct images, video frames — they set mimeType and/or frames).
-			// A text result that merely attaches a thumbnail (YouTube analysis) stays answerable.
-			const textResults = mode === "answer" || mode === "extract"
+			// Image-as-payload results (direct images, video frames) set mimeType and/or frames. Answer mode sends
+			// them to the answer model; extract rejects them. A text result that merely attaches a thumbnail
+			// (YouTube analysis) is answered as text.
+			const textResults = mode === "extract"
 				? fetchResults.map(result => !result.error && (result.mimeType?.startsWith("image/") || result.frames?.length)
-					? { ...result, error: `${mode === "answer" ? "Page answer" : "Field extraction"} requires textual fetched content` }
+					? { ...result, error: "Field extraction requires textual fetched content" }
 					: result)
 				: fetchResults;
 			const presentedResults = mode === "answer"
@@ -1066,13 +1069,22 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					if (result.error) return result;
 					try {
 						if (!host.answerFromPage) throw new Error("this host cannot answer from fetched pages");
+						const images = result.frames?.length
+							? result.frames.map(frame => ({ data: frame.data, mimeType: frame.mimeType, label: `Frame at ${frame.timestamp}` }))
+							: result.mimeType?.startsWith("image/") && result.thumbnail
+								? [{ ...result.thumbnail, label: result.title }]
+								: undefined;
 						const answer = await host.answerFromPage({
 							question: options.prompt!,
 							pageText: result.content,
 							sourceUrl: result.url,
 							...(options.answerModel ? { model: options.answerModel } : {}),
+							...(images ? { images } : {}),
 						}, ctx, signal);
-						return { ...result, content: answer.text };
+						if (!images) return { ...result, content: answer.text };
+						// The answer replaces the images; the agent does not also receive them.
+						const { frames: _frames, thumbnail: _thumbnail, ...rest } = result;
+						return { ...rest, content: answer.text };
 					} catch (err) {
 						return { ...result, error: `Page answer failed: ${err instanceof Error ? err.message : String(err)}` };
 					}

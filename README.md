@@ -401,6 +401,12 @@ fetch_content({ url: "...", frames: 6 })                                // sampl
 
 Requires `ffmpeg` (and `yt-dlp` for YouTube). Timestamps accept `H:MM:SS`, `MM:SS`, or bare seconds.
 
+To have another model look at the frames instead of your agent's model, add `mode: "answer"` with a `prompt`. The frames (or a fetched image) go to the answer model as images and only its text answer comes back, so this works without any Gemini credential, as long as the answer model accepts image input:
+
+```typescript
+fetch_content({ url: "...", frames: 8, mode: "answer", prompt: "What is shown on screen?", answerModel: "openrouter/xiaomi/mimo-v2.6-flash" })
+```
+
 ### PDFs
 
 With `mode: "answer"`, the answer model receives the extracted PDF Markdown. In readable mode the result is the Markdown itself, preceded by the path of the saved file, and long PDFs are cut at `maxInlineContentChars` like any page. In readable, answer and extract modes the Markdown is stored, so `get_search_content` can page through it.
