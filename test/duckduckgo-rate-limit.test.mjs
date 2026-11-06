@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DuckDuckGoBotCheckError, DuckDuckGoRateLimit, FileDuckDuckGoGateStore } from "../duckduckgo-rate-limit.ts";
-
-const rateLimitModuleUrl = new URL("../duckduckgo-rate-limit.ts", import.meta.url).href;
+import { DuckDuckGoBotCheckError, DuckDuckGoRateLimit } from "../duckduckgo-rate-limit.ts";
 
 function fakeClock() {
 	const clock = { now: 0, sleeps: [] };
@@ -20,8 +17,22 @@ function fakeClock() {
 	return clock;
 }
 
-function stateFile() {
-	return join(mkdtempSync(join(tmpdir(), "pi-web-access-ddg-gate-")), "duckduckgo-rate-limit.json");
+/** A clock whose sleeps only end when the test wakes them. */
+function manualClock() {
+	const clock = { now: 0, wakeups: [] };
+	clock.options = { now: () => clock.now, sleep: () => new Promise(resolve => clock.wakeups.push(resolve)) };
+	clock.wakeAt = async (now) => {
+		clock.now = now;
+		for (const wake of clock.wakeups.splice(0)) wake();
+		await settle();
+	};
+	return clock;
+}
+
+const settle = () => new Promise(resolve => setImmediate(resolve));
+
+function tempDir() {
+	return mkdtempSync(join(tmpdir(), "pi-web-access-ddg-gate-"));
 }
 
 test("DuckDuckGo searches start at least the minimum gap apart", async () => {
@@ -40,12 +51,27 @@ test("DuckDuckGo searches start at least the minimum gap apart", async () => {
 	assert.deepEqual(clock.sleeps, [1500, 1500]);
 });
 
-test("DuckDuckGo searches called together take consecutive slots", async () => {
-	const clock = { now: 0 };
-	const sleeps = [];
-	const gate = new DuckDuckGoRateLimit({ now: () => clock.now, sleep: async (ms) => { sleeps.push(ms); }, minIntervalMs: 2000 });
-	await Promise.all([gate.run(async () => {}), gate.run(async () => {}), gate.run(async () => {})]);
-	assert.deepEqual(sleeps, [2000, 4000]);
+test("DuckDuckGo searches called together start one gap apart", async () => {
+	const clock = fakeClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 2000 });
+	const starts = [];
+	await Promise.all([1, 2, 3].map(() => gate.run(async () => { starts.push(clock.now); })));
+	assert.deepEqual(starts, [0, 2000, 4000]);
+});
+
+test("DuckDuckGo searches woken late still start a full gap after the previous start", async () => {
+	const clock = manualClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 10_000, timeoutMs: 120_000 });
+	const starts = [];
+	const runs = [1, 2, 3].map(() => gate.run(async () => { starts.push(clock.now); }));
+	await settle();
+	assert.deepEqual(starts, [0]);
+	// The process was suspended past two slots; every pending timer fires on resume.
+	await clock.wakeAt(21_000);
+	assert.deepEqual(starts, [0, 21_000]);
+	await clock.wakeAt(31_000);
+	await Promise.all(runs);
+	assert.deepEqual(starts, [0, 21_000, 31_000]);
 });
 
 test("DuckDuckGo limits starts per window and fails at once when the slot is past the deadline", async () => {
@@ -65,9 +91,22 @@ test("DuckDuckGo limits starts per window and fails at once when the slot is pas
 	assert.equal(calls, 5, "a search past its deadline never runs");
 });
 
+test("DuckDuckGo fails a search at once when the searches queued ahead of it fill its deadline", async () => {
+	const clock = manualClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 10_000, timeoutMs: 30_000 });
+	let calls = 0;
+	const queued = [1, 2, 3].map(() => gate.run(async () => { calls++; }));
+	await assert.rejects(gate.run(async () => { calls++; }), /one search every 10s .*next free slot is in 30s \(rate limited\)/);
+	await settle();
+	await clock.wakeAt(10_000);
+	await clock.wakeAt(20_000);
+	await Promise.all(queued);
+	assert.equal(calls, 3, "the three searches that fit before their deadline ran");
+});
+
 test("DuckDuckGo bot check starts a cooldown that fails fast, doubles, and resets after success", async () => {
 	const clock = fakeClock();
-	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 0, cooldownMs: 60_000, maxCooldownMs: 150_000, maxStrikes: 0 });
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 0, cooldownMs: 60_000, maxCooldownMs: 150_000 });
 	let calls = 0;
 	const blocked = async () => { calls++; throw new DuckDuckGoBotCheckError(202); };
 	const ok = async () => { calls++; return "ok"; };
@@ -93,38 +132,6 @@ test("DuckDuckGo bot check starts a cooldown that fails fast, doubles, and reset
 	assert.equal(calls, 6);
 });
 
-test("DuckDuckGo slows down after each bot check and speeds up again over time", async () => {
-	const clock = fakeClock();
-	const gate = new DuckDuckGoRateLimit({
-		...clock.options, minIntervalMs: 5000, windowMs: 600_000, maxStarts: 20, cooldownMs: 60_000,
-		maxStrikes: 2, strikeDecayMs: 3_600_000, timeoutMs: 40_000,
-	});
-	const ok = async () => {};
-	const blocked = async () => { throw new DuckDuckGoBotCheckError(202); };
-	const gapAfter = async () => {
-		await gate.run(ok);
-		const before = clock.sleeps.length;
-		await gate.run(ok);
-		return clock.sleeps.slice(before).reduce((sum, ms) => sum + ms, 0);
-	};
-
-	assert.equal(await gapAfter(), 5000);
-	await assert.rejects(gate.run(blocked));
-	clock.now += 600_000;
-	assert.equal(await gapAfter(), 10_000, "one strike doubles the gap");
-	await assert.rejects(gate.run(blocked));
-	clock.now += 600_000;
-	assert.equal(await gapAfter(), 20_000, "two strikes");
-	clock.now += 600_000;
-	for (let i = 0; i < 5; i++) await gate.run(ok);
-	await assert.rejects(gate.run(ok), /one search every 20s and 5 every 10m .*rate limited/, "and the budget is quartered");
-
-	clock.now += 3_600_000 + 600_000;
-	assert.equal(await gapAfter(), 10_000, "an hour without a bot check forgives one strike");
-	clock.now += 3_600_000;
-	assert.equal(await gapAfter(), 5000);
-});
-
 test("DuckDuckGo counts one bot check when searches already in flight see it too", async () => {
 	const clock = fakeClock();
 	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 0, cooldownMs: 60_000 });
@@ -132,7 +139,8 @@ test("DuckDuckGo counts one bot check when searches already in flight see it too
 	const blockedLater = () => new Promise((_, reject) => releases.push(() => reject(new DuckDuckGoBotCheckError(202))));
 	const first = assert.rejects(gate.run(blockedLater));
 	const second = assert.rejects(gate.run(blockedLater));
-	await new Promise(resolve => setImmediate(resolve));
+	await settle();
+	assert.equal(releases.length, 2);
 	for (const release of releases) release();
 	await Promise.all([first, second]);
 	await assert.rejects(gate.run(async () => {}), /not retrying for 1m/, "the second bot check did not double the cooldown");
@@ -180,49 +188,32 @@ test("DuckDuckGo caller aborts still report an abort", async () => {
 	await assert.rejects(pending, /abort/i);
 });
 
-test("DuckDuckGo gates sharing a state file share slots and the cooldown", async () => {
-	const path = stateFile();
+test("DuckDuckGo bot-check pause recorded by one gate stops another using the same state file", async () => {
+	const statePath = join(tempDir(), "config", "duckduckgo-cooldown.json");
 	const clock = fakeClock();
-	const options = { ...clock.options, minIntervalMs: 5000, cooldownMs: 60_000 };
-	const first = new DuckDuckGoRateLimit({ ...options, store: new FileDuckDuckGoGateStore(path, 60_000) });
-	const second = new DuckDuckGoRateLimit({ ...options, store: new FileDuckDuckGoGateStore(path, 60_000) });
-	await first.run(async () => {});
-	await second.run(async () => {});
-	assert.deepEqual(clock.sleeps, [5000], "the second gate waited for the first gate's slot");
-
+	const options = { ...clock.options, minIntervalMs: 0, cooldownMs: 60_000, statePath };
+	const first = new DuckDuckGoRateLimit(options);
+	const second = new DuckDuckGoRateLimit(options);
 	await assert.rejects(first.run(async () => { throw new DuckDuckGoBotCheckError(202); }));
 	let ran = false;
 	await assert.rejects(second.run(async () => { ran = true; }), /not retrying for 1m/);
 	assert.equal(ran, false);
-	assert.equal(existsSync(`${path}.lock`), false, "the lock is released");
-	const saved = JSON.parse(readFileSync(path, "utf8"));
-	assert.equal(saved.nextCooldownMs, 120_000);
-	assert.equal(saved.strikes, 1, "the slower pace after a bot check is shared too");
+	clock.now += 60_000;
+	assert.equal(await second.run(async () => "ok"), "ok");
 });
 
-test("DuckDuckGo cooldown recorded by another process stops this one", () => {
-	const path = stateFile();
-	const child = spawnSync(process.execPath, ["--input-type=module"], {
-		input: `
-			const { DuckDuckGoBotCheckError, DuckDuckGoRateLimit, FileDuckDuckGoGateStore } = await import(${JSON.stringify(rateLimitModuleUrl)});
-			const gate = new DuckDuckGoRateLimit({ minIntervalMs: 0, store: new FileDuckDuckGoGateStore(${JSON.stringify(path)}) });
-			await gate.run(async () => { throw new DuckDuckGoBotCheckError(202); }).catch(() => {});
-		`,
-		encoding: "utf8",
-	});
-	assert.equal(child.status, 0, child.stderr);
-	const gate = new DuckDuckGoRateLimit({ minIntervalMs: 0, store: new FileDuckDuckGoGateStore(path) });
-	return assert.rejects(gate.run(async () => {}), /not retrying for 30m so the block can clear/);
-});
+test("DuckDuckGo searches still work when the state file is garbled or cannot be written", async () => {
+	const dir = tempDir();
+	const garbled = join(dir, "duckduckgo-cooldown.json");
+	writeFileSync(garbled, "not json");
+	assert.equal(await new DuckDuckGoRateLimit({ minIntervalMs: 0, statePath: garbled }).run(async () => "ok"), "ok");
 
-test("DuckDuckGo state file survives a stale lock and an unreadable file", async () => {
-	const path = stateFile();
-	writeFileSync(path, "not json");
-	writeFileSync(`${path}.lock`, "");
-	const old = new Date(Date.now() - 60_000);
-	utimesSync(`${path}.lock`, old, old);
-	const gate = new DuckDuckGoRateLimit({ minIntervalMs: 0, store: new FileDuckDuckGoGateStore(path) });
-	assert.equal(await gate.run(async () => "ok"), "ok");
-	assert.equal(existsSync(`${path}.lock`), false);
-	assert.equal(JSON.parse(readFileSync(path, "utf8")).starts.length, 1);
+	const notADirectory = join(dir, "file");
+	writeFileSync(notADirectory, "");
+	const clock = fakeClock();
+	const gate = new DuckDuckGoRateLimit({ ...clock.options, minIntervalMs: 0, cooldownMs: 60_000, statePath: join(notADirectory, "duckduckgo-cooldown.json") });
+	await assert.rejects(gate.run(async () => { throw new DuckDuckGoBotCheckError(202); }), /bot check/);
+	await assert.rejects(gate.run(async () => {}), /not retrying for 1m/, "the pause still holds in this process");
+	clock.now += 60_000;
+	assert.equal(await gate.run(async () => "ok"), "ok", "a failed write does not discard the result");
 });

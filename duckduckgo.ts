@@ -1,21 +1,21 @@
 import { activityMonitor } from "./activity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { join } from "node:path";
-import { DuckDuckGoBotCheckError, DuckDuckGoRateLimit, FileDuckDuckGoGateStore, type DuckDuckGoRateLimitOptions } from "./duckduckgo-rate-limit.ts";
+import { DuckDuckGoBotCheckError, DuckDuckGoRateLimit, type DuckDuckGoRateLimitOptions } from "./duckduckgo-rate-limit.ts";
 import type { SearchOptions, SearchResult, SearchResponse } from "./perplexity.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { getWebSearchConfigDir } from "./utils.ts";
 
 const SEARCH_URL = "https://html.duckduckgo.com/html/";
-/** Request slots and bot-check cooldown, shared by every Pi process using this config directory. */
-const STATE_FILE = "duckduckgo-rate-limit.json";
+/** Bot-check pause, shared by every Pi process using this config directory. */
+const STATE_FILE = "duckduckgo-cooldown.json";
 let rateLimit: DuckDuckGoRateLimit | null = null;
 
 function getRateLimit(): DuckDuckGoRateLimit {
-	return rateLimit ??= new DuckDuckGoRateLimit({ store: new FileDuckDuckGoGateStore(join(getWebSearchConfigDir(), STATE_FILE)) });
+	return rateLimit ??= new DuckDuckGoRateLimit({ statePath: join(getWebSearchConfigDir(), STATE_FILE) });
 }
 
-/** Replace the request spacing and bot-check cooldown state (for tests); without a store it is per process. */
+/** Replace the request spacing and bot-check cooldown state (for tests); without `statePath` nothing is shared. */
 export function resetDuckDuckGoRateLimit(options?: DuckDuckGoRateLimitOptions): void {
 	rateLimit = new DuckDuckGoRateLimit(options);
 }
