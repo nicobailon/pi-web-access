@@ -320,7 +320,7 @@ test("cloro needs a key and resolves config, environment, and $NAME credential s
 		assert.match(output.error, /^cloro API key not found\. Either:/);
 		assert.match(output.error, /"cloroApiKey": "your-key"/);
 		assert.match(output.error, /CLORO_API_KEY environment variable/);
-		assert.match(output.error, /https:\/\/dashboard\.cloro\.dev\/api-keys\?utm_source=pi-web-access&utm_medium=byok/);
+		assert.match(output.error, /https:\/\/dashboard\.cloro\.dev\/api-keys/);
 	} finally {
 		await rm(home, { recursive: true, force: true });
 	}

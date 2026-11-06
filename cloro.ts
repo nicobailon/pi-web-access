@@ -7,7 +7,7 @@ import { normalizeSearchResultCount } from "./search-result-count-normalization.
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderApiUrl } from "./utils.ts";
 
-// cloro monitor API: https://cloro.dev/docs/api-reference/endpoint/monitor-google?utm_source=pi-web-access&utm_medium=byok
+// cloro monitor API: https://cloro.dev/docs/api-reference/endpoint/monitor-google
 const CLORO_GOOGLE_URL = "https://api.cloro.dev/v1/monitor/google";
 const CLORO_AIMODE_URL = "https://api.cloro.dev/v1/monitor/aimode";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -87,7 +87,7 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 			"cloro API key not found. Either:\n" +
 			`  1. Create ${CONFIG_PATH} with { "cloroApiKey": "your-key" }\n` +
 			"  2. Set CLORO_API_KEY environment variable\n" +
-			"Get a key at https://dashboard.cloro.dev/api-keys?utm_source=pi-web-access&utm_medium=byok",
+			"Get a key at https://dashboard.cloro.dev/api-keys",
 		);
 	}
 	return apiKey;
