@@ -271,7 +271,7 @@ fetch_content({ url: "https://example.com/diagram.png" })
 | `proxy` | Proxy URL for this fetch; `""` forces a direct connection. Rejected when `lockProxy` is set, unless it matches the configured proxy. See [Proxy](#proxy-proxy) |
 | `redirects` | `"same-origin"` refuses redirects that change the scheme, hostname, or port. See `fetchContent.redirects` |
 
-For a standing answer-mode model, set both `fetch.answerProvider` and `fetch.answerModel` in `web-search.json`; a per-call `answerModel` takes precedence. Configured answer defaults are opt-in and can send fetched page text to a different provider/model, which may change privacy and cost behavior.
+For a standing answer-mode model, set both `fetch.answerProvider` and `fetch.answerModel` in `web-search.json`; a per-call `answerModel` takes precedence. Configured answer defaults are opt-in and can send fetched page text, images and video frames to a different provider/model, which may change privacy and cost behavior.
 
 Extract mode reads named values off each page with Cloudflare's Clairic model, on your own Cloudflare account: add `"extract"` to `fetch.allowedModes` and set up Pi's `cloudflare-workers-ai` provider (`CLOUDFLARE_API_KEY` and `CLOUDFLARE_ACCOUNT_ID`, or Pi's `/login`). Each field comes back as a typed value, an uncertain guess, or not on the page. The page text is sent to Cloudflare, including a private GitHub repository your `gh` login can read; `auth` is refused. Pi only. [docs/field-extract.md](docs/field-extract.md) covers AI Gateway routing, field types, limits, and measurements.
 
@@ -400,6 +400,12 @@ fetch_content({ url: "...", frames: 6 })                                // sampl
 ```
 
 Requires `ffmpeg` (and `yt-dlp` for YouTube). Timestamps accept `H:MM:SS`, `MM:SS`, or bare seconds.
+
+To have another model look at the frames instead of your agent's model, add `mode: "answer"` with a `prompt`. The frames (or a fetched image) go to the answer model as images and only its text answer comes back, so this works without any Gemini credential, as long as the answer model accepts image input:
+
+```typescript
+fetch_content({ url: "...", frames: 8, mode: "answer", prompt: "What is shown on screen?", answerModel: "openrouter/xiaomi/mimo-v2.6-flash" })
+```
 
 ### PDFs
 
@@ -790,7 +796,7 @@ Existing Responses endpoint settings (`openaiResponsesUrl`, `xaiResponsesUrl`), 
 
 `fetch.defaultMode` sets the mode used when `fetch_content` omits `mode`, and `fetch.allowedModes` controls which modes the tool exposes and accepts. Valid modes are `readable`, `raw`, `answer`, and `extract`. By default, the default mode is `readable` and `readable`, `raw`, and `answer` are allowed; `extract` is allowed only when listed and cannot be the default. The default must be included in the non-empty, duplicate-free allowed list. An explicitly requested disabled mode fails before fetching or invoking a model and is never replaced with another mode. Raw mode remains direct HTTP-only and never runs readability, specialized source handling, or hosted extraction fallbacks.
 
-`fetch.answerProvider` and `fetch.answerModel` are an optional pair that selects the model used by `fetch_content` answer mode when no per-call `answerModel` is supplied. Both values must be non-empty strings and must identify an enabled text-capable model available in Pi's model registry; invalid or partial configuration fails closed. This is opt-in: answering with the configured provider/model can send fetched page text outside the current session and may incur that provider's costs. A per-call `answerModel` override is resolved first and remains usable even when these configured defaults are malformed.
+`fetch.answerProvider` and `fetch.answerModel` are an optional pair that selects the model used by `fetch_content` answer mode when no per-call `answerModel` is supplied. Both values must be non-empty strings and must identify an enabled text-capable model available in Pi's model registry; invalid or partial configuration fails closed. This is opt-in: answering with the configured provider/model can send fetched page text, images and video frames outside the current session and may incur that provider's costs. A per-call `answerModel` override is resolved first and remains usable even when these configured defaults are malformed.
 
 Set `searxngBaseUrl` or `SEARXNG_BASE_URL` to use a self-hosted SearXNG JSON API. A configured endpoint is preferred first in `auto` mode for local/private search. A configured SearXNG base URL may use `localhost`, `127.0.0.0/8`, or `::1` without adding those ranges to global `ssrf.allowRanges`; a base URL on another private or synthetic range needs a narrow `ssrf.allowRanges` entry. The base URL and its redirects are otherwise validated like other remote requests, and configured headers are stripped from cross-origin redirects. Optional `searxngHeaders` merges extra HTTP headers into each SearXNG request (string values only; invalid header names are ignored), which is useful for reverse-proxy or Zero Trust auth such as Cloudflare Access service tokens (`CF-Access-Client-Id` / `CF-Access-Client-Secret`). Configured headers override the default `Accept: application/json` when the same name is supplied. Thanks to Marcos A. Núñez (@marnunez) for PR #107 and Avinash Kanaujiya (@avinashkanaujiya) for issue #105.
 

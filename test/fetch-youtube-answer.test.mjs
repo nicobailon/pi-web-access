@@ -41,22 +41,27 @@ assert.ok(fetchTool);
 const TRANSCRIPT = "A young man talks to the camera in front of elephants at the zoo.";
 const ANSWER = "A man describes elephants at a zoo.";
 let answerCalls = 0;
+let answerContext;
 
+const textModel = { api: "test-api", provider: "test", id: "answer-model", input: ["text"], contextWindow: 10_000 };
 const ctx = {
-	model: { api: "test-api", provider: "test", id: "answer-model", input: ["text"], contextWindow: 10_000 },
+	model: textModel,
 	modelRegistry: {
 		getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "synthetic-test-key" }),
-		complete: async () => {
+		complete: async (_model, context) => {
 			answerCalls++;
+			answerContext = context;
 			return { stopReason: "stop", content: [{ type: "text", text: ANSWER }] };
 		},
 	},
 	scopedModels: [],
 };
+const visionCtx = { ...ctx, model: { ...textModel, id: "vision-model", input: ["text", "image"] } };
 
 beforeEach(async () => {
 	clearResults();
 	answerCalls = 0;
+	answerContext = undefined;
 	globalThis.fetch = async (input) => {
 		const url = String(input);
 		if (url.includes(":generateContent")) {
@@ -99,7 +104,26 @@ test("answer mode keeps the transcript of a video analysis that attaches a thumb
 });
 
 for (const [name, params] of [["a single frame", { timestamp: "0:05" }], ["multiple frames", { frames: 2 }]]) {
-	test(`answer mode rejects ${name} instead of answering from its placeholder text`, async () => {
+	test(`answer mode sends ${name} to the answer model as images`, async () => {
+		const result = await fetchTool.execute(
+			"test-call",
+			{ url: "https://www.youtube.com/watch?v=jNQXAC9IVRw", mode: "answer", prompt: "What happens?", ...params },
+			undefined,
+			undefined,
+			visionCtx,
+		);
+		assert.ok(!result.details.error, `unexpected error: ${result.details.error}`);
+		const parts = answerContext.messages[0].content;
+		const images = parts.filter(part => part.type === "image");
+		assert.equal(images.length, params.frames ?? 1);
+		assert.ok(images.every(image => image.mimeType === "image/jpeg" && image.data === Buffer.from("fake-jpeg-bytes").toString("base64")));
+		const labels = parts.filter(part => part.type === "text" && part.text.startsWith("Frame at "));
+		assert.equal(labels.length, images.length);
+		assert.ok(result.content.some(block => block.type === "text" && block.text.includes(ANSWER)));
+		assert.ok(!result.content.some(block => block.type === "image"), "the answer replaces the frames");
+	});
+
+	test(`answer mode reports a text-only answer model for ${name}`, async () => {
 		const result = await fetchTool.execute(
 			"test-call",
 			{ url: "https://www.youtube.com/watch?v=jNQXAC9IVRw", mode: "answer", prompt: "What happens?", ...params },
@@ -107,7 +131,7 @@ for (const [name, params] of [["a single frame", { timestamp: "0:05" }], ["multi
 			undefined,
 			ctx,
 		);
-		assert.equal(result.details.error, "Page answer requires textual fetched content");
+		assert.equal(result.details.error, "Page answer failed: Answer model does not support image input: test/answer-model");
 		assert.equal(answerCalls, 0);
 	});
 }
