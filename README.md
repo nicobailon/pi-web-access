@@ -983,7 +983,7 @@ Tabstack is explicit-only: it is never chosen by `auto` and never participates i
 
 ### AnySearch
 
-AnySearch is an explicit-only provider: it is never included in zero-config `auto` fallback or in `provider: "all"`, but it can be selected with `provider: "anysearch"`, configured as the named provider, or placed in `searchRouting`. It supports anonymous requests and optional `anysearchApiKey` / `ANYSEARCH_API_KEY` credentials. Requests intentionally send only `{ query, max_results }`; `recencyFilter`, `domainFilter`, and `includeContent` do not add API request parameters. When `includeContent` is true, returned `content` fields are exposed as inline content.
+AnySearch is an explicit-only provider: it is never included in zero-config `auto` fallback or in `provider: "all"`, but it can be selected with `provider: "anysearch"`, configured as the named provider, or placed in `searchRouting`. It supports anonymous requests and optional `anysearchApiKey` / `ANYSEARCH_API_KEY` credentials. Requests intentionally send only `{ query, max_results }`, and the API caps results at 10 per search; `recencyFilter` and `includeContent` add no API request parameters, and the shared include/exclude `domainFilter` is applied locally, so a filter that matches nothing yields an empty response that `fallbackOn: ["empty"]` can route past, and an include domain that matches nothing also counts as `["domain-miss"]`. When `includeContent` is true, returned `content` fields are exposed as inline content.
 
 ### XCrawl
 
