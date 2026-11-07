@@ -10,6 +10,7 @@ const searchModuleUrl = new URL("../gemini-search.ts", import.meta.url).href;
 const curatorPageModuleUrl = new URL("../curator-page.ts", import.meta.url).href;
 const SEARCH_URL = "https://api.cloro.dev/v1/monitor/google";
 const AIMODE_URL = "https://api.cloro.dev/v1/monitor/aimode";
+const BING_AIMODE_URL = "https://api.cloro.dev/v1/monitor/bing/aimode";
 
 async function createHome(config = {}) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-cloro-"));
@@ -376,6 +377,37 @@ test("cloro AI Mode posts the prompt and returns the answer text with its source
 			{ title: "Allowed", url: "https://docs.example.com/a", snippet: "first" },
 			{ title: "Source 2", url: "https://example.com/c", snippet: "" },
 		]);
+	} finally {
+		await rm(home, { recursive: true, force: true });
+	}
+});
+
+test("cloro Bing AI Mode posts the prompt and returns the markdown answer with its sources", async () => {
+	const home = await createHome({ cloroApiKey: "cloro-test-key", cloroMode: "bing_aimode" });
+	try {
+		const child = runChild(`
+			let captured;
+			globalThis.fetch = async (url, init) => {
+				captured = { url: String(url), body: JSON.parse(init.body) };
+				return new Response(JSON.stringify({ success: true, result: {
+					text: "Bing answer.",
+					markdown: "**Bing** answer.",
+					sources: [
+						{ position: 1, label: "Allowed", url: "https://docs.example.com/a", description: "first" },
+						{ position: 2, label: "Outside", url: "https://example.net/b" },
+					],
+				} }));
+			};
+			const { searchWithCloro } = await import(${JSON.stringify(cloroModuleUrl)});
+			const result = await searchWithCloro("what is x", { numResults: 5, domainFilter: ["example.com"] });
+			console.log(JSON.stringify({ captured, result }));
+		`, { PI_CODING_AGENT_DIR: home });
+		assert.equal(child.status, 0, child.stderr);
+		const { captured, result } = JSON.parse(child.stdout.trim());
+		assert.equal(captured.url, BING_AIMODE_URL);
+		assert.deepEqual(captured.body, { prompt: "what is x", country: "US", include: { markdown: true } }, "Bing AI Mode gets the plain prompt; domain filters apply locally");
+		assert.equal(result.answer, "**Bing** answer.");
+		assert.deepEqual(result.results, [{ title: "Allowed", url: "https://docs.example.com/a", snippet: "first" }]);
 	} finally {
 		await rm(home, { recursive: true, force: true });
 	}
