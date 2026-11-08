@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- Search the web and fetch pages through [SpecStream](https://specstream.ai) with `provider: "specstream"` for `web_search` and `"specstream"` in `fetchRouting.providers` for `fetch_content`, configured with `specstreamApiKey` or `SPECSTREAM_API_KEY` (and an optional `specstreamBaseUrl` gateway). It is explicit-only: never chosen by `auto` or `provider: "all"`.
 - `fetch_content` answer mode now sends video frames and fetched images to the answer model as images, so any Pi model that accepts image input (OpenRouter, OpenAI, a local gateway) can describe a video without a Gemini credential, and the agent gets back only the text answer. Before, answer mode rejected frames and images. Thanks to [@MaksimZinovev](https://github.com/MaksimZinovev) for the request in [#663](https://github.com/nicobailon/pi-web-access/issues/663).
 - Search Google through [cloro](https://cloro.dev) with `provider: "cloro"`, configured with `cloroApiKey` or `CLORO_API_KEY` (and an optional `cloroBaseUrl` gateway). It is explicit-only: never chosen by `auto` or `provider: "all"`, but it can be the named provider or part of `searchRouting`. Domain filters become `site:` clauses and are reapplied locally; recency is not applied. Each search returns at most one Google results page. Set `cloroMode: "aimode"` to get a Google AI Mode answer and its sources instead. Thanks to [@rbatista191](https://github.com/rbatista191) for [PR #662](https://github.com/nicobailon/pi-web-access/pull/662).
 
