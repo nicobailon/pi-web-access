@@ -26,8 +26,8 @@ function runChild(script, env = {}) {
 	return spawnSync(process.execPath, ["--input-type=module"], { input: script, encoding: "utf8", env: childEnv, maxBuffer: 2 * 1024 * 1024 });
 }
 
-const sources = entries => JSON.stringify({ query: "q", sources: entries });
-const extracted = entry => JSON.stringify({ results: [entry] });
+const sources = entries => JSON.stringify({ request_id: "r1", status: 200, data: { query: "q", sources: entries }, error: null });
+const extracted = entry => JSON.stringify({ request_id: "r1", status: 200, data: { results: [entry] }, error: null });
 
 async function withHome(config, fn) {
 	const home = await createHome(config);
@@ -120,6 +120,8 @@ test("SpecStream redacts the key from error bodies and rejects malformed replies
 				() => new Response("bad key specstream-secret-key", { status: 401 }),
 				() => new Response("not json", { status: 200 }),
 				() => new Response(JSON.stringify({ nothing: true }), { status: 200 }),
+				() => new Response(JSON.stringify({ data: null, error: { message: "Query is empty." } }), { status: 200 }),
+				() => new Response(JSON.stringify({ sources: [{ url: "https://a.example/", title: "A" }] }), { status: 200 }),
 			]) {
 				globalThis.fetch = async () => make();
 				try { await searchWithSpecStream("q"); outcomes.push("ok"); } catch (err) { outcomes.push(err.message); }
@@ -127,11 +129,13 @@ test("SpecStream redacts the key from error bodies and rejects malformed replies
 			console.log(JSON.stringify(outcomes));
 		`, { PI_CODING_AGENT_DIR: home, SPECSTREAM_API_KEY: "specstream-secret-key" });
 		assert.equal(child.status, 0, child.stderr);
-		const [unauthorized, notJson, noSources] = JSON.parse(child.stdout.trim());
+		const [unauthorized, notJson, noSources, nullData, unwrapped] = JSON.parse(child.stdout.trim());
 		assert.match(unauthorized, /SpecStream error 401/);
 		assert.ok(!unauthorized.includes("specstream-secret-key"));
 		assert.match(notJson, /invalid JSON/);
 		assert.match(noSources, /expected sources array/);
+		assert.match(nullData, /Query is empty/);
+		assert.equal(unwrapped, "ok");
 	});
 });
 
@@ -166,7 +170,7 @@ test("SpecStream Extract posts the URL and returns the page as Markdown", async 
 			];
 			globalThis.fetch = async (url, init) => {
 				calls.push({ url: String(url), method: init.method, auth: init.headers.Authorization, body: JSON.parse(init.body) });
-				return new Response(JSON.stringify({ results: [replies[calls.length - 1]] }), { status: 200 });
+				return new Response(JSON.stringify({ data: { results: [replies[calls.length - 1]] }, error: null }), { status: 200 });
 			};
 			const { extractWithSpecStream } = await import(${JSON.stringify(moduleUrl)});
 			const results = [];

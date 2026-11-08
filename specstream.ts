@@ -131,18 +131,30 @@ async function readJson(response: Response): Promise<unknown> {
 	}
 }
 
-function parseSearchResponse(value: unknown): SpecStreamSource[] {
+// The API wraps every reply as { data, error }. A body without the wrapper is read as it is.
+function unwrapEnvelope(value: unknown): Record<string, unknown> {
 	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse("expected an object envelope");
 	const envelope = value as Record<string, unknown>;
-	if (!Array.isArray(envelope.sources)) throw invalidResponse("expected sources array");
-	return envelope.sources as SpecStreamSource[];
+	const data = envelope.data;
+	if (data && typeof data === "object" && !Array.isArray(data)) return data as Record<string, unknown>;
+	const error = envelope.error;
+	if (data === null && error && typeof error === "object") {
+		const message = (error as Record<string, unknown>).message;
+		throw new Error(`SpecStream error: ${typeof message === "string" && message ? message : "request failed"}`);
+	}
+	return envelope;
+}
+
+function parseSearchResponse(value: unknown): SpecStreamSource[] {
+	const data = unwrapEnvelope(value);
+	if (!Array.isArray(data.sources)) throw invalidResponse("expected sources array");
+	return data.sources as SpecStreamSource[];
 }
 
 function parseExtractResponse(value: unknown): SpecStreamExtractResult[] {
-	if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidResponse("expected an object envelope");
-	const envelope = value as Record<string, unknown>;
-	if (!Array.isArray(envelope.results)) throw invalidResponse("expected results array");
-	return envelope.results as SpecStreamExtractResult[];
+	const data = unwrapEnvelope(value);
+	if (!Array.isArray(data.results)) throw invalidResponse("expected results array");
+	return data.results as SpecStreamExtractResult[];
 }
 
 export function isSpecStreamAvailable(): boolean {
