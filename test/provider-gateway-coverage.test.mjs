@@ -7,6 +7,7 @@ import { test } from "node:test";
 
 const providers = [
 	["anysearch", "anysearch", "searchWithAnySearch", "https://api.anysearch.com/v1/search", "Authorization"],
+	["autom", "autom", "searchWithAutom", "https://api.autom.dev/v1/google/search", "x-api-key"],
 	["bocha", "bocha", "searchWithBocha", "https://api.bochaai.com/v1/web-search", "Authorization"],
 	["brightdata", "brightdata", "searchWithBrightData", "https://api.brightdata.com/request", "Authorization"],
 	["brightdata-unlocker", "brightdata", "extractWithBrightDataUnlocker", "https://api.brightdata.com/request", "Authorization"],
