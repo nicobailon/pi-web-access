@@ -121,28 +121,43 @@ export function registerWebToolActivation(pi: ExtensionAPI, tools: ReadonlyArray
 	// A resumed transcript that declared its tools without the loader keeps that set; adding the
 	// loader there would record a mid-conversation tool change the user never asked for (#462).
 	let loaderSelected = true;
-	function selectFromSession(ctx: ExtensionContext): void {
-		if (!loaderAvailable()) return;
+	function selectFromSession(ctx: ExtensionContext): boolean {
+		if (!loaderAvailable()) return false;
 		try {
 			const messages = buildSessionContext(ctx.sessionManager.getBranch()).messages;
 			const declared = transcriptToolNames(messages);
-			// "auto" decides once, for a fresh session; recorded sessions keep their tools.
+			// "auto" decides only for a session with no messages; recorded sessions keep their tools.
 			const eager = mode === "auto" && !declared && messages.length === 0 && !addsToolsWithoutCheckpoint(ctx.model);
 			// Sessions from before transcript tool declarations keep every web tool; fresh ones start with none.
 			const recorded = declared ?? new Set(messages.length > 0 || eager ? names : []);
 			loaderSelected = !eager && (!declared || declared.has(LOADER_NAME));
 			const others = pi.getActiveTools().filter(name => name !== LOADER_NAME && !names.includes(name));
 			pi.setActiveTools([...new Set([...others, ...names.filter(name => recorded.has(name)), ...(loaderSelected ? [LOADER_NAME] : [])])]);
+			return true;
 		} catch (error) {
 			if (!warned) {
 				warned = true;
-				console.warn(`[pi-web-access] Keeping web tools eagerly available because activation setup failed: ${error instanceof Error ? error.message : String(error)}`);
+				console.warn(`[pi-web-access] Web tool activation setup failed; keeping the current tool selection: ${error instanceof Error ? error.message : String(error)}`);
 			}
+			return false;
 		}
 	}
 
-	pi.on("session_start", (_event, ctx) => selectFromSession(ctx));
-	pi.on("session_tree", (_event, ctx) => selectFromSession(ctx));
+	// Pi declares the first tools with the first request, so until agent_start a model switch decides again,
+	// unless the web tools were changed since the last decision.
+	let undeclared: string | undefined;
+	const activationState = () => [LOADER_NAME, ...names].map(name => pi.getActiveTools().includes(name)).join();
+	function decide(ctx: ExtensionContext): void {
+		undeclared = selectFromSession(ctx) ? activationState() : undefined;
+	}
+	pi.on("session_start", (_event, ctx) => decide(ctx));
+	pi.on("session_tree", (_event, ctx) => decide(ctx));
+	pi.on("agent_start", () => { undeclared = undefined; });
+	pi.on("model_select", (_event, ctx) => {
+		if (mode === "auto" && ctx.isIdle() && undeclared !== undefined && undeclared === activationState()
+			&& loaderSelected !== addsToolsWithoutCheckpoint(ctx.model)
+			&& buildSessionContext(ctx.sessionManager.getBranch()).messages.length === 0) decide(ctx);
+	});
 	pi.on("before_agent_start", () => {
 		if (!loaderSelected || !loaderAvailable() || pi.getActiveTools().includes(LOADER_NAME)) return;
 		try {
