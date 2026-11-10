@@ -129,3 +129,18 @@ test("Autom without a key is unavailable and explains how to configure it", asyn
 	assert.equal(output.available, false);
 	assert.match(output.error, /AUTOM_API_KEY/);
 });
+
+test("Autom reports a malformed body as invalid JSON without the key", async () => {
+	const home = await createHome({ automApiKey: "secret-autom-key" });
+	const child = runChild(`
+		globalThis.fetch = async () => new Response("secret-autom-key is not json", { status: 200 });
+		const { searchWithAutom } = await import(${JSON.stringify(automModuleUrl)});
+		let error = "";
+		try { await searchWithAutom("query"); } catch (err) { error = err.message; }
+		console.log(JSON.stringify({ error }));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.match(output.error, /^Autom API returned invalid JSON/);
+	assert.ok(!output.error.includes("secret-autom-key"));
+});

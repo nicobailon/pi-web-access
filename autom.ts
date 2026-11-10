@@ -167,7 +167,10 @@ export async function searchWithAutom(query: string, options: SearchOptions = {}
 		rawData = await response.json();
 	} catch (err) {
 		activityMonitor.logComplete(activityId, response.status);
-		throw new Error(`Autom API returned invalid JSON: ${errorMessage(err)}`);
+		// Only a parse failure is invalid JSON; a dropped connection or a cancel keeps its own meaning,
+		// so searchRouting can still fall back on network errors.
+		if (!(err instanceof SyntaxError)) throw err;
+		throw new Error(`Autom API returned invalid JSON: ${redactCredential(errorMessage(err), apiKey)}`);
 	}
 	let entries: AutomResult[];
 	try {
