@@ -79,6 +79,7 @@ import { isSearchApiAvailable } from "./searchapi.ts";
 import { isOutcrawlAvailable } from "./outcrawl.ts";
 import { isSofyaAvailable } from "./sofya.ts";
 import { isCloroAvailable } from "./cloro.ts";
+import { isAutomAvailable } from "./autom.ts";
 import { isSpecStreamAvailable } from "./specstream.ts";
 import { isDeepSeekAvailable } from "./deepseek.ts";
 import { isBaizhiAvailable } from "./baizhi.ts";
@@ -385,6 +386,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		outcrawl: allowedProviders.has("outcrawl") && isOutcrawlAvailable(),
 		sofya: allowedProviders.has("sofya") && isSofyaAvailable(),
 		cloro: allowedProviders.has("cloro") && isCloroAvailable(),
+		autom: allowedProviders.has("autom") && isAutomAvailable(),
 		specstream: allowedProviders.has("specstream") && isSpecStreamAvailable(),
 		deepseek: allowedProviders.has("deepseek") && isDeepSeekAvailable(),
 	};
