@@ -88,6 +88,9 @@ export interface WebSearchConfig {
 	automBaseUrl?: unknown;
 	specstreamApiKey?: unknown;
 	specstreamBaseUrl?: unknown;
+	apifyApiKey?: unknown;
+	apifySearchBaseUrl?: unknown;
+	apifyFetchBaseUrl?: unknown;
 	tabstackBaseUrl?: unknown;
 	tabstackApiKey?: unknown;
 	tabstackResearchMode?: unknown;

@@ -322,6 +322,7 @@ export function startCuratorServer(
 		if (provider === "cloro") return availableProviders.cloro;
 		if (provider === "autom") return availableProviders.autom;
 		if (provider === "specstream") return availableProviders.specstream;
+		if (provider === "apify") return availableProviders.apify;
 		if (provider === "deepseek") return availableProviders.deepseek;
 		return false;
 	}

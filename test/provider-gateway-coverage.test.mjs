@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 
 const providers = [
+	["apify", "apifySearch", "searchWithApify", "https://web-search.apify.actor/", "Authorization"],
+	["apify", "apifyFetch", "extractWithApify", "https://web-fetch.apify.actor/", "Authorization"],
 	["anysearch", "anysearch", "searchWithAnySearch", "https://api.anysearch.com/v1/search", "Authorization"],
 	["autom", "autom", "searchWithAutom", "https://api.autom.dev/v1/google/search", "x-api-key"],
 	["bocha", "bocha", "searchWithBocha", "https://api.bochaai.com/v1/web-search", "Authorization"],
@@ -52,7 +54,7 @@ const providers = [
 async function runFixture(t, provider, script, config = {}) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-gateway-"));
 	t.after(() => rm(home, { recursive: true, force: true }));
-	const credential = ({ jinaSearch: "jina", mistralSearch: "mistral" })[provider.stem] ?? provider.stem;
+	const credential = ({ jinaSearch: "jina", mistralSearch: "mistral", apifySearch: "apify", apifyFetch: "apify" })[provider.stem] ?? provider.stem;
 	await writeFile(join(home, "web-search.json"), JSON.stringify({
 		[credential + "ApiKey"]: "gateway-test-key",
 		brightdataSerpZone: "serp_zone",
