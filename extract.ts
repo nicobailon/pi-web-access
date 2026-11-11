@@ -17,6 +17,7 @@ import { extractWithExa, hasExaApiKey } from "./exa.ts";
 import { extractWithSearch1API, isSearch1APIAvailable } from "./search1api.ts";
 import { extractWithQuerit, isQueritAvailable } from "./querit.ts";
 import { extractWithTabstack, isTabstackAvailable } from "./tabstack.ts";
+import { extractWithSpecStream, isSpecStreamAvailable } from "./specstream.ts";
 import { extractWithKagi, isKagiExtractAvailable } from "./kagi.ts";
 import { extractWithOllama, isOllamaFetchAvailable } from "./ollama.ts";
 import { extractWithFirecrawl, isFirecrawlAvailable } from "./firecrawl.ts";
@@ -71,11 +72,11 @@ function loadFetchTimeoutMs(): number {
 const NON_RECOVERABLE_ERRORS = ["Unsupported content type", "Response too large", "PDF extraction is disabled", "Image fetching is disabled", "fetchContent.curl command not found"];
 const MIN_USEFUL_CONTENT = 500;
 const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const FETCH_PROVIDERS = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack"] as const;
+const FETCH_PROVIDERS = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack", "specstream"] as const;
 type FetchProvider = typeof FETCH_PROVIDERS[number];
 type FetchRouting = { providers: FetchProvider[]; allowRemoteHostedProviders: boolean };
 const DEFAULT_FETCH_PROVIDER_ORDER: FetchProvider[] = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "brightdata", "gemini"];
-const REMOTE_HOSTED_FETCH_PROVIDERS = new Set<FetchProvider>(["jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack"]);
+const REMOTE_HOSTED_FETCH_PROVIDERS = new Set<FetchProvider>(["jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack", "specstream"]);
 
 function isDefuddleConsoleError(args: Parameters<typeof console.error>): boolean {
 	const prefix = args[0];
@@ -871,6 +872,7 @@ export async function extractContent(
 	let search1apiError: string | null = null;
 	let queritError: string | null = null;
 	let tabstackError: string | null = null;
+	let specstreamError: string | null = null;
 	let kagiError: string | null = null;
 	let ollamaError: string | null = null;
 	let parallelError: string | null = null;
@@ -989,6 +991,20 @@ export async function extractContent(
 				if (isAbortError(err)) return abortedResult(url);
 				tabstackError = errorMessage(err);
 				if (isConfigParseError(err)) return parseErrorResult(tabstackError);
+			}
+			continue;
+		}
+
+		if (provider === "specstream") {
+			try {
+				if (isSpecStreamAvailable()) {
+					const specstreamResult = await extractWithSpecStream(url, signal, options);
+					if (specstreamResult) return withDeclaredLinks(specstreamResult);
+				}
+			} catch (err) {
+				if (isAbortError(err)) return abortedResult(url);
+				specstreamError = errorMessage(err);
+				if (isConfigParseError(err)) return parseErrorResult(specstreamError);
 			}
 			continue;
 		}
@@ -1155,6 +1171,7 @@ export async function extractContent(
 		...(deepseekError ? [`DeepSeek fallback failed: ${deepseekError}`] : []),
 		...(exaError ? [`Exa fallback failed: ${exaError}`] : []),
 		...(tabstackError ? [`Tabstack fallback failed: ${tabstackError}`] : []),
+		...(specstreamError ? [`SpecStream fallback failed: ${specstreamError}`] : []),
 		"",
 		"Fallback options:",
 		...(jinaHint ? [jinaHint] : []),
@@ -1170,6 +1187,7 @@ export async function extractContent(
 		`  • Set deepseekApiKey in ${WEB_SEARCH_CONFIG_PATH} or DEEPSEEK_API_KEY and add "deepseek" to fetchRouting.providers`,
 		`  • Set exaApiKey in ${WEB_SEARCH_CONFIG_PATH} or EXA_API_KEY and add "exa" to fetchRouting.providers`,
 		`  • Set tabstackApiKey in ${WEB_SEARCH_CONFIG_PATH} or TABSTACK_API_KEY and add "tabstack" to fetchRouting.providers`,
+		`  • Set specstreamApiKey in ${WEB_SEARCH_CONFIG_PATH} or SPECSTREAM_API_KEY and add "specstream" to fetchRouting.providers`,
 		`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`,
 		"  • Sign into gemini.google.com in Chrome",
 		...(searchToolName ? [`  • Use ${searchToolName} to find content about this topic`] : []),
@@ -1201,6 +1219,24 @@ const JAVASCRIPT_MIME_TYPES = new Set([
 function isExecutableScriptType(type: string | null): boolean {
 	const mime = (type ?? "").split(";")[0].trim().toLowerCase();
 	return mime === "" || mime === "module" || JAVASCRIPT_MIME_TYPES.has(mime);
+}
+
+/** Removes non-rendered nodes, so pass a fresh parse. */
+function visibleTextLength(document: Document): number {
+	for (const node of document.querySelectorAll("script, style, noscript, template")) node.remove();
+	return (document.body?.textContent ?? "").replace(/\s+/g, " ").trim().length;
+}
+
+/** Markdown length as text, without images and link targets, which would
+ * otherwise count long URLs as content. Each pattern always matches once
+ * started, which keeps the scan linear on unbalanced brackets. */
+function markdownTextLength(markdown: string): number {
+	return markdown
+		.replace(/\]\([^)\s]*\)?/g, "]")
+		.replace(/!\[[^\]]*\]?/g, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.length;
 }
 
 function isLikelyJSRendered(html: string): boolean {
@@ -1611,8 +1647,7 @@ async function extractViaHttp(
 				const { document: original } = parseHTML(text);
 				const hasExecutableScript = [...original.querySelectorAll("script")]
 					.some((script) => isExecutableScriptType(script.getAttribute("type")));
-				for (const node of original.querySelectorAll("script, style, noscript, template")) node.remove();
-				const visibleChars = (original.body?.textContent ?? "").replace(/\s+/g, " ").trim().length;
+				const visibleChars = visibleTextLength(original);
 				const extractedChars = markdown.trim().length;
 				const counts = `Extracted content appears incomplete: extracted ${extractedChars} characters from a page with ${visibleChars} characters of visible text`;
 				if (visibleChars >= MIN_USEFUL_CONTENT) error = counts;
@@ -1626,6 +1661,27 @@ async function extractViaHttp(
 				error,
 				declaredLinks,
 			};
+		}
+
+		// Readability can keep one block of a page (one section of a guide, a
+		// product page's cart drawer) and still clear the length floor. The
+		// thresholds were measured on #673's examples (coverage <= 0.25, gain
+		// >= 1.9x) and ordinary articles and docs (coverage >= 0.55, gain <= 1.2x).
+		// Readability's result already stands, so a Defuddle failure keeps it.
+		const extractedText = markdownTextLength(markdown);
+		if (extractedText < visibleTextLength(parseHTML(text).document) * 0.5) {
+			controller.signal.throwIfAborted();
+			const defuddleResult = await extractWithDefuddle(text, response.url || url).catch(() => null);
+			controller.signal.throwIfAborted();
+			if (defuddleResult && defuddleResult.content.length >= MIN_USEFUL_CONTENT && markdownTextLength(defuddleResult.content) >= extractedText * 1.5) {
+				return {
+					url,
+					title: article.title || documentTitle || defuddleResult.title,
+					content: appendDeclaredWebLinks(defuddleResult.content, declaredLinks),
+					error: null,
+					declaredLinks,
+				};
+			}
 		}
 
 		return {
