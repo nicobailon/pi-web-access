@@ -62,6 +62,7 @@ function buildProviderButtons(
 		{ value: "cloro", label: "cloro", available: available.cloro },
 		{ value: "autom", label: "Autom", available: available.autom },
 		{ value: "specstream", label: "SpecStream", available: available.specstream },
+		{ value: "apify", label: "Apify", available: available.apify },
 		{ value: "tabstack", label: "Tabstack", available: available.tabstack },
 		{ value: "deepseek", label: "DeepSeek", available: available.deepseek },
 	];
@@ -1495,7 +1496,7 @@ const SCRIPT = `(function() {
   var token = DATA.sessionToken;
   var timeoutSec = DATA.timeout;
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
-  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xcrawl", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "baizhi", "you", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "cloudflare", "searchapi", "outcrawl", "sofya", "cloro", "autom", "specstream", "tabstack"];
+  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xcrawl", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "baizhi", "you", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "cloudflare", "searchapi", "outcrawl", "sofya", "cloro", "autom", "specstream", "apify", "tabstack"];
   var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
   var workflow = "summary-review";
   var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";
@@ -1747,6 +1748,7 @@ const SCRIPT = `(function() {
     if (provider === "cloro") return "cloro";
     if (provider === "autom") return "Autom";
     if (provider === "specstream") return "SpecStream";
+    if (provider === "apify") return "Apify";
     if (provider === "deepseek") return "DeepSeek";
     return "Unknown";
   }

@@ -81,6 +81,7 @@ import { isSofyaAvailable } from "./sofya.ts";
 import { isCloroAvailable } from "./cloro.ts";
 import { isAutomAvailable } from "./autom.ts";
 import { isSpecStreamAvailable } from "./specstream.ts";
+import { isApifyAvailable } from "./apify.ts";
 import { isDeepSeekAvailable } from "./deepseek.ts";
 import { isBaizhiAvailable } from "./baizhi.ts";
 import { isZaiAvailable } from "./zai.ts";
@@ -388,6 +389,7 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		cloro: allowedProviders.has("cloro") && isCloroAvailable(),
 		autom: allowedProviders.has("autom") && isAutomAvailable(),
 		specstream: allowedProviders.has("specstream") && isSpecStreamAvailable(),
+		apify: allowedProviders.has("apify") && isApifyAvailable(),
 		deepseek: allowedProviders.has("deepseek") && isDeepSeekAvailable(),
 	};
 	return {
