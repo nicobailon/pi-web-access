@@ -96,6 +96,35 @@ test("configured routing falls back when a provider request times out, but stops
 	assert.deepEqual(output.cancelled.calls, ["brave"]);
 });
 
+test("configured routing falls back when a provider times out while reading the response body", async () => {
+	const home = await createConfig({
+		searchRouting: { providers: ["tavily", "brave"], fallbackOn: ["network"] },
+	});
+	const child = runChild(`
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const calls = [];
+		globalThis.fetch = async (url) => {
+			if (String(url).includes("tavily")) {
+				calls.push("tavily");
+				return new Response(new ReadableStream({
+					pull(controller) { controller.error(new DOMException("The operation was aborted due to timeout", "TimeoutError")); },
+				}), { status: 200 });
+			}
+			calls.push("brave");
+			return new Response(JSON.stringify({ web: { results: [{ title: "Brave result", url: "https://example.com/brave", description: "Brave" }] } }), { status: 200 });
+		};
+		const result = await search("body timeout route", { provider: "auto" });
+		console.log(JSON.stringify({ provider: result.provider, calls }));
+	`, {
+		PI_CODING_AGENT_DIR: home,
+		BRAVE_API_KEY: "brave-test-key",
+		TAVILY_API_KEY: "tavily-test-key",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	assert.deepEqual(JSON.parse(child.stdout.trim()), { provider: "brave", calls: ["tavily", "brave"] });
+});
+
 test("configured routing fails closed on quota errors not selected by fallbackOn", async () => {
 	const home = await createConfig({
 		searchRouting: { providers: ["brave", "tavily"], fallbackOn: ["network"] },

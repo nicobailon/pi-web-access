@@ -445,6 +445,10 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 		kind = "credential";
 	} else if (isAbortError(err)) {
 		kind = "aborted";
+	} else if (lower.includes("aborted due to timeout")) {
+		// Before the response-format checks: providers wrap a body-read timeout as
+		// "invalid JSON: The operation was aborted due to timeout".
+		kind = "network";
 	} else if (err instanceof OpenAIAlphaSearchUnsupportedError) {
 		kind = "unsupported";
 	} else if (provider === "xai" && status === 403 && /spending[- ]limit|(?:no|out of) credits?|insufficient quota|quota (?:exceeded|exhausted)|credits? (?:exhausted|depleted|used up)/.test(lower)) {
@@ -469,7 +473,7 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 		kind = "invalid-response";
 	} else if (/temporar|service unavailable|server error/.test(text) || (openAIStreamError && /internal error|\bapi error|overloaded/.test(text))) {
 		kind = "transient";
-	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|aborted due to timeout|socket/.test(text)) {
+	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(text)) {
 		kind = "network";
 	} else if (/invalid or missing|invalid config|failed to parse|must be an? |configuration/.test(text)) {
 		kind = "config";
