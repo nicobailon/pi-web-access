@@ -161,7 +161,7 @@ export function isSpecStreamAvailable(): boolean {
 	return hasCredentialSource({ provider: "SpecStream", configuredValue: loadConfig().specstreamApiKey, environmentValue: process.env.SPECSTREAM_API_KEY });
 }
 
-// The search reply lists the pages it read in rank order. Domain filters and the result count are applied to that list here.
+// The search reply lists the pages it read in rank order.
 export async function searchWithSpecStream(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
