@@ -25,8 +25,8 @@ async function withNativeEnv(config, run) {
 	}
 }
 
-function nativeHarness({ api, compat } = {}) {
-	const faux = fauxProvider({ api });
+function nativeHarness({ api, compat, models: fauxModels } = {}) {
+	const faux = fauxProvider({ api, models: fauxModels });
 	const models = createModels();
 	models.setProvider(faux.provider);
 	const modelRuntime = new Proxy(models, {
@@ -132,6 +132,26 @@ test("native Pi on a model with native tool additions starts with web_enable by 
 		return requests;
 	});
 	assert.deepEqual(requests[0].tools.map(tool => tool.name), ["web_enable"]);
+});
+
+test("native Pi decides auto for the model selected before the first prompt", async () => {
+	const requests = await withNativeEnv({}, async () => {
+		const { faux, requests, captureRequest, start } = nativeHarness({
+			api: "anthropic-messages",
+			compat: { supportsMidConvoSystemMessages: true, supportsMidConvoToolChanges: true },
+			models: [{ id: "a" }, { id: "b" }],
+		});
+		faux.setResponses([(context) => {
+			captureRequest(context);
+			return fauxAssistantMessage("done");
+		}]);
+		const session = await start({ extensions: true, sessionManager: SessionManager.inMemory(root), reason: "startup", noTools: "builtin" });
+		await session.setModel({ ...faux.getModel("b"), compat: undefined });
+		await session.prompt("Research this");
+		session.dispose();
+		return requests;
+	});
+	assert.deepEqual(requests[0].tools.map(tool => tool.name), ["web_search", "source_check", "fetch_content", "get_search_content"]);
 });
 
 test("native Pi resumes a session recorded without pi-web-access with its recorded tools", async () => {
