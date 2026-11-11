@@ -10,12 +10,13 @@ import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveProviderAp
 // cloro monitor API: https://cloro.dev/docs/api-reference/endpoint/monitor-google
 const CLORO_GOOGLE_URL = "https://api.cloro.dev/v1/monitor/google";
 const CLORO_AIMODE_URL = "https://api.cloro.dev/v1/monitor/aimode";
+const CLORO_BING_AIMODE_URL = "https://api.cloro.dev/v1/monitor/bing/aimode";
 const CONFIG_PATH = getWebSearchConfigPath();
 // cloro scrapes the live page during the request, so allow more time than a plain search index.
 const SEARCH_TIMEOUT_MS = 120_000;
 // The API has no default country and requires one on every request.
 const COUNTRY = "US";
-const MODES = ["google", "aimode"] as const;
+const MODES = ["google", "aimode", "bing_aimode"] as const;
 type CloroMode = typeof MODES[number];
 
 interface WebSearchConfig {
@@ -24,7 +25,7 @@ interface WebSearchConfig {
 	cloroMode?: unknown;
 }
 
-// Google organic results carry title/link/snippet; AI Mode sources carry label/url/description.
+// Google organic results carry title/link/snippet; Google and Bing AI Mode sources carry label/url/description.
 interface CloroEntry {
 	title?: unknown;
 	link?: unknown;
@@ -170,9 +171,9 @@ export async function searchWithCloro(query: string, options: SearchOptions = {}
 	const apiKey = await requireApiKey(options.signal);
 	const numResults = normalizeSearchResultCount(options.numResults);
 	const filters = parseDomainFilter(options.domainFilter);
-	// Google Search gets the domain filters as site: clauses. AI Mode gets the plain prompt, and its sources
-	// are filtered locally below. One Google request returns one results page, trimmed to numResults locally.
-	const endpoint = mode === "google" ? CLORO_GOOGLE_URL : CLORO_AIMODE_URL;
+	// Google Search gets the domain filters as site: clauses. Google and Bing AI Mode get the plain prompt, and
+	// their sources are filtered locally below. One Google request returns one results page, trimmed to numResults locally.
+	const endpoint = mode === "google" ? CLORO_GOOGLE_URL : mode === "aimode" ? CLORO_AIMODE_URL : CLORO_BING_AIMODE_URL;
 	const body = mode === "google"
 		? { query: buildQuery(query, filters), country: COUNTRY }
 		: { prompt: query, country: COUNTRY, include: { markdown: true } };
