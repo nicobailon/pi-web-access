@@ -36,9 +36,15 @@ function run(config = {}, options = {}) {
 				type: "message", id: "message-" + index, parentId: index ? "message-" + (index - 1) : null,
 				timestamp: new Date(index).toISOString(), message,
 			}));
-			const ctx = { model, sessionManager: { getBranch: () => entries } };
+			const ctx = { model, isIdle: () => true, sessionManager: { getBranch: () => entries } };
 			for (const event of [].concat(options.event ?? "session_start")) {
 				for (const handler of handlers.get(event) ?? []) await handler(options.eventPayload ?? {}, ctx);
+			}
+			for (const step of options.steps ?? []) {
+				if (step.set) { active = [...step.set]; continue; }
+				if ("model" in step) ctx.model = step.model;
+				ctx.isIdle = () => step.idle ?? true;
+				for (const handler of handlers.get(step.event) ?? []) await handler({}, ctx);
 			}
 			const before = [...active];
 			let result;
@@ -141,6 +147,25 @@ test("auto leaves recorded and legacy sessions with the tools they already had",
 
 	const legacy = run({}, { model: null, messages: [{ role: "user", content: [{ type: "text", text: "old session" }], timestamp: 1 }] });
 	assert.deepEqual(legacy.before, ["read", "foreign_tool", ...defaultNames, "web_enable"]);
+});
+
+test("auto decides for the model selected before the first request only", () => {
+	const toIncapable = { event: "model_select", model: { api: "openai-completions" } };
+	const sent = [{ event: "before_agent_start" }, { event: "agent_start" }];
+	const web = (config, options) => run(config, options).before.filter(name => name === "web_enable" || defaultNames.includes(name));
+	const messages = [{ role: "system", content: "", toolsAdded: [{ name: "web_enable", description: "", parameters: { type: "object" } }], timestamp: 1 }];
+	assert.deepEqual(web({}, { steps: [toIncapable] }), defaultNames);
+	assert.deepEqual(web({}, { model: toIncapable.model, steps: [{ event: "model_select", model: nativeAdditions }] }), ["web_enable"]);
+	assert.deepEqual(web({}, { steps: [sent[0], toIncapable] }), defaultNames, "failed first run");
+	for (const [label, config, options] of [
+		["sent", {}, { steps: [...sent, toIncapable] }],
+		["running", {}, { steps: [{ ...toIncapable, idle: false }] }],
+		["dynamic", { toolActivation: "dynamic" }, { steps: [toIncapable] }],
+		["deferred", { toolExposure: "deferred" }, { steps: [toIncapable] }],
+		["recorded", {}, { messages, steps: [toIncapable] }],
+	]) assert.deepEqual(web(config, options), ["web_enable"], label);
+	assert.deepEqual(web({}, { steps: [{ set: ["read"] }, toIncapable] }), [], "manual");
+	assert.deepEqual(web({}, { unavailable: ["web_enable"], steps: [toIncapable] }), defaultNames, "excluded");
 });
 
 test("excluded loader leaves permitted legacy tools active", () => {
