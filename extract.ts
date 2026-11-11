@@ -1203,6 +1203,24 @@ function isExecutableScriptType(type: string | null): boolean {
 	return mime === "" || mime === "module" || JAVASCRIPT_MIME_TYPES.has(mime);
 }
 
+/** Removes non-rendered nodes, so pass a fresh parse. */
+function visibleTextLength(document: Document): number {
+	for (const node of document.querySelectorAll("script, style, noscript, template")) node.remove();
+	return (document.body?.textContent ?? "").replace(/\s+/g, " ").trim().length;
+}
+
+/** Markdown length as text, without images and link targets, which would
+ * otherwise count long URLs as content. Each pattern always matches once
+ * started, which keeps the scan linear on unbalanced brackets. */
+function markdownTextLength(markdown: string): number {
+	return markdown
+		.replace(/\]\([^)\s]*\)?/g, "]")
+		.replace(/!\[[^\]]*\]?/g, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.length;
+}
+
 function isLikelyJSRendered(html: string): boolean {
 	const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
 	if (!bodyMatch) return false;
@@ -1611,8 +1629,7 @@ async function extractViaHttp(
 				const { document: original } = parseHTML(text);
 				const hasExecutableScript = [...original.querySelectorAll("script")]
 					.some((script) => isExecutableScriptType(script.getAttribute("type")));
-				for (const node of original.querySelectorAll("script, style, noscript, template")) node.remove();
-				const visibleChars = (original.body?.textContent ?? "").replace(/\s+/g, " ").trim().length;
+				const visibleChars = visibleTextLength(original);
 				const extractedChars = markdown.trim().length;
 				const counts = `Extracted content appears incomplete: extracted ${extractedChars} characters from a page with ${visibleChars} characters of visible text`;
 				if (visibleChars >= MIN_USEFUL_CONTENT) error = counts;
@@ -1626,6 +1643,27 @@ async function extractViaHttp(
 				error,
 				declaredLinks,
 			};
+		}
+
+		// Readability can keep one block of a page (one section of a guide, a
+		// product page's cart drawer) and still clear the length floor. The
+		// thresholds were measured on #673's examples (coverage <= 0.25, gain
+		// >= 1.9x) and ordinary articles and docs (coverage >= 0.55, gain <= 1.2x).
+		// Readability's result already stands, so a Defuddle failure keeps it.
+		const extractedText = markdownTextLength(markdown);
+		if (extractedText < visibleTextLength(parseHTML(text).document) * 0.5) {
+			controller.signal.throwIfAborted();
+			const defuddleResult = await extractWithDefuddle(text, response.url || url).catch(() => null);
+			controller.signal.throwIfAborted();
+			if (defuddleResult && defuddleResult.content.length >= MIN_USEFUL_CONTENT && markdownTextLength(defuddleResult.content) >= extractedText * 1.5) {
+				return {
+					url,
+					title: article.title || documentTitle || defuddleResult.title,
+					content: appendDeclaredWebLinks(defuddleResult.content, declaredLinks),
+					error: null,
+					declaredLinks,
+				};
+			}
 		}
 
 		return {

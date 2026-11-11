@@ -90,6 +90,24 @@ test("short Readability output falls back to useful Defuddle content", async (t)
 	assert.match(result.content, /Useful Defuddle content after the short Readability article/);
 });
 
+test("partial Readability output falls back to more complete Defuddle content", async (t) => {
+	t.after(() => { globalThis.fetch = originalFetch; });
+	// Readability keeps only the longest section of this guide (over 1,000
+	// characters), a third of the page's text.
+	const section = (topic, paragraphs) => `<div class="section"><h2>${topic}</h2><div class="field">${Array.from({ length: paragraphs }, (_, i) => `<p>${topic} part ${i + 1}: range, charging speed, and running costs all change with this choice, so compare them before you buy.</p>`).join("")}</div></div>`;
+	const guide = [section("Battery size", 4), section("Charging at home", 4), section("Financing", 10), section("Public charging", 4), section("Insurance", 4)].join("");
+	globalThis.fetch = async () => new Response(
+		`<!doctype html><html><head><title>Choosing an EV</title></head><body><main><div class="guide">${guide}</div></main></body></html>`,
+		{ status: 200, headers: { "content-type": "text/html" } },
+	);
+
+	const result = await extractContent("https://example.com/ev-guide", undefined, { lookup });
+	assert.equal(result.error, null);
+	for (const topic of ["Battery size", "Charging at home", "Financing", "Public charging", "Insurance"]) {
+		assert.match(result.content, new RegExp(`${topic} part 4:`));
+	}
+});
+
 test("Defuddle processing failures stay contained and do not return the fallback body", async (t) => {
 	const originalConsoleError = console.error;
 	t.after(() => {
