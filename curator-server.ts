@@ -320,6 +320,7 @@ export function startCuratorServer(
 		if (provider === "outcrawl") return availableProviders.outcrawl;
 		if (provider === "sofya") return availableProviders.sofya;
 		if (provider === "cloro") return availableProviders.cloro;
+		if (provider === "specstream") return availableProviders.specstream;
 		if (provider === "deepseek") return availableProviders.deepseek;
 		return false;
 	}
