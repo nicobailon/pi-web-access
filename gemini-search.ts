@@ -359,7 +359,11 @@ function errorMessage(err: unknown): string {
 }
 
 function isAbortError(err: unknown): boolean {
-	return errorMessage(err).toLowerCase().includes("abort");
+	// A provider's own AbortSignal.timeout rejects with "The operation was aborted
+	// due to timeout" (often re-wrapped into a plain Error), which is a network
+	// failure to fall back from, not a user cancel.
+	const message = errorMessage(err).toLowerCase();
+	return message.includes("abort") && !message.includes("aborted due to timeout");
 }
 
 type TakeAutoResult = (result: SearchResponse | null, provider: ResolvedSearchProvider) => AttributedSearchResponse | null;
@@ -442,6 +446,10 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 		kind = "credential";
 	} else if (isAbortError(err)) {
 		kind = "aborted";
+	} else if (lower.includes("aborted due to timeout")) {
+		// Before the response-format checks: providers wrap a body-read timeout as
+		// "invalid JSON: The operation was aborted due to timeout".
+		kind = "network";
 	} else if (err instanceof OpenAIAlphaSearchUnsupportedError) {
 		kind = "unsupported";
 	} else if (provider === "xai" && status === 403 && /spending[- ]limit|(?:no|out of) credits?|insufficient quota|quota (?:exceeded|exhausted)|credits? (?:exhausted|depleted|used up)/.test(lower)) {
