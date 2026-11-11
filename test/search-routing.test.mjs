@@ -59,6 +59,43 @@ test("configured routing follows order after a selected network failure and retu
 	assert.deepEqual(output.calls, ["https://api.search.brave.com/res/v1/web/search?q=ordered+route&count=5", "https://api.tavily.com/search"]);
 });
 
+test("configured routing falls back when a provider request times out, but stops on a caller cancel", async () => {
+	const home = await createConfig({
+		searchRouting: { providers: ["brave", "tavily"], fallbackOn: ["network"] },
+	});
+	const child = runChild(`
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const run = async (failBrave, signal) => {
+			const calls = [];
+			globalThis.fetch = async (url) => {
+				calls.push(String(url).includes("brave") ? "brave" : "tavily");
+				if (String(url).startsWith("https://api.search.brave.com/")) failBrave();
+				return new Response(JSON.stringify({ answer: "Tavily route answer", results: [] }), { status: 200 });
+			};
+			try {
+				const result = await search("timeout route", { provider: "auto", signal });
+				return { provider: result.provider, calls };
+			} catch (error) {
+				return { error: String(error.message), calls };
+			}
+		};
+		const timedOut = await run(() => { throw new DOMException("The operation was aborted due to timeout", "TimeoutError"); });
+		const controller = new AbortController();
+		const cancelled = await run(() => { controller.abort(); throw controller.signal.reason; }, controller.signal);
+		console.log(JSON.stringify({ timedOut, cancelled }));
+	`, {
+		PI_CODING_AGENT_DIR: home,
+		BRAVE_API_KEY: "brave-test-key",
+		TAVILY_API_KEY: "tavily-test-key",
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.timedOut, { provider: "tavily", calls: ["brave", "tavily"] });
+	assert.match(output.cancelled.error, /abort/i);
+	assert.deepEqual(output.cancelled.calls, ["brave"]);
+});
+
 test("configured routing fails closed on quota errors not selected by fallbackOn", async () => {
 	const home = await createConfig({
 		searchRouting: { providers: ["brave", "tavily"], fallbackOn: ["network"] },

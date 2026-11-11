@@ -358,7 +358,11 @@ function errorMessage(err: unknown): string {
 }
 
 function isAbortError(err: unknown): boolean {
-	return errorMessage(err).toLowerCase().includes("abort");
+	// A provider's own AbortSignal.timeout rejects with "The operation was aborted
+	// due to timeout" (often re-wrapped into a plain Error), which is a network
+	// failure to fall back from, not a user cancel.
+	const message = errorMessage(err).toLowerCase();
+	return message.includes("abort") && !message.includes("aborted due to timeout");
 }
 
 type TakeAutoResult = (result: SearchResponse | null, provider: ResolvedSearchProvider) => AttributedSearchResponse | null;
@@ -465,7 +469,7 @@ function classifyProviderError(provider: ResolvedSearchProvider, err: unknown): 
 		kind = "invalid-response";
 	} else if (/temporar|service unavailable|server error/.test(text) || (openAIStreamError && /internal error|\bapi error|overloaded/.test(text))) {
 		kind = "transient";
-	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|socket/.test(text)) {
+	} else if (err instanceof TypeError || /fetch failed|network|econnreset|econnrefused|enotfound|etimedout|timed out|aborted due to timeout|socket/.test(text)) {
 		kind = "network";
 	} else if (/invalid or missing|invalid config|failed to parse|must be an? |configuration/.test(text)) {
 		kind = "config";
