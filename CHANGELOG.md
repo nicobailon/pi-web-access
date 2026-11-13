@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-11-12
+
+### Highlights
+
+- Three new search options, each used only when you pick it: SpecStream (which can also fetch pages), Autom, and cloro, which can return Google or Bing AI Mode answers with sources.
+- Ask questions about a video with any model that can see images, without a Gemini key.
+- Fetched pages come back more complete when the first pass keeps only one section of the page.
+- DuckDuckGo search no longer gets your IP address blocked after a handful of searches.
+- A search provider that times out now hands off to your next provider instead of stopping the search.
+
 ### Added
 
 - Search the web and fetch pages through [SpecStream](https://specstream.ai) with `provider: "specstream"` for `web_search` and `"specstream"` in `fetchRouting.providers` for `fetch_content`, configured with `specstreamApiKey` or `SPECSTREAM_API_KEY` (and an optional `specstreamBaseUrl` gateway). It is explicit-only: never chosen by `auto` or `provider: "all"`. Thanks to [@Specstreamai](https://github.com/Specstreamai) for [PR #669](https://github.com/nicobailon/pi-web-access/pull/669).
@@ -19,7 +29,7 @@ All notable changes to this project will be documented in this file.
 
 - With the default `toolActivation: "auto"`, switching models in a new session before sending the first message now picks eager or on-demand web tools for the model you switched to. Before, the choice stayed with the model the session started on, so a model that can't add tools mid-conversation could start with only `web_enable` and lose its prompt cache when the tools loaded later. Sessions that have already sent a request keep their tools. Thanks to [@IdrisGit](https://github.com/IdrisGit) for [PR #674](https://github.com/nicobailon/pi-web-access/pull/674) and [@XEric7](https://github.com/XEric7) for [issue #671](https://github.com/nicobailon/pi-web-access/issues/671).
 - `fetch_content` now recovers more of a page when the main extractor keeps only one part of it, such as one section of a guide, a docs catalogue, or a product page's cart drawer. When the extracted text is under half of the page's visible text, the built-in Defuddle extractor gets a try and its result is used when it has at least 1.5 times the text. Before, Defuddle only ran when extraction returned under 500 characters. Thanks to [@inaridiy](https://github.com/inaridiy) for the measurements in [#673](https://github.com/nicobailon/pi-web-access/issues/673).
-- A search provider whose request times out no longer stops `searchRouting` or the `auto` chain as if you had cancelled the search. The timeout now counts as a `network` error, so a route with `fallbackOn: ["network"]` moves on to the next provider. Cancelling a search still stops it at once. Found while reviewing [PR #675](https://github.com/nicobailon/pi-web-access/pull/675) ([#676](https://github.com/nicobailon/pi-web-access/issues/676)).
+- A search provider whose request times out no longer stops `searchRouting` or the `auto` chain as if you had cancelled the search. The timeout now counts as a `network` error, so a route with `fallbackOn: ["network"]` moves on to the next provider. Cancelling a search still stops it at once ([#676](https://github.com/nicobailon/pi-web-access/issues/676)).
 - DuckDuckGo search no longer gets the IP address blocked after a few searches. Spacing searches 2 seconds apart was not enough: in testing, DuckDuckGo showed its bot check after 3 to 34 searches at that pace, and after 22 searches in 10 minutes even at 5 seconds apart. Searches in one Pi process now start at least 10 seconds apart, with at most 10 in any 10 minutes, and a search that would have to wait more than 20 seconds to start fails at once with a `quota` error so routing moves on. After a bot check the provider pauses for 30 minutes, doubling up to 2 hours, since the block lasts 7 to 30 minutes and comes back after a few searches when it is retried too soon. Parallel subagents and other Pi processes now share that pause through a `duckduckgo-cooldown.json` file next to `web-search.json`, so one bot check stops them all instead of each retrying on its own timer. Thanks to [@kestermcullough](https://github.com/kestermcullough) for [PR #661](https://github.com/nicobailon/pi-web-access/pull/661).
 - AnySearch now applies `domainFilter` locally instead of returning off-domain results, and clamps `max_results` to the API's maximum of 10. A `numResults` above 10 used to come back with 10 results and no warning. Results removed by the local filter read as an empty response, so `searchRouting.fallbackOn: ["empty"]` can move to the next provider, and an include domain that matches nothing also counts as `["domain-miss"]`. Thanks to [@Arcobalneo](https://github.com/Arcobalneo) for [PR #665](https://github.com/nicobailon/pi-web-access/pull/665).
 
