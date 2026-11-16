@@ -78,6 +78,19 @@ test("fetch_content reports every validation problem at once, url first", async 
 	assert.match(result.content[0].text, /^Error: No URL provided \(received parameters: mode, answerModel\)\. Use the 'url' parameter, or 'urls' for parallel fetches; mode answer requires prompt\.$/);
 });
 
+test("fetch_content includes normalization problems in the aggregated error", async () => {
+	// Regression: parameter-level normalization problems (mode, redirects,
+	// auth, proxy) used to return early on their own, hiding the missing
+	// URL and other constraint violations from the caller.
+	const { result } = await runTool("fetch_content", { mode: "answer", auth: "" });
+	assert.equal(result.isError, true);
+	assert.equal(result.details.problems.length, 3);
+	assert.match(
+		result.content[0].text,
+		/^Error: No URL provided \(received parameters: mode, auth\)\. Use the 'url' parameter, or 'urls' for parallel fetches; auth must be a profile name, true, or false; mode answer requires prompt\.$/,
+	);
+});
+
 test("fetch_content flags invalid parameter combinations as error results", async () => {
 	const { result } = await runTool("fetch_content", { url: "https://example.com", mode: "answer", prompt: "What is this page about?", model: "gemini-3.6-flash" });
 	assert.equal(result.isError, true);

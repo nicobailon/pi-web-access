@@ -18,6 +18,10 @@ export interface FetchContentParams {
 
 export interface NormalizedFetchContentParams {
 	urlList: string[];
+	/** Parameter-level validation problems collected during normalization
+	 * instead of throwing, so callers can report them together with their own
+	 * checks in a single round-trip. */
+	problems: string[];
 	options: {
 		forceClone?: boolean;
 		prompt?: string;
@@ -41,6 +45,7 @@ export function describeReceivedParams(params: FetchContentParams): string {
 }
 
 export function normalizeFetchContentParams(params: FetchContentParams): NormalizedFetchContentParams {
+	const problems: string[] = [];
 	const normalizedUrls = uniqueUrls(normalizeUrlArray(params.urls));
 	const urlList = normalizedUrls.length > 0 ? normalizedUrls : normalizeSingleUrl(params.url);
 	const prompt = normalizeOptionalString(params.prompt);
@@ -51,14 +56,15 @@ export function normalizeFetchContentParams(params: FetchContentParams): Normali
 
 	const forceClone = typeof params.forceClone === "boolean" ? params.forceClone : undefined;
 	const model = normalizeOptionalString(params.model);
-	const mode = normalizeMode(params.mode);
+	const mode = normalizeMode(params.mode, problems);
 	const answerModel = normalizeOptionalString(params.answerModel);
-	const auth = normalizeAuth(params.auth);
-	const proxy = normalizeProxy(params.proxy);
-	const redirects = normalizeRedirects(params.redirects);
+	const auth = normalizeAuth(params.auth, problems);
+	const proxy = normalizeProxy(params.proxy, problems);
+	const redirects = normalizeRedirects(params.redirects, problems);
 
 	return {
 		urlList,
+		problems,
 		options: {
 			...(forceClone !== undefined ? { forceClone } : {}),
 			...(prompt !== undefined ? { prompt } : {}),
@@ -91,33 +97,44 @@ function normalizeOptionalString(value: unknown): string | undefined {
 	return trimmed || undefined;
 }
 
-function normalizeMode(value: unknown): "readable" | "raw" | "answer" | "extract" | undefined {
+function normalizeMode(value: unknown, problems: string[]): "readable" | "raw" | "answer" | "extract" | undefined {
 	if (value === undefined) return undefined;
 	if (value === "readable" || value === "raw" || value === "answer" || value === "extract") return value;
-	throw new Error('mode must be "readable", "raw", "answer", or "extract"');
+	problems.push('mode must be "readable", "raw", "answer", or "extract"');
+	return undefined;
 }
 
-function normalizeRedirects(value: unknown): "same-origin" | undefined {
+function normalizeRedirects(value: unknown, problems: string[]): "same-origin" | undefined {
 	if (value === undefined) return undefined;
 	if (value === "same-origin") return value;
-	throw new Error('redirects must be "same-origin"');
+	problems.push('redirects must be "same-origin"');
+	return undefined;
 }
 
-function normalizeAuth(value: unknown): true | string | undefined {
+function normalizeAuth(value: unknown, problems: string[]): true | string | undefined {
 	if (value === undefined || value === false) return undefined;
 	if (value === true) return true;
 	if (typeof value === "string") {
 		const trimmed = value.trim();
 		if (trimmed) return trimmed;
 	}
-	throw new Error("auth must be a profile name, true, or false");
+	problems.push("auth must be a profile name, true, or false");
+	return undefined;
 }
 
-function normalizeProxy(value: unknown): string | undefined {
+function normalizeProxy(value: unknown, problems: string[]): string | undefined {
 	if (value === undefined || value === false) return undefined;
-	if (value === null) throw new Error("proxy must be an http(s) or socks proxy URL string");
-	const normalized = normalizeProxyUrl(value, "proxy");
-	return normalized ?? "";
+	if (value === null) {
+		problems.push("proxy must be an http(s) or socks proxy URL string");
+		return undefined;
+	}
+	try {
+		const normalized = normalizeProxyUrl(value, "proxy");
+		return normalized ?? "";
+	} catch (err) {
+		problems.push(err instanceof Error ? err.message : String(err));
+		return undefined;
+	}
 }
 
 function normalizeOptionalFrameCount(value: unknown): number | undefined {

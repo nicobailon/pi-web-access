@@ -1006,13 +1006,16 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 		// one, and check the URL first: a missing URL is the root cause of
 		// most retries, and naming the parameters that actually arrived helps
 		// tell dropped tool-call arguments (provider issue) apart from
-		// malformed ones (caller issue).
+		// malformed ones (caller issue). Parameter-level normalization
+		// problems (mode, redirects, auth, proxy) are collected too, so one
+		// round-trip reports every fixable parameter at once.
 		const problems: string[] = [];
 		if (urlList.length === 0) {
 			problems.push("url" in params || "urls" in params
 				? `No usable URL provided (received parameters: ${describeReceivedParams(params)}). 'url' must be a non-empty string or 'urls' a non-empty array`
 				: `No URL provided (received parameters: ${describeReceivedParams(params)}). Use the 'url' parameter, or 'urls' for parallel fetches`);
 		}
+		problems.push(...normalized.problems);
 		if (mode === "answer" && !options.prompt) problems.push("mode answer requires prompt");
 		if (mode === "raw" && (options.forceClone === true || options.timestamp || options.frames || options.prompt || options.model || options.answerModel)) {
 			problems.push("mode raw cannot be combined with forceClone, prompt, timestamp, frames, model, or answerModel");
