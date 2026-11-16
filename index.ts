@@ -1446,7 +1446,7 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet:
 			"Web research. Prefer {queries:[...]} with 2-4 varied angles; omit provider unless overriding the default.",
 		parameters: Type.Object({
-			query: Type.Optional(Type.String()),
+			query: Type.String({ description: "Search query; required for a single search (use queries for concurrent searches)" }),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Run concurrently (up to three at a time); vary the angle" })),
 			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Default 5" })),
 			includeContent: Type.Optional(Type.Boolean({ description: "Also fetch full page content" })),
@@ -2020,8 +2020,8 @@ export default function (pi: ExtensionAPI) {
 		promptSnippet:
 			`Use to fetch URL content, direct images, GitHub repos, and videos.${fetchModeConfig.allowedModes.includes("extract") ? ' For specific values (a price, version, date or limit), use mode "extract" with fields instead of reading the whole page.' : ""}`,
 		parameters: Type.Object({
-			url: Type.Optional(Type.String()),
-			urls: Type.Optional(Type.Array(Type.String())),
+			url: Type.String({ description: "URL to fetch; required for a single fetch (use urls for parallel fetches)" }),
+			urls: Type.Optional(Type.Array(Type.String(), { description: "Fetch multiple URLs in parallel" })),
 			forceClone: Type.Optional(Type.Boolean({ description: "Clone GitHub repos over the size limit" })),
 			prompt: Type.Optional(Type.String({
 				description: fetchModeConfig.allowedModes.includes("answer")
