@@ -76,7 +76,7 @@ async function requireApiKey(signal?: AbortSignal): Promise<string> {
 			"Apify API token not found. Either:\n" +
 			`  1. Create ${CONFIG_PATH} with { "apifyApiKey": "your-token" }\n` +
 			"  2. Set APIFY_TOKEN environment variable\n" +
-			"Get a token at https://console.apify.com/settings/integrations?utm_source=pi-web-access&utm_medium=integrations",
+			"Create an Apify API token at https://console.apify.com/settings/integrations?createApiToken=true&for=Pi&utm_source=pi-web-access&utm_medium=integrations (it is shown only once).",
 		);
 	}
 	return apiKey;
