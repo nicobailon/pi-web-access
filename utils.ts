@@ -296,7 +296,15 @@ export function normalizeProxyUrl(value: unknown, source: string): string | null
 	if (!parsed.hostname) throw new Error(`${source} must include a proxy host: ${trimmed}`);
 	parsed.hash = "";
 	parsed.search = "";
-	return parsed.toString();
+	const serialized = parsed.toString();
+	// WHATWG URL drops default ports, but curl defaults proxy URLs to 1080.
+	// Keep HTTP(S) defaults explicit, including credentials and IPv6 hosts.
+	if (!parsed.port && (parsed.protocol === "http:" || parsed.protocol === "https:")) {
+		const authorityEnd = serialized.indexOf("/", parsed.protocol.length + 2);
+		const port = parsed.protocol === "https:" ? 443 : 80;
+		return `${serialized.slice(0, authorityEnd)}:${port}${serialized.slice(authorityEnd)}`;
+	}
+	return serialized;
 }
 
 function redactProxyUrl(value: string): string {
@@ -402,7 +410,8 @@ export function installGlobalProxyFetch(): void {
 	const nativeFetch = current;
 	const wrapped: ProxiedFetch = (async (input: RequestInfo | URL, init?: ProxiedRequestInit) => {
 		// Prefer caller-attached __proxy (survives pLimit context loss) over AsyncLocalStorage.
-		const proxy = init?.__proxy ?? getActiveProxy();
+		// Unlike the scoped value, an attached proxy has not necessarily been normalized.
+		const proxy = init?.__proxy !== undefined ? normalizeProxyUrl(init.__proxy, "proxy") : getActiveProxy();
 		if (!proxy) return nativeFetch(input, init);
 		let url: URL | null = null;
 		try {
@@ -442,7 +451,7 @@ export function createCurlFetch(
 		const url = new URL(input instanceof Request ? input.url : input);
 		let proxy: string | null;
 		if (init?.__proxy !== undefined || hasScopedProxyDecision()) {
-			const chosen = init?.__proxy ?? getActiveProxy();
+			const chosen = init?.__proxy !== undefined ? normalizeProxyUrl(init.__proxy, "proxy") : getActiveProxy();
 			proxy = chosen && !isProxyBypassedUrl(url) ? chosen : null;
 		} else {
 			proxy = envProxy(url);

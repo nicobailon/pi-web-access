@@ -85,6 +85,23 @@ test("fetchContent.curl sends the page fetch through the command without the def
 	assert.equal(output.result.content, "curl body");
 });
 
+for (const [proxy, expected] of [
+	["http://proxy.example", "http://proxy.example:80/"],
+	["https://proxy.example", "https://proxy.example:443/"],
+]) {
+	test(`fetchContent.curl normalizes caller-attached ${proxy} without a proxy scope`, async () => {
+		const output = await runExtract({ fetchContent: { curl: curlCommand } }, {
+			options: { mode: "raw", proxy },
+		});
+		assert.equal(output.result.error, null);
+		assert.equal(output.result.content, "curl body");
+		assert.deepEqual(output.nodeFetches, []);
+		assert.equal(output.calls.length, 1);
+		const args = output.calls[0];
+		assert.equal(args[args.indexOf("-x") + 1], expected);
+	});
+}
+
 test("readable fetches through fetchContent.curl ask for markdown first and extract the page", async () => {
 	const article = `<html><head><title>Curl Article</title></head><body><article><h1>Curl Article</h1><p>${"Readable text fetched through the configured curl command. ".repeat(20)}</p></article></body></html>`;
 	const output = await runExtract({ fetchContent: { curl: curlCommand } }, {
