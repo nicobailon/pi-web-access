@@ -29,6 +29,7 @@ export interface SearchResponse {
 	answer: string;
 	results: SearchResult[];
 	inlineContent?: ExtractedContent[];
+	exaCostDollars?: Record<string, unknown>;
 }
 
 export interface SearchOptions {

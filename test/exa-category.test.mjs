@@ -89,12 +89,13 @@ async function keylessMcpRequestsFor(query, options, { advancedMissing = false }
 }
 
 test("keyless Exa sends category to the advanced MCP tool and degrades it into the basic-tool query", async () => {
-	const [advanced] = await keylessMcpRequestsFor("transformer scaling", { category: "research paper" });
+	const [advanced] = await keylessMcpRequestsFor("transformer scaling", { category: "research paper", objective: "Compare scaling laws" });
 	assert.equal(advanced.tool, "web_search_advanced_exa");
 	assert.equal(advanced.arguments.category, "research paper");
 	assert.equal(advanced.arguments.query, "transformer scaling");
+	assert.equal(Object.hasOwn(advanced.arguments, "objective"), false);
 
-	const fallback = await keylessMcpRequestsFor("transformer scaling", { category: "research paper" }, { advancedMissing: true });
+	const fallback = await keylessMcpRequestsFor("transformer scaling", { category: "research paper", objective: "Compare scaling laws" }, { advancedMissing: true });
 	assert.deepEqual(fallback.map(request => request.tool), ["web_search_advanced_exa", "web_search_exa"]);
 	assert.deepEqual(fallback[1].arguments, { query: "transformer scaling research paper", numResults: 5 });
 });

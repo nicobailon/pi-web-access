@@ -39,7 +39,7 @@ test("the default tool definitions stay within the per-request size budget", (t)
 		t.diagnostic(`${definition.name}: ${chars} chars (~${Math.round(chars / 4)} tokens), promptSnippet ${promptSnippet.length} chars`);
 	}
 	t.diagnostic(`total: ${total} chars (~${Math.round(total / 4)} tokens)`);
-	assert.ok(total <= 4400, `tool definitions total ${total} chars, budget 4400`);
+	assert.ok(total <= 4500, `tool definitions total ${total} chars, budget 4500`);
 	for (const { definition } of tools.slice(0, 2)) {
 		assert.ok(JSON.stringify(definition.parameters.properties.provider).length <= 200, `${definition.name} provider schema is too large`);
 	}

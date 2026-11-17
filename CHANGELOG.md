@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- `web_search` accepts an optional `objective` of up to 4,096 characters for Exa API searches, sent unchanged; keyless Exa MCP and other providers ignore it. Exa's reported `costDollars`, including its breakdown, is returned in `details.exaCostDollars` for each query so hosts can account for search costs.
+
 ## [0.48.0] - 2026-11-12
 
 ### Highlights

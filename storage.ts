@@ -37,6 +37,7 @@ export interface QueryResultData {
 	error: string | null;
 	provider?: string;
 	providers?: string[];
+	exaCostDollars?: Record<string, unknown>;
 }
 
 interface FetchCacheRef {

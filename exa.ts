@@ -12,6 +12,7 @@ const CONFIG_PATH = getWebSearchConfigPath();
 const EXA_MCP_ADVANCED_TOOL = "web_search_advanced_exa";
 const EXA_MCP_BASIC_TOOL = "web_search_exa";
 const CONTENTS_TIMEOUT_MS = 60_000;
+const MAX_EXA_OBJECTIVE_LENGTH = 4096;
 
 interface WebSearchConfig {
 	exaApiKey?: unknown;
@@ -19,6 +20,7 @@ interface WebSearchConfig {
 }
 
 interface ExaSearchResponse {
+	costDollars?: Record<string, unknown>;
 	results?: Array<{
 		title?: string;
 		url?: string;
@@ -45,6 +47,7 @@ interface ExaMcpRpcResponse {
 
 export interface ExaSearchOptions extends SearchOptions {
 	includeContent?: boolean;
+	objective?: string;
 	/** Restrict results to an Exa content category (e.g. "publication", "news", "company"). */
 	category?: string;
 }
@@ -233,9 +236,11 @@ function toSearchResponse(
 	answer: string,
 	results: SearchResponse["results"],
 	inlineContent: ExtractedContent[] | null,
+	exaCostDollars?: Record<string, unknown>,
 ): SearchResponse {
 	const response: SearchResponse = { answer, results };
 	if (inlineContent?.length) response.inlineContent = inlineContent;
+	if (exaCostDollars !== undefined) response.exaCostDollars = exaCostDollars;
 	return response;
 }
 
@@ -503,6 +508,9 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 	if (!apiKey) {
 		return searchWithExaMcp(query, options);
 	}
+	if (options.objective !== undefined && [...options.objective].length > MAX_EXA_OBJECTIVE_LENGTH) {
+		throw new Error(`Exa objective must be ${MAX_EXA_OBJECTIVE_LENGTH} characters or fewer`);
+	}
 
 	const apiBaseUrl = getApiBaseUrl();
 	const activityId = activityMonitor.logStart({ type: "api", query });
@@ -513,6 +521,7 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 			headers: exaApiHeaders(apiKey),
 			body: JSON.stringify({
 				...exaSearchArgs(query, options),
+				...(options.objective !== undefined ? { objective: options.objective } : {}),
 				contents: options.includeContent
 					? { text: true, highlights: true }
 					: { highlights: true },
@@ -532,6 +541,7 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 			buildAnswerFromSearchResults(data.results),
 			mapResults(data.results),
 			options.includeContent ? mapInlineContent(data.results) : null,
+			isRecord(data.costDollars) ? data.costDollars : undefined,
 		);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

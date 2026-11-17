@@ -352,6 +352,7 @@ export interface FullSearchOptions extends SearchOptions {
 	extensionContext?: ExtensionContext;
 	/** Forwarded to providers that understand it (currently Exa); ignored elsewhere. */
 	category?: string;
+	objective?: string;
 }
 
 function errorMessage(err: unknown): string {

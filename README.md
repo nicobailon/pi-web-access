@@ -225,6 +225,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | Parameter | Description |
 | ----------- | ------------- |
 | `query` / `queries` | Single query or batch of queries |
+| `objective` | Broader goal for the search, sent unchanged to Exa's API when keyed (max 4096 characters); keyless Exa MCP and other providers ignore it |
 | `numResults` | Results per query (default: 5, max: 20) |
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |
@@ -236,6 +237,8 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | `proxy` | http(s) or socks proxy URL for every request in this call; `""` forces a direct connection. Rejected when `lockProxy` is set, unless it matches the configured proxy. `HTTP(S)_PROXY` env vars are ignored. See [Proxy](#proxy-proxy) |
 
 Batch searches run up to three queries concurrently. Provider routing and fallback within each query remain sequential. Brave requests share an in-process queue and honor the rate-limit buckets returned in `X-RateLimit-*`; exhausted short windows delay the next request with a small safety margin, while long quota resets fail fast and keep the advertised cooldown active for later queued calls. HTTP 429 responses are retried once after the advertised `Retry-After` or rate-limit reset. Brave's 30-second search deadline covers queueing, cooldown waits, and both request attempts. The queue coordinates one Pi process; separate Pi processes still rely on Brave's 429 response.
+
+Exa API searches return each query's reported cost, including its breakdown, in `details.exaCostDollars` as `{ query, costDollars }` entries. The field is omitted when Exa does not report a cost.
 
 ### fetch_content
 

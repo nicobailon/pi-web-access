@@ -497,6 +497,7 @@ interface PendingCurate {
 	recencyFilter?: "day" | "week" | "month" | "year";
 	domainFilter?: string[];
 	category?: string;
+	objective?: string;
 	availableProviders: ProviderAvailability;
 	defaultProvider: SearchProvider;
 	searchProvider: SearchProviderSelection;
@@ -659,6 +660,7 @@ function toCuratorSearchEntries(response: AttributedSearchResponse): CuratorSear
 		answer: result.answer,
 		results: result.results.map(source => ({ ...source, domain: extractDomain(source.url) })),
 		provider: result.provider,
+		...(result.exaCostDollars !== undefined ? { exaCostDollars: result.exaCostDollars } : {}),
 	}));
 	for (const failure of response.providerErrors ?? []) {
 		entries.push({
@@ -682,6 +684,7 @@ function indexedCuratorEntryToQueryResult(entry: IndexedCuratorSearchEntry): Que
 		})),
 		error: entry.error ?? null,
 		provider: entry.provider,
+		...(entry.exaCostDollars !== undefined ? { exaCostDollars: entry.exaCostDollars } : {}),
 	};
 }
 
@@ -1213,6 +1216,7 @@ export default function (pi: ExtensionAPI) {
 						const base: SearchReturnOptions = {
 							queryList: filtered.results.map(r => r.query),
 							results: filtered.results,
+							costResults: orderedSearchResults(pc.searchResults),
 							urls: filtered.urls,
 							includeContent: pc.includeContent,
 							inlineContent: filteredInline.length > 0 ? filteredInline : undefined,
@@ -1285,6 +1289,7 @@ export default function (pi: ExtensionAPI) {
 								numResults: pc.numResults,
 								recencyFilter: pc.recencyFilter,
 								domainFilter: pc.domainFilter,
+								objective: pc.objective,
 								includeContent: pc.includeContent,
 								category: pc.category,
 								signal: addSearchSignal,
@@ -1448,6 +1453,7 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({
 			query: Type.Optional(Type.String()),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Run concurrently (up to three at a time); vary the angle" })),
+			objective: Type.Optional(Type.String({ maxLength: 4096, description: "Broader search goal; Exa API only." })),
 			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Default 5" })),
 			includeContent: Type.Optional(Type.Boolean({ description: "Also fetch full page content" })),
 			recencyFilter: Type.Optional(StringEnum(["day", "week", "month", "year"])),
@@ -1551,6 +1557,7 @@ export default function (pi: ExtensionAPI) {
 					recencyFilter,
 					domainFilter: params.domainFilter,
 					category: params.category,
+					objective: params.objective,
 					availableProviders,
 					defaultProvider,
 					searchProvider,
@@ -1614,6 +1621,7 @@ export default function (pi: ExtensionAPI) {
 							numResults: params.numResults,
 							recencyFilter,
 							domainFilter: params.domainFilter,
+							objective: params.objective,
 							includeContent: params.includeContent,
 							category: params.category,
 							signal: searchSignal,

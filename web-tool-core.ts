@@ -529,6 +529,8 @@ export type FetchedContentData = StoredSearchData & { type: "fetch"; urls: Extra
 export interface SearchReturnOptions {
 	queryList: string[];
 	results: QueryResultData[];
+	/** All completed searches, including results left out by curator selection. */
+	costResults?: QueryResultData[];
 	urls: string[];
 	includeContent: boolean;
 	inlineContent?: ExtractedContent[];
@@ -747,6 +749,9 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			: boundSearchPresentation(unboundedPresentation, buildGuidance(false), buildGuidance(true), maxInlineContentChars);
 
 		const summaryGuidance = hasApprovedSummary ? buildGuidance(false) : "";
+		const exaCostDollars = (opts.costResults ?? opts.results).flatMap(result => result.exaCostDollars !== undefined
+			? [{ query: result.query, costDollars: result.exaCostDollars }]
+			: []);
 		return {
 			content: [
 				{ type: "text", text: presentation.text },
@@ -758,6 +763,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				queryCount: opts.queryList.length,
 				successfulQueries: sc,
 				totalResults: tr,
+				...(exaCostDollars.length > 0 ? { exaCostDollars } : {}),
 				includeContent: opts.includeContent,
 				fetchId,
 				fetchUrls: isBackgroundFetch ? opts.urls : undefined,
@@ -831,13 +837,14 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				});
 
 				try {
-					const { answer, results, inlineContent, provider, providerResponses } = await search(query, {
+					const { answer, results, inlineContent, provider, providerResponses, exaCostDollars: directExaCostDollars } = await search(query, {
 						provider: resolvedProvider,
 						model,
 						providerFromConfig,
 						numResults: params.numResults,
 						recencyFilter,
 						domainFilter: params.domainFilter,
+						objective: params.objective,
 						includeContent: params.includeContent,
 						category: params.category,
 						signal,
@@ -845,7 +852,8 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					});
 
 					const providers = providerResponses?.map(response => response.provider) ?? [provider];
-					return { result: { query, answer, results, error: null, provider, providers } satisfies QueryResultData, inlineContent };
+					const queryExaCostDollars = providerResponses?.find(response => response.provider === "exa")?.exaCostDollars ?? directExaCostDollars;
+					return { result: { query, answer, results, error: null, provider, providers, ...(queryExaCostDollars !== undefined ? { exaCostDollars: queryExaCostDollars } : {}) } satisfies QueryResultData, inlineContent };
 				} catch (err) {
 					if (signal?.aborted || isAbortError(err)) throw err;
 					const message = err instanceof Error ? err.message : String(err);
