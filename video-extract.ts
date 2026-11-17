@@ -3,9 +3,10 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { resolve, extname, basename, join, dirname } from "node:path";
 import { activityMonitor } from "./activity.ts";
+import { isAdcAuthSelected } from "./gemini-adc.ts";
 import { canAttachImages } from "./feature-config.ts";
 import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
-import { queryGeminiApiWithVideo, getApiKey, fetchGeminiApi, getVersionedApiBase, getUploadBase, redactGeminiApiResponse, rewriteUploadUrlOrigin } from "./gemini-api.ts";
+import { queryGeminiApiWithInlineData, queryGeminiApiWithVideo, getApiKey, fetchGeminiApi, getVersionedApiBase, getUploadBase, redactGeminiApiResponse, rewriteUploadUrlOrigin } from "./gemini-api.ts";
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.ts";
 import { readExecError, trimErrorText, mapFfmpegError, getWebSearchConfigPath, FRAME_SCALE_FILTER } from "./utils.ts";
 
@@ -49,6 +50,8 @@ interface VideoConfig {
 	enabled: boolean;
 	preferredModel: string;
 	maxSizeMB: number;
+	maxRequestSizeMB: number;
+	timeoutMs: number;
 }
 
 function normalizePreferredModel(value: unknown, fallback: string): string {
@@ -70,6 +73,8 @@ const VIDEO_CONFIG_DEFAULTS: VideoConfig = {
 	enabled: true,
 	preferredModel: "gemini-3.6-flash",
 	maxSizeMB: 50,
+	maxRequestSizeMB: 192,
+	timeoutMs: 180000,
 };
 
 let cachedVideoConfig: VideoConfig | null = null;
@@ -82,19 +87,27 @@ function loadVideoConfig(): VideoConfig {
 	}
 
 	const rawText = readFileSync(CONFIG_PATH, "utf-8");
-	let raw: { video?: { enabled?: boolean; preferredModel?: string; maxSizeMB?: number } };
+	let raw: { video?: Partial<VideoConfig> };
 	try {
-		raw = JSON.parse(rawText) as { video?: { enabled?: boolean; preferredModel?: string; maxSizeMB?: number } };
+		raw = JSON.parse(rawText) as { video?: Partial<VideoConfig> };
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse ${CONFIG_PATH}: ${message}`);
 	}
 
 	const v = raw.video ?? {};
+	for (const [key, maximum] of [["maxRequestSizeMB", 256], ["timeoutMs", 600000]] as const) {
+		const value = v[key];
+		if (value !== undefined && (typeof value !== "number" || !Number.isInteger(value) || value <= 0 || value > maximum)) {
+			throw new Error(`Failed to parse ${CONFIG_PATH}: video.${key} must be an integer from 1 to ${maximum}`);
+		}
+	}
 	cachedVideoConfig = {
 		enabled: normalizeEnabled(v.enabled, VIDEO_CONFIG_DEFAULTS.enabled),
 		preferredModel: normalizePreferredModel(v.preferredModel, VIDEO_CONFIG_DEFAULTS.preferredModel),
 		maxSizeMB: normalizeMaxSizeMB(v.maxSizeMB, VIDEO_CONFIG_DEFAULTS.maxSizeMB),
+		maxRequestSizeMB: v.maxRequestSizeMB ?? VIDEO_CONFIG_DEFAULTS.maxRequestSizeMB,
+		timeoutMs: v.timeoutMs ?? VIDEO_CONFIG_DEFAULTS.timeoutMs,
 	};
 	return cachedVideoConfig;
 }
@@ -178,17 +191,20 @@ export async function extractVideo(
 	}
 	const activityId = activityMonitor.logStart({ type: "fetch", url: `video:${displayName}` });
 
-	const result = await tryVideoGeminiApi(info, effectivePrompt, effectiveModel, signal)
-		?? await tryVideoGeminiWeb(info, effectivePrompt, effectiveModel, signal);
+	const result = isAdcAuthSelected()
+		? await extractVideoVertex(info, effectivePrompt, effectiveModel, config, signal)
+		: await tryVideoGeminiApi(info, effectivePrompt, effectiveModel, signal)
+			?? await tryVideoGeminiWeb(info, effectivePrompt, effectiveModel, signal);
 
 	if (result) {
-		if (canAttachImages()) {
+		if (!result.error && !signal?.aborted && canAttachImages()) {
 			const thumbnail = await extractVideoFrame(info.absolutePath);
 			if (!("error" in thumbnail)) {
 				result.thumbnail = thumbnail;
 			}
 		}
-		activityMonitor.logComplete(activityId, 200);
+		if (result.error) activityMonitor.logError(activityId, result.error);
+		else activityMonitor.logComplete(activityId, 200);
 		return result;
 	}
 
@@ -199,6 +215,48 @@ export async function extractVideo(
 
 	activityMonitor.logError(activityId, "all video extraction paths failed");
 	return null;
+}
+
+async function extractVideoVertex(
+	info: VideoFileInfo,
+	prompt: string,
+	model: string,
+	config: VideoConfig,
+	signal?: AbortSignal,
+): Promise<ExtractedContent> {
+	const deadline = AbortSignal.timeout(config.timeoutMs);
+	const requestSignal = signal ? AbortSignal.any([signal, deadline]) : deadline;
+	let stage = "local file read";
+	try {
+		requestSignal.throwIfAborted();
+		const maxRequestBytes = config.maxRequestSizeMB * 1024 * 1024;
+		const overhead = Buffer.byteLength(JSON.stringify({ prompt, mimeType: info.mimeType })) + 1024;
+		if (4 * Math.ceil(info.sizeBytes / 3) + overhead > maxRequestBytes) {
+			throw new Error("Vertex video request size exceeds video.maxRequestSizeMB (including base64 and JSON)");
+		}
+		const bytes = await readFile(info.absolutePath, { signal: requestSignal });
+		if (bytes.length > info.maxSizeBytes) throw new Error("Vertex video size exceeds video.maxSizeMB");
+		if (bytes.length !== info.sizeBytes) throw new Error("Vertex video local file changed during read");
+		stage = "provider response";
+		const result = await queryGeminiApiWithInlineData(prompt, bytes.toString("base64"), info.mimeType, {
+			model,
+			auth: "adc",
+			signal: requestSignal,
+			timeoutMs: config.timeoutMs,
+			maxRequestBytes,
+		});
+		requestSignal.throwIfAborted();
+		if (result.blockReason) throw new Error("Vertex video provider blocked the prompt");
+		if (!result.text.trim()) throw new Error("Vertex video provider returned no analysis text");
+		const content = result.finishReason ? `${result.text}\n\nVertex finish reason: ${result.finishReason}` : result.text;
+		return { url: info.absolutePath, title: extractVideoTitle(result.text, info.absolutePath), content, error: null };
+	} catch (err) {
+		const message = err instanceof Error ? err.message : "";
+		const error = signal?.aborted ? "Vertex video cancelled"
+			: deadline.aborted ? "Vertex video timeout"
+				: message.startsWith("Vertex video ") ? message : `Vertex video ${stage} failed`;
+		return { url: info.absolutePath, title: basename(info.absolutePath), content: error, error };
+	}
 }
 
 function mapFfprobeError(err: unknown): string {

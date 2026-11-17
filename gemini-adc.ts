@@ -90,11 +90,12 @@ function isOnGcp(): boolean {
 }
 
 export function getVertexApiBase(project: string, location: string): string {
-	return `${VERTEX_HOST}/${VERTEX_API_VERSION}/projects/${encodeURIComponent(project)}/locations/${encodeURIComponent(location)}/publishers/google`;
+	const host = location === "global" ? VERTEX_HOST : `https://${location}-aiplatform.googleapis.com`;
+	return `${host}/${VERTEX_API_VERSION}/projects/${encodeURIComponent(project)}/locations/${encodeURIComponent(location)}/publishers/google`;
 }
 
 export function isVertexHost(origin: string): boolean {
-	return origin === VERTEX_HOST;
+	return origin === VERTEX_HOST || /^https:\/\/[a-z][a-z0-9-]*-aiplatform\.googleapis\.com$/.test(origin);
 }
 
 interface AdcFile {
@@ -107,6 +108,7 @@ interface AdcFile {
 	private_key_id?: string;
 	token_uri?: string;
 	universe_domain?: string;
+	quota_project_id?: string;
 }
 
 function objectRecord(value: unknown): Record<string, unknown> | null {
@@ -135,6 +137,7 @@ function parseAdcFile(raw: string): AdcFile {
 			client_secret: requiredString(parsed, "client_secret", "Gemini ADC authorized_user file"),
 			refresh_token: requiredString(parsed, "refresh_token", "Gemini ADC authorized_user file"),
 			universe_domain: stringField(parsed, "universe_domain"),
+			quota_project_id: stringField(parsed, "quota_project_id"),
 		};
 	}
 	if (type === "service_account") {
@@ -145,6 +148,7 @@ function parseAdcFile(raw: string): AdcFile {
 			private_key_id: stringField(parsed, "private_key_id"),
 			token_uri: stringField(parsed, "token_uri"),
 			universe_domain: stringField(parsed, "universe_domain"),
+			quota_project_id: stringField(parsed, "quota_project_id"),
 		};
 	}
 	return { type };
@@ -176,7 +180,9 @@ async function loadAdcFile(): Promise<AdcFile> {
 	}
 	const raw = readFileSync(path, "utf-8");
 	try {
-		return parseAdcFile(raw);
+		const cfg = parseAdcFile(raw);
+		cachedQuotaProject = cfg.quota_project_id?.trim() || null;
+		return cfg;
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);
 		throw new Error(`Failed to parse Google Application Default Credentials file at ${path}: ${message}`);
@@ -189,9 +195,15 @@ interface CachedToken {
 }
 
 let cachedToken: CachedToken | null = null;
+let cachedQuotaProject: string | null = null;
+
+export function getAdcQuotaProject(): string | null {
+	return process.env.GOOGLE_CLOUD_QUOTA_PROJECT?.trim() || cachedQuotaProject;
+}
 
 export function clearAdcTokenCache(): void {
 	cachedToken = null;
+	cachedQuotaProject = null;
 }
 
 /**

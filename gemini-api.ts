@@ -6,6 +6,7 @@ import {
 	getAdcAccessToken,
 	getAdcProject,
 	getAdcLocation,
+	getAdcQuotaProject,
 	getVertexApiBase,
 	isVertexHost,
 } from "./gemini-adc.ts";
@@ -158,6 +159,7 @@ export async function fetchGeminiApi(
 	url: string | URL,
 	init: RequestInit = {},
 	apiKey?: string | null,
+	auth?: "adc",
 ): Promise<Response> {
 	const parsedUrl = new URL(url);
 	for (const name of parsedUrl.searchParams.keys()) {
@@ -167,19 +169,24 @@ export async function fetchGeminiApi(
 	}
 	const project = getAdcProject();
 	const location = getAdcLocation();
-	const adcMode = isGeminiAdcAvailable() && !!project && !!location && isVertexHost(parsedUrl.origin);
+	const adcMode = (auth === "adc" || isGeminiAdcAvailable()) && !!project && !!location && isVertexHost(parsedUrl.origin);
+	if (auth === "adc" && !adcMode) throw new Error("Vertex video project/location configuration failed");
 	let adcToken: string | null = null;
 	if (adcMode) {
-		adcToken = await getAdcAccessToken(init.signal ?? undefined);
+		try {
+			adcToken = await getAdcAccessToken(init.signal ?? undefined);
+		} catch (error) {
+			if (auth === "adc") throw new Error("Vertex video ADC authentication failed");
+			throw error;
+		}
 	}
 	const resolvedApiKey = adcMode ? null : (apiKey === undefined ? await getApiKey(init.signal ?? undefined) : apiKey);
-	const cloudflareApiKey = isCloudflareGateway() ? await resolveCloudflareApiKey(init.signal ?? undefined) : null;
-	const allowedOrigins = new Set([
+	const cloudflareApiKey = !adcMode && isCloudflareGateway() ? await resolveCloudflareApiKey(init.signal ?? undefined) : null;
+	const allowedOrigins = new Set(adcMode ? [parsedUrl.origin] : [
 		new URL(getApiHost()).origin,
 		new URL(DEFAULT_API_HOST).origin,
-		...(adcMode ? [parsedUrl.origin] : []),
 	]);
-	const needsAuth = resolvedApiKey || isGatewayConfigured() || adcMode;
+	const needsAuth = adcMode || resolvedApiKey || isGatewayConfigured();
 	if (needsAuth && !allowedOrigins.has(parsedUrl.origin)) {
 		throw new Error("Gemini API request host is not allowed");
 	}
@@ -189,6 +196,10 @@ export async function fetchGeminiApi(
 	headers.delete("authorization");
 	if (adcMode && adcToken) {
 		headers.set("Authorization", `Bearer ${adcToken}`);
+		if (auth === "adc") {
+			const quotaProject = getAdcQuotaProject();
+			if (quotaProject) headers.set("x-goog-user-project", quotaProject);
+		}
 	} else {
 		for (const [name, value] of Object.entries(buildAuthHeaders(resolvedApiKey, cloudflareApiKey))) {
 			headers.set(name, value);
@@ -235,6 +246,8 @@ export interface GeminiApiOptions {
 	mimeType?: string;
 	signal?: AbortSignal;
 	timeoutMs?: number;
+	auth?: "adc";
+	maxRequestBytes?: number;
 }
 
 export interface GeminiGenerateContentResult {
@@ -250,8 +263,8 @@ export async function queryGeminiApiWithInlineData(
 	options: GeminiApiOptions = {},
 ): Promise<GeminiGenerateContentResult> {
 	const signal = withTimeout(options.signal, options.timeoutMs ?? 120000);
-	const apiKey = isGeminiAdcAvailable() ? null : (options.apiKey ?? await getApiKey(signal));
-	if (!apiKey && !isGatewayConfigured() && !isGeminiAdcAvailable()) {
+	const apiKey = options.auth === "adc" || isGeminiAdcAvailable() ? null : (options.apiKey ?? await getApiKey(signal));
+	if (options.auth !== "adc" && !apiKey && !isGatewayConfigured() && !isGeminiAdcAvailable()) {
 		throw new Error(
 			"Gemini API not configured. Either:\n" +
 			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
@@ -261,7 +274,13 @@ export async function queryGeminiApiWithInlineData(
 	}
 
 	const model = options.model ?? DEFAULT_MODEL;
-	const url = `${getVersionedApiBase()}/models/${model}:generateContent`;
+	const project = getAdcProject();
+	const location = getAdcLocation();
+	if (options.auth === "adc" && (!project || !location || !/^[a-z0-9][a-z0-9.:-]*$/i.test(project) || (location !== "global" && !/^[a-z]+-[a-z]+[0-9]+$/.test(location)))) {
+		throw new Error("Vertex video project/location configuration failed");
+	}
+	const base = options.auth === "adc" ? getVertexApiBase(project!, location!) : getVersionedApiBase();
+	const url = `${base}/models/${encodeURIComponent(model)}:generateContent`;
 	const body = {
 		contents: [
 			{
@@ -274,20 +293,39 @@ export async function queryGeminiApiWithInlineData(
 		],
 	};
 
+	const serialized = JSON.stringify(body);
+	if (options.maxRequestBytes !== undefined && Buffer.byteLength(serialized) > options.maxRequestBytes) {
+		throw new Error("Vertex video request size exceeds video.maxRequestSizeMB (including base64 and JSON)");
+	}
 	const res = await fetchGeminiApi(url, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(body),
+		body: serialized,
 		signal,
-	}, apiKey);
+		...(options.auth === "adc" ? { redirect: "error" as const } : {}),
+	}, apiKey, options.auth);
 
 	if (!res.ok) {
+		if (options.auth === "adc") {
+			await res.body?.cancel();
+			const stage = res.status === 401 ? "authentication" : res.status === 403 ? "permission/quota-project" : "provider";
+			throw new Error(`Vertex video ${stage} failed (HTTP ${res.status})`);
+		}
 		const errorText = redactGeminiApiResponse(res, await res.text(), apiKey);
 		throw new Error(`Gemini API error ${res.status}: ${errorText.slice(0, 300)}`);
 	}
 
 	const response = (await res.json()) as GenerateContentResponse;
+	if (!response || typeof response !== "object" || (response.candidates !== undefined && !Array.isArray(response.candidates))) {
+		throw new Error("Vertex video provider returned an invalid response");
+	}
 	const candidate = response.candidates?.[0];
+	if (options.auth === "adc" && (
+		(candidate?.finishReason !== undefined && (typeof candidate.finishReason !== "string" || !/^[A-Z_]{1,64}$/.test(candidate.finishReason))) ||
+		(response.promptFeedback?.blockReason !== undefined && typeof response.promptFeedback.blockReason !== "string")
+	)) {
+		throw new Error("Vertex video provider returned an invalid response");
+	}
 	const text = candidate?.content?.parts
 		?.map((part) => part.text)
 		.filter((part): part is string => typeof part === "string" && part.length > 0)
