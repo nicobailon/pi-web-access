@@ -1322,6 +1322,10 @@ Rate limits: Perplexity is capped at 10 requests/minute (client-side). Jina Sear
 - GitHub branch names with slashes may misresolve file paths; the clone still works and the agent can navigate manually.
 - GitHub wiki, discussion, and other non-code pages still fall through to normal web extraction. PR review-thread resolution state is unknown in the specialized PR view, and REST fallback omits checks.
 
+## Contributing
+
+Bug fixes are welcome. New search or fetch providers are accepted only when they add something the existing ones don't, such as their own index; see [CONTRIBUTING.md](https://github.com/nicobailon/pi-web-access/blob/main/CONTRIBUTING.md) before writing one.
+
 <details>
 <summary>Files</summary>
 
