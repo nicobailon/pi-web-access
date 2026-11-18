@@ -14,7 +14,8 @@ const usage = (n) => ({
 	input: 100 * n, output: 10 * n, cacheRead: 0, cacheWrite: 0, totalTokens: 110 * n,
 	cost: { input: 0.001 * n, output: 0.0005 * n, cacheRead: 0, cacheWrite: 0, total: 0.0015 * n },
 });
-const usages = { SOURCE_A: usage(1), SOURCE_B: usage(2) };
+// Each optional split is reported by one page only; B reports a zero, which the sum must keep.
+const usages = { SOURCE_A: { ...usage(1), reasoning: 5 }, SOURCE_B: { ...usage(2), cacheWrite1h: 0 } };
 
 // Each answer call reports its own usage; the URL list may name a page that fails to fetch.
 function runFixture({ mode = "answer", urls = Object.keys(sources) } = {}) {
@@ -63,17 +64,17 @@ function runFixture({ mode = "answer", urls = Object.keys(sources) } = {}) {
 
 test("answer mode reports the sum of its answer calls' usage", () => {
 	const { result } = runFixture();
-	assert.deepEqual(result.usage, usage(3));
+	assert.deepEqual(result.usage, { ...usage(3), reasoning: 5, cacheWrite1h: 0 });
 });
 
 test("a single answered URL reports its call's usage", () => {
 	const { result } = runFixture({ urls: ["http://93.184.216.34/b"] });
-	assert.deepEqual(result.usage, usage(2));
+	assert.deepEqual(result.usage, usages.SOURCE_B);
 });
 
 test("a page that fails to fetch adds no usage", () => {
 	const { result } = runFixture({ urls: ["http://93.184.216.34/a", "http://93.184.216.34/missing"] });
-	assert.deepEqual(result.usage, usage(1));
+	assert.deepEqual(result.usage, usages.SOURCE_A);
 });
 
 test("readable mode makes no model call and reports no usage", () => {
