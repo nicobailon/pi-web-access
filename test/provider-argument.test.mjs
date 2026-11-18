@@ -19,7 +19,7 @@ function child(config, script, extraEnv = {}) {
 test("provider tool arguments accept names, lists, and JSON arrays, and reject anything else", () => {
 	const cases = [
 		"brave", " Brave ", "auto", "all", "brave,exa", " brave , EXA ", '["brave","exa"]', ["brave", "exa"], "", "  ",
-		"bogus", "brave,all", "brave,brave", "[bad", 42, '["Bogus"]', '["auto"]',
+		"bogus", "brave,all", "brave,brave", "[bad", 42, '["Bogus"]', '["auto"]', "brave,serper",
 	];
 	const output = child(undefined, `
 		const { parseProviderArgument } = await import(${JSON.stringify(new URL("../gemini-search.ts", import.meta.url).href)});
@@ -32,7 +32,7 @@ test("provider tool arguments accept names, lists, and JSON arrays, and reject a
 		{ value: ["brave", "exa"] }, { value: ["brave", "exa"] }, { value: ["brave", "exa"] }, { value: ["brave", "exa"] },
 		{ value: null }, { value: null },
 	]);
-	assert.match(output[10].error, /^Unknown search provider "bogus"\. Use auto, all, or one or more comma-separated names: openai, brave, .*kagi.*, linkup, ninerouter, cloudflare, searchapi, outcrawl, sofya, cloro, autom, specstream, tabstack$/);
+	assert.match(output[10].error, /^Unknown search provider "bogus"\. Use auto, all, or one or more comma-separated names: openai, brave, .*kagi.*, linkup, ninerouter, cloudflare, tabstack$/);
 	const combined = { error: '"auto" and "all" cannot be combined with provider names' };
 	assert.deepEqual(output[11], combined);
 	assert.deepEqual(output[12], { error: "provider must not contain duplicates: brave" });
@@ -40,6 +40,7 @@ test("provider tool arguments accept names, lists, and JSON arrays, and reject a
 	assert.deepEqual(output[14], { error: output[10].error.replace('"bogus"', '"42"') });
 	assert.deepEqual(output[15], output[10]);
 	assert.deepEqual(output[16], combined);
+	assert.match(output[17].error, /^serper was removed as a built-in provider\. Add it as a custom provider: see .*custom-providers\.md#serper$/);
 });
 
 test("unknown providers fail before any request and list only allowed providers", () => {

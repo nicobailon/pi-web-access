@@ -6,7 +6,7 @@
 
 import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { getCustomSearchProviderNames, RESOLVED_SEARCH_PROVIDERS } from "./gemini-search.ts";
+import { getCustomSearchProviderNames, RESOLVED_SEARCH_PROVIDERS, removedSearchProviderMessage } from "./gemini-search.ts";
 
 function stringEnum(values: readonly string[], description?: string) {
 	return Type.Unsafe<string>({ type: "string", enum: [...values], ...(description && { description }) });
@@ -36,6 +36,8 @@ function providerProblem(value: unknown): string | undefined {
 	}
 	const invalid = unlisted.filter((name) => !custom.includes(name));
 	if (invalid.length === 0) return undefined;
+	const removed = invalid.map((name) => removedSearchProviderMessage(name)).find(Boolean);
+	if (removed) return `/provider: ${removed}`;
 	return `/provider: unknown provider ${invalid.map((name) => JSON.stringify(name)).join(", ")}. ${PROVIDER_CHOICES}${custom.length > 0 ? ` Custom: ${custom.join(", ")}.` : ""}`;
 }
 

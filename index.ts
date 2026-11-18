@@ -46,7 +46,6 @@ import { isParallelAvailable } from "./parallel.ts";
 import { isParallelMcpAvailable } from "./parallel-mcp.ts";
 import { parseStringifiedArrays } from "./tool-arguments.ts";
 import { isTinyFishAvailable } from "./tinyfish.ts";
-import { isSearch1APIAvailable } from "./search1api.ts";
 import { isSearchinfinityAvailable } from "./searchinfinity.ts";
 import { isQueritAvailable } from "./querit.ts";
 import { isTavilyAvailable } from "./tavily.ts";
@@ -54,7 +53,6 @@ import { isTabstackAvailable } from "./tabstack.ts";
 import { isYouAvailable } from "./you.ts";
 import { isFirecrawlAvailable } from "./firecrawl.ts";
 import { isJinaSearchAvailable } from "./jina-search.ts";
-import { isSerpdiveAvailable } from "./serpdive.ts";
 import { isKagiAvailable } from "./kagi.ts";
 import { isBochaAvailable } from "./bocha.ts";
 import { isOllamaAvailable } from "./ollama.ts";
@@ -65,27 +63,15 @@ import { isAnySearchAvailable } from "./anysearch.ts";
 import { isXaiSearchAvailable } from "./xai-search.ts";
 import { isMistralAvailable } from "./mistral-search.ts";
 import { isKimiSearchAvailable } from "./kimi-search.ts";
-import { isBrightDataAvailable } from "./brightdata.ts";
-import { isSerpBaseAvailable } from "./serpbase.ts";
-import { isSerpApiAvailable } from "./serpapi.ts";
-import { isSerperAvailable } from "./serper.ts";
-import { isSerplyAvailable } from "./serply.ts";
 import { isKeenableAvailable } from "./keenable.ts";
 import { isCeramicAvailable } from "./ceramic.ts";
 import { isLinkupAvailable } from "./linkup.ts";
 import { isNineRouterAvailable } from "./ninerouter.ts";
 import { isCloudflareSearchAvailable } from "./cloudflare-search.ts";
-import { isSearchApiAvailable } from "./searchapi.ts";
-import { isOutcrawlAvailable } from "./outcrawl.ts";
-import { isSofyaAvailable } from "./sofya.ts";
-import { isCloroAvailable } from "./cloro.ts";
-import { isAutomAvailable } from "./autom.ts";
-import { isSpecStreamAvailable } from "./specstream.ts";
 import { isDeepSeekAvailable } from "./deepseek.ts";
 import { isBaizhiAvailable } from "./baizhi.ts";
 import { isZaiAvailable } from "./zai.ts";
 import { isValyuAvailable } from "./valyu.ts";
-import { isXcrawlAvailable } from "./xcrawl.ts";
 import { buildSearchErrorPlan, type SearchErrorDetails, type SearchErrorPlan } from "./render-search-error.ts";
 import { findModelWithProviderRouting, isModelInScope, resolveHelperModelSelector } from "./summary-model-scope.ts";
 import { registerCuratorRunLifecycle, resolveWebSearchWorkflow, type WebSearchWorkflow } from "./curator-run.ts";
@@ -347,7 +333,6 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		parallel: allowedProviders.has("parallel") && isParallelAvailable(),
 		"parallel-mcp": allowedProviders.has("parallel-mcp") && isParallelMcpAvailable(),
 		tinyfish: allowedProviders.has("tinyfish") && isTinyFishAvailable(),
-		search1api: allowedProviders.has("search1api") && isSearch1APIAvailable(),
 		searchinfinity: allowedProviders.has("searchinfinity") && isSearchinfinityAvailable(),
 		querit: allowedProviders.has("querit") && isQueritAvailable(),
 		tavily: allowedProviders.has("tavily") && isTavilyAvailable(),
@@ -355,7 +340,6 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		you: allowedProviders.has("you") && isYouAvailable(),
 		firecrawl: allowedProviders.has("firecrawl") && isFirecrawlAvailable(),
 		jina: allowedProviders.has("jina") && isJinaSearchAvailable(),
-		serpdive: allowedProviders.has("serpdive") && isSerpdiveAvailable(),
 		kagi: allowedProviders.has("kagi") && isKagiAvailable(),
 		bocha: allowedProviders.has("bocha") && isBochaAvailable(),
 		ollama: allowedProviders.has("ollama") && isOllamaAvailable(),
@@ -367,14 +351,8 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		gemini: geminiApiAvail || !!geminiWebAvail,
 		kimi: allowedProviders.has("kimi") && await isKimiSearchAvailable(ctx),
 		anysearch: allowedProviders.has("anysearch") && isAnySearchAvailable(),
-		xcrawl: allowedProviders.has("xcrawl") && isXcrawlAvailable(),
 		xai: allowedProviders.has("xai") && await isXaiSearchAvailable(ctx),
 		mistral: allowedProviders.has("mistral") && isMistralAvailable(),
-		brightdata: allowedProviders.has("brightdata") && isBrightDataAvailable(),
-		serpbase: allowedProviders.has("serpbase") && isSerpBaseAvailable(),
-		serpapi: allowedProviders.has("serpapi") && isSerpApiAvailable(),
-		serper: allowedProviders.has("serper") && isSerperAvailable(),
-		serply: allowedProviders.has("serply") && isSerplyAvailable(),
 		baizhi: allowedProviders.has("baizhi") && isBaizhiAvailable(),
 		zai: allowedProviders.has("zai") && isZaiAvailable(),
 		valyu: allowedProviders.has("valyu") && isValyuAvailable(),
@@ -383,12 +361,6 @@ async function getProviderAvailability(ctx: ExtensionContext): Promise<ProviderA
 		linkup: allowedProviders.has("linkup") && isLinkupAvailable(),
 		ninerouter: allowedProviders.has("ninerouter") && isNineRouterAvailable(),
 		cloudflare: allowedProviders.has("cloudflare") && isCloudflareSearchAvailable(),
-		searchapi: allowedProviders.has("searchapi") && isSearchApiAvailable(),
-		outcrawl: allowedProviders.has("outcrawl") && isOutcrawlAvailable(),
-		sofya: allowedProviders.has("sofya") && isSofyaAvailable(),
-		cloro: allowedProviders.has("cloro") && isCloroAvailable(),
-		autom: allowedProviders.has("autom") && isAutomAvailable(),
-		specstream: allowedProviders.has("specstream") && isSpecStreamAvailable(),
 		deepseek: allowedProviders.has("deepseek") && isDeepSeekAvailable(),
 	};
 	return {

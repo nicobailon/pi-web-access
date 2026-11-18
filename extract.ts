@@ -14,10 +14,8 @@ import { extractWithParallelMcp } from "./parallel-mcp.ts";
 import { extractWithTinyFish, isTinyFishAvailable } from "./tinyfish.ts";
 import { extractWithDeepSeek, isDeepSeekAvailable } from "./deepseek.ts";
 import { extractWithExa, hasExaApiKey } from "./exa.ts";
-import { extractWithSearch1API, isSearch1APIAvailable } from "./search1api.ts";
 import { extractWithQuerit, isQueritAvailable } from "./querit.ts";
 import { extractWithTabstack, isTabstackAvailable } from "./tabstack.ts";
-import { extractWithSpecStream, isSpecStreamAvailable } from "./specstream.ts";
 import { extractWithKagi, isKagiExtractAvailable } from "./kagi.ts";
 import { extractWithOllama, isOllamaFetchAvailable } from "./ollama.ts";
 import { extractWithFirecrawl, isFirecrawlAvailable } from "./firecrawl.ts";
@@ -72,11 +70,12 @@ function loadFetchTimeoutMs(): number {
 const NON_RECOVERABLE_ERRORS = ["Unsupported content type", "Response too large", "PDF extraction is disabled", "Image fetching is disabled", "fetchContent.curl command not found"];
 const MIN_USEFUL_CONTENT = 500;
 const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const FETCH_PROVIDERS = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack", "specstream"] as const;
+const FETCH_PROVIDERS = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack"] as const;
+const REMOVED_FETCH_PROVIDERS = ["search1api", "specstream"];
 type FetchProvider = typeof FETCH_PROVIDERS[number];
 type FetchRouting = { providers: FetchProvider[]; allowRemoteHostedProviders: boolean };
-const DEFAULT_FETCH_PROVIDER_ORDER: FetchProvider[] = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "brightdata", "gemini"];
-const REMOTE_HOSTED_FETCH_PROVIDERS = new Set<FetchProvider>(["jina", "tinyfish", "search1api", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack", "specstream"]);
+const DEFAULT_FETCH_PROVIDER_ORDER: FetchProvider[] = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "querit", "kagi", "ollama", "parallel", "brightdata", "gemini"];
+const REMOTE_HOSTED_FETCH_PROVIDERS = new Set<FetchProvider>(["jina", "tinyfish", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack"]);
 
 function isDefuddleConsoleError(args: Parameters<typeof console.error>): boolean {
 	const prefix = args[0];
@@ -265,6 +264,9 @@ function loadFetchRouting(): FetchRouting {
 		providers = [];
 		for (const provider of providersValue) {
 			const normalized = typeof provider === "string" ? provider.trim().toLowerCase() : "";
+			if (REMOVED_FETCH_PROVIDERS.includes(normalized)) {
+				throw new Error(`fetchRouting.providers in ${WEB_SEARCH_CONFIG_PATH} lists ${normalized}, which was removed as a fetch provider; remove it from fetchRouting.providers`);
+			}
 			if (!FETCH_PROVIDERS.includes(normalized as FetchProvider)) {
 				throw new Error(`fetchRouting.providers in ${WEB_SEARCH_CONFIG_PATH} contains an invalid provider: ${String(provider)}`);
 			}
@@ -869,10 +871,8 @@ export async function extractContent(
 	let firecrawlError: string | null = null;
 	let crawl4aiError: string | null = null;
 	let tinyfishError: string | null = null;
-	let search1apiError: string | null = null;
 	let queritError: string | null = null;
 	let tabstackError: string | null = null;
-	let specstreamError: string | null = null;
 	let kagiError: string | null = null;
 	let ollamaError: string | null = null;
 	let parallelError: string | null = null;
@@ -953,20 +953,6 @@ export async function extractContent(
 			continue;
 		}
 
-		if (provider === "search1api") {
-			try {
-				if (isSearch1APIAvailable()) {
-					const search1apiResult = await extractWithSearch1API(url, signal, options);
-					if (search1apiResult) return withDeclaredLinks(search1apiResult);
-				}
-			} catch (err) {
-				if (isAbortError(err)) return abortedResult(url);
-				search1apiError = errorMessage(err);
-				if (isConfigParseError(err)) return parseErrorResult(search1apiError);
-			}
-			continue;
-		}
-
 		if (provider === "querit") {
 			try {
 				if (isQueritAvailable()) {
@@ -991,20 +977,6 @@ export async function extractContent(
 				if (isAbortError(err)) return abortedResult(url);
 				tabstackError = errorMessage(err);
 				if (isConfigParseError(err)) return parseErrorResult(tabstackError);
-			}
-			continue;
-		}
-
-		if (provider === "specstream") {
-			try {
-				if (isSpecStreamAvailable()) {
-					const specstreamResult = await extractWithSpecStream(url, signal, options);
-					if (specstreamResult) return withDeclaredLinks(specstreamResult);
-				}
-			} catch (err) {
-				if (isAbortError(err)) return abortedResult(url);
-				specstreamError = errorMessage(err);
-				if (isConfigParseError(err)) return parseErrorResult(specstreamError);
 			}
 			continue;
 		}
@@ -1161,7 +1133,6 @@ export async function extractContent(
 		...(firecrawlError ? [`Firecrawl fallback failed: ${firecrawlError}`] : []),
 		...(crawl4aiError ? [`Crawl4AI fallback failed: ${crawl4aiError}`] : []),
 		...(tinyfishError ? [`TinyFish fallback failed: ${tinyfishError}`] : []),
-		...(search1apiError ? [`Search1API fallback failed: ${search1apiError}`] : []),
 		...(queritError ? [`Querit fallback failed: ${queritError}`] : []),
 		...(kagiError ? [`Kagi fallback failed: ${kagiError}`] : []),
 		...(ollamaError ? [`Ollama fallback failed: ${ollamaError}`] : []),
@@ -1171,14 +1142,12 @@ export async function extractContent(
 		...(deepseekError ? [`DeepSeek fallback failed: ${deepseekError}`] : []),
 		...(exaError ? [`Exa fallback failed: ${exaError}`] : []),
 		...(tabstackError ? [`Tabstack fallback failed: ${tabstackError}`] : []),
-		...(specstreamError ? [`SpecStream fallback failed: ${specstreamError}`] : []),
 		"",
 		"Fallback options:",
 		...(jinaHint ? [jinaHint] : []),
 		`  • Set firecrawlBaseUrl in ${WEB_SEARCH_CONFIG_PATH} to a self-hosted Firecrawl instance`,
 		`  • Set crawl4aiBaseUrl in ${WEB_SEARCH_CONFIG_PATH} to a self-hosted Crawl4AI instance`,
 		`  • Set tinyfishApiKey in ${WEB_SEARCH_CONFIG_PATH} or TINYFISH_API_KEY`,
-		`  • Set search1apiApiKey in ${WEB_SEARCH_CONFIG_PATH} or SEARCH1API_KEY`,
 		`  • Set queritApiKey in ${WEB_SEARCH_CONFIG_PATH} or QUERIT_API_KEY`,
 		`  • Set kagiApiKey in ${WEB_SEARCH_CONFIG_PATH} or KAGI_API_KEY`,
 		`  • Set ollamaApiKey in ${WEB_SEARCH_CONFIG_PATH} or OLLAMA_API_KEY`,
@@ -1187,7 +1156,6 @@ export async function extractContent(
 		`  • Set deepseekApiKey in ${WEB_SEARCH_CONFIG_PATH} or DEEPSEEK_API_KEY and add "deepseek" to fetchRouting.providers`,
 		`  • Set exaApiKey in ${WEB_SEARCH_CONFIG_PATH} or EXA_API_KEY and add "exa" to fetchRouting.providers`,
 		`  • Set tabstackApiKey in ${WEB_SEARCH_CONFIG_PATH} or TABSTACK_API_KEY and add "tabstack" to fetchRouting.providers`,
-		`  • Set specstreamApiKey in ${WEB_SEARCH_CONFIG_PATH} or SPECSTREAM_API_KEY and add "specstream" to fetchRouting.providers`,
 		`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`,
 		"  • Sign into gemini.google.com in Chrome",
 		...(searchToolName ? [`  • Use ${searchToolName} to find content about this topic`] : []),

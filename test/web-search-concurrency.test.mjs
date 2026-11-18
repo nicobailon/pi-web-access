@@ -10,7 +10,9 @@ const indexUrl = new URL("../index.ts", import.meta.url).href;
 test("web_search bounds batch concurrency and preserves query order", async () => {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-concurrency-"));
 	await writeFile(join(home, "web-search.json"), JSON.stringify({
-		xcrawlApiKey: "xc-test-key",
+		customSearchProviders: {
+			stub: { url: "https://search.example.com/serp", method: "POST", body: { q: "{query}" }, results: "organic_results", fields: { title: "title", url: "link", snippet: "snippet" } },
+		},
 		autoOpenBrowser: false,
 		curatorTimeoutSeconds: 1,
 	}) + "\n", "utf8");
@@ -38,8 +40,6 @@ test("web_search bounds batch concurrency and preserves query order", async () =
 				active--;
 				completed.push(query);
 				return new Response(JSON.stringify({
-					search_metadata: { status: "completed" },
-					total_credits_used: 1,
 					organic_results: [{ position: 1, title: query, link: "https://example.com/" + query, snippet: query }],
 				}), { status: 200 });
 			};
@@ -53,7 +53,7 @@ test("web_search bounds batch concurrency and preserves query order", async () =
 			const updates = [];
 			const rawResult = await webSearch.execute(
 				"concurrency-test",
-				{ queries: ["q1", "q2", "q3", "q4", "q5"], provider: "xcrawl", workflow: "none" },
+				{ queries: ["q1", "q2", "q3", "q4", "q5"], provider: "stub", workflow: "none" },
 				undefined,
 				update => updates.push(update.details),
 			);
@@ -65,7 +65,7 @@ test("web_search bounds batch concurrency and preserves query order", async () =
 			completed = [];
 			const curatedResult = await webSearch.execute(
 				"curator-concurrency-test",
-				{ queries: ["q1", "q2", "q3", "q4", "q5"], provider: "xcrawl", workflow: "summary-review" },
+				{ queries: ["q1", "q2", "q3", "q4", "q5"], provider: "stub", workflow: "summary-review" },
 				undefined,
 				undefined,
 				{

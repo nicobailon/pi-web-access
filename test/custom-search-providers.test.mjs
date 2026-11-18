@@ -125,12 +125,12 @@ const RECIPES = [
 	},
 ];
 
-test("each documented recipe sends its provider's request and maps the provider's response", async () => {
-	const name = (id) => `${id}-custom`;
-	const home = await createHome({ customSearchProviders: Object.fromEntries(RECIPES.map(({ id }) => [name(id), recipe(id)])) });
+// Each recipe is registered under the removed built-in's name, which is how a user migrates.
+test("each documented recipe works under its old provider name and maps that provider's response", async () => {
+	const home = await createHome({ customSearchProviders: Object.fromEntries(RECIPES.map(({ id }) => [id, recipe(id)])) });
 	const env = Object.fromEntries(RECIPES.map(({ env }) => [env, KEY]));
 	const output = runChild(`
-		const recipes = ${JSON.stringify(RECIPES.map(({ id, response }) => ({ name: name(id), response })))};
+		const recipes = ${JSON.stringify(RECIPES.map(({ id, response }) => ({ name: id, response })))};
 		let current;
 		const calls = [];
 		globalThis.fetch = async (url, init = {}) => {
@@ -148,13 +148,31 @@ test("each documented recipe sends its provider's request and maps the provider'
 	`, { PI_CODING_AGENT_DIR: home, ...env });
 	RECIPES.forEach((expected, index) => {
 		const { provider, results, call } = output[index];
-		assert.equal(provider, name(expected.id));
+		assert.equal(provider, expected.id);
 		assert.equal(call.method, expected.method, expected.id);
 		assert.equal(call.url, expected.url, expected.id);
 		if (expected.header) assert.equal(call.headers[expected.header[0]], expected.header[1], expected.id);
 		assert.deepEqual(call.body, expected.body, expected.id);
 		assert.deepEqual(results, expected.results, expected.id);
 	});
+});
+
+// Before the removal, an unknown name in the config `provider` string quietly became `auto`.
+test("a removed provider named in config fails with a link to its recipe instead of searching elsewhere", async () => {
+	const home = await createHome({ provider: "serper" });
+	const output = runChild(`
+		const calls = [];
+		globalThis.fetch = async (url) => { calls.push(String(url)); throw new Error("Unexpected fetch " + url); };
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		try {
+			await search("q");
+			console.log(JSON.stringify({ error: null, calls }));
+		} catch (err) {
+			console.log(JSON.stringify({ error: err.message, calls }));
+		}
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.match(output.error, /serper was removed as a built-in provider\. Add it as a custom provider: see https:\/\/github\.com\/nicobailon\/pi-web-access\/blob\/main\/docs\/custom-providers\.md#serper/);
+	assert.deepEqual(output.calls, []);
 });
 
 test("a custom provider cannot take a built-in provider's name", async () => {

@@ -63,11 +63,11 @@ test("Kagi-only policy generates Curator choices without disabled providers", ()
   assert.deepEqual(JSON.parse(result.stdout), { hasKagi: true, hasBrave: false });
 });
 
-test("Curator represents unavailable auto honestly while keeping explicit Serply immediately selectable", () => {
-  const result = child({ webSearch: { allowedProviders: ["serply"] }, serplyApiKey: "s", autoOpenBrowser: false, curatorTimeoutSeconds: 5 }, `
+test("Curator represents unavailable auto honestly while keeping explicit You.com immediately selectable", () => {
+  const result = child({ webSearch: { allowedProviders: ["you"] }, youApiKey: "s", autoOpenBrowser: false, curatorTimeoutSeconds: 5 }, `
     const nativeFetch = globalThis.fetch;
-    globalThis.fetch = async (url, init) => String(url) === "https://api.serply.io/v1/search"
-      ? new Response(JSON.stringify({ results: [{ title: "Serply", link: "https://example.com/serply", description: "answer" }] }), { status: 200 })
+    globalThis.fetch = async (url, init) => String(url) === "https://ydc-index.io/v1/search"
+      ? new Response(JSON.stringify({ results: { web: [{ title: "You", url: "https://example.com/you", description: "answer" }] } }), { status: 200 })
       : nativeFetch(url, init);
     const tools = [];
     (await import(${JSON.stringify(indexUrl)})).default({ registerTool(t) { tools.push(t); }, registerCommand() {}, registerShortcut() {}, on() {} });
@@ -87,24 +87,24 @@ test("Curator represents unavailable auto honestly while keeping explicit Serply
       return html;
     }
     const autoHtml = await curatorHtml("auto");
-    const explicitHtml = await curatorHtml("serply");
+    const explicitHtml = await curatorHtml("you");
     console.log(JSON.stringify({
       autoDefault: autoHtml.includes('"defaultProvider":"auto"'),
       autoSearch: autoHtml.includes('"searchProvider":"auto"'),
-      autoSerplyIdle: /class="provider-btn idle" data-provider="serply"/.test(autoHtml),
-      explicitDefault: explicitHtml.includes('"defaultProvider":"serply"'),
-      explicitSearch: explicitHtml.includes('"searchProvider":"serply"'),
-      explicitSerplyLoading: /class="provider-btn loading is-default" data-provider="serply"/.test(explicitHtml),
+      autoYouIdle: /class="provider-btn idle" data-provider="you"/.test(autoHtml),
+      explicitDefault: explicitHtml.includes('"defaultProvider":"you"'),
+      explicitSearch: explicitHtml.includes('"searchProvider":"you"'),
+      explicitYouLoading: /class="provider-btn loading is-default" data-provider="you"/.test(explicitHtml),
     }));
   `);
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), {
     autoDefault: true,
     autoSearch: true,
-    autoSerplyIdle: true,
+    autoYouIdle: true,
     explicitDefault: true,
     explicitSearch: true,
-    explicitSerplyLoading: true,
+    explicitYouLoading: true,
   });
 });
 
@@ -159,7 +159,7 @@ test("auto and all filter to allowed providers", () => {
 
 test("allowlisting an explicit-only provider does not opt it into auto or all", () => {
   for (const provider of ["auto", "all"]) {
-    const result = child({ webSearch: { allowedProviders: ["serply"] }, serplyApiKey: "s" }, `
+    const result = child({ webSearch: { allowedProviders: ["you"] }, youApiKey: "s" }, `
       let calls = 0; globalThis.fetch = async () => { calls++; throw new Error("must not fetch"); };
       const { search } = await import(${JSON.stringify(searchUrl)});
       let error; try { await search("q", { provider: ${JSON.stringify(provider)} }); } catch (e) { error = String(e); }
@@ -173,17 +173,17 @@ test("allowlisting an explicit-only provider does not opt it into auto or all", 
 });
 
 test("an allowlisted explicit-only provider remains directly selectable with its credential", () => {
-  const result = child({ webSearch: { allowedProviders: ["serply"] }, serplyApiKey: "s" }, `
+  const result = child({ webSearch: { allowedProviders: ["you"] }, youApiKey: "s" }, `
     const calls = []; globalThis.fetch = async (url, init) => {
       calls.push({ url: String(url), key: new Headers(init.headers).get("x-api-key") });
-      return new Response(JSON.stringify({ results: [{ title: "Serply", link: "https://example.com/serply", description: "answer" }] }), { status: 200 });
+      return new Response(JSON.stringify({ results: { web: [{ title: "You", url: "https://example.com/you", description: "answer" }] } }), { status: 200 });
     };
-    const response = await (await import(${JSON.stringify(searchUrl)})).search("q", { provider: "serply" });
+    const response = await (await import(${JSON.stringify(searchUrl)})).search("q", { provider: "you" });
     console.log(JSON.stringify({ provider: response.provider, calls }));
   `);
   assert.equal(result.status, 0, result.stderr);
   const output = JSON.parse(result.stdout);
-  assert.equal(output.provider, "serply");
+  assert.equal(output.provider, "you");
   assert.equal(output.calls.length, 1);
   assert.equal(output.calls[0].key, "s");
 });
@@ -210,7 +210,7 @@ test("an absent config file preserves registration and search behavior", () => {
     const providerDescription = tools.find(t => t.name === "web_search").parameters.properties.provider.description;
     globalThis.fetch = async () => ${kagiResponse};
     const response = await (await import(${JSON.stringify(searchUrl)})).search("q", { provider: "kagi" });
-    console.log(JSON.stringify({ tools: tools.map(t => t.name), commands, listsProviders: /serply|Allowed:/.test(providerDescription), provider: response.provider }));
+    console.log(JSON.stringify({ tools: tools.map(t => t.name), commands, listsProviders: /tabstack|Allowed:/.test(providerDescription), provider: response.provider }));
   `, { KAGI_API_KEY: "k" });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), {
@@ -242,7 +242,7 @@ test("a configured auto default retains automatic allowlist behavior", () => {
     const calls = []; globalThis.fetch = async url => { calls.push(String(url)); if (String(url) === "https://kagi.com/api/v1/search") return ${kagiResponse}; throw new Error("disabled request " + url); };
     const response = await (await import(${JSON.stringify(searchUrl)})).search("q");
     console.log(JSON.stringify({ provider: response.provider, calls }));
-  `, { BRAVE_API_KEY: "b", SERPLY_API_KEY: "s" });
+  `, { BRAVE_API_KEY: "b", YDC_API_KEY: "s" });
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { provider: "kagi", calls: ["https://kagi.com/api/v1/search"] });
 });

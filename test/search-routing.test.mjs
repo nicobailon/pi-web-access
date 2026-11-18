@@ -17,7 +17,7 @@ async function createConfig(config) {
 
 function runChild(script, env) {
 	const childEnv = { ...process.env };
-	for (const key of ["PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "OPENAI_API_KEY", "BRAVE_API_KEY", "PARALLEL_API_KEY", "TINYFISH_API_KEY", "SEARCH1API_KEY", "SEARCHINFINITY_API_KEY", "QUERIT_API_KEY", "TAVILY_API_KEY", "FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "JINA_API_KEY", "SERPDIVE_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY", "XAI_API_KEY", "BRIGHTDATA_API_KEY", "BRIGHTDATA_SERP_ZONE", "SEARXNG_BASE_URL", "EXA_API_KEY", "PERPLEXITY_API_KEY", "GEMINI_API_KEY"]) {
+	for (const key of ["PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "OPENAI_API_KEY", "BRAVE_API_KEY", "PARALLEL_API_KEY", "TINYFISH_API_KEY", "SEARCHINFINITY_API_KEY", "QUERIT_API_KEY", "TAVILY_API_KEY", "FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "JINA_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "XAI_API_KEY", "SEARXNG_BASE_URL", "EXA_API_KEY", "PERPLEXITY_API_KEY", "GEMINI_API_KEY"]) {
 		delete childEnv[key];
 	}
 	Object.assign(childEnv, env);
@@ -312,58 +312,61 @@ test("legacy single-provider config takes precedence over searchRouting", async 
 	});
 });
 
-test("configured routing accepts SERPdive and detects its availability", async () => {
+const STUB_PROVIDER = { url: "https://search.example.com/v1/search", method: "POST", apiKey: "$STUB_SEARCH_KEY", apiKeyHeader: "Authorization", apiKeyPrefix: "Bearer ", body: { query: "{query}" }, results: "results", fields: { title: "title", url: "url", snippet: "content" } };
+
+test("configured routing accepts a custom provider and detects its availability", async () => {
 	const home = await createConfig({
-		searchRouting: { providers: ["serpdive"], fallbackOn: ["network"] },
+		customSearchProviders: { stub: STUB_PROVIDER },
+		searchRouting: { providers: ["stub"], fallbackOn: ["network"] },
 	});
 	const child = runChild(`
 		const calls = [];
 		globalThis.fetch = async (url) => {
 			calls.push(String(url));
-			if (String(url) === "https://api.serpdive.com/v1/search") {
-				return new Response(JSON.stringify({ results: [{ url: "https://serpdive.example/source", title: "SERPdive source", content: "SERPdive content" }] }), { status: 200 });
+			if (String(url) === "https://search.example.com/v1/search") {
+				return new Response(JSON.stringify({ results: [{ url: "https://stub.example/source", title: "Stub source", content: "Stub content" }] }), { status: 200 });
 			}
 			throw new Error("Unexpected fetch " + url);
 		};
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
-		const result = await search("serpdive route", { provider: "auto" });
+		const result = await search("stub route", { provider: "auto" });
 		console.log(JSON.stringify({ provider: result.provider, answer: result.answer, calls }));
 	`, {
 		PI_CODING_AGENT_DIR: home,
-		SERPDIVE_API_KEY: "serpdive-test-key",
+		STUB_SEARCH_KEY: "stub-test-key",
 	});
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.equal(output.provider, "serpdive");
-	assert.match(output.answer, /SERPdive content/);
-	assert.deepEqual(output.calls, ["https://api.serpdive.com/v1/search"]);
+	assert.equal(output.provider, "stub");
+	assert.match(output.answer, /Stub content/);
+	assert.deepEqual(output.calls, ["https://search.example.com/v1/search"]);
 });
 
-test("configured SERPdive provider remains strict instead of falling back to auto", async () => {
-	const home = await createConfig({ provider: "serpdive" });
+test("a configured custom provider remains strict instead of falling back to auto", async () => {
+	const home = await createConfig({ customSearchProviders: { stub: STUB_PROVIDER }, provider: "stub" });
 	const child = runChild(`
 		const calls = [];
 		globalThis.fetch = async (url) => {
 			calls.push(String(url));
-			if (String(url) === "https://api.serpdive.com/v1/search") {
-				return new Response(JSON.stringify({ results: [{ url: "https://serpdive.example/source", title: "SERPdive source", content: "configured content" }] }), { status: 200 });
+			if (String(url) === "https://search.example.com/v1/search") {
+				return new Response(JSON.stringify({ results: [{ url: "https://stub.example/source", title: "Stub source", content: "configured content" }] }), { status: 200 });
 			}
 			throw new Error("Auto fallback must not run: " + url);
 		};
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
-		const result = await search("configured serpdive", { provider: "auto" });
+		const result = await search("configured stub", { provider: "auto" });
 		console.log(JSON.stringify({ provider: result.provider, answer: result.answer, calls }));
 	`, {
 		PI_CODING_AGENT_DIR: home,
-		SERPDIVE_API_KEY: "serpdive-test-key",
+		STUB_SEARCH_KEY: "stub-test-key",
 	});
 
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.equal(output.provider, "serpdive");
+	assert.equal(output.provider, "stub");
 	assert.match(output.answer, /configured content/);
-	assert.deepEqual(output.calls, ["https://api.serpdive.com/v1/search"]);
+	assert.deepEqual(output.calls, ["https://search.example.com/v1/search"]);
 });
 
 test("invalid searchRouting configuration fails loudly", async () => {
@@ -640,44 +643,6 @@ test("a Hosted response without web_search_call is invalid and can fall back", a
 });
 
 for (const scenario of [
-	{ name: "quoting a rate_limit code", zone: "pi_serp", body: JSON.stringify({ error: "rate_limit_exceeded" }) },
-	{ name: "for a zone named rate_limit_exceeded", zone: "rate_limit_exceeded", body: "<html>oops</html>" },
-]) {
-	test(`a billed Bright Data 200 ${scenario.name} fails as invalid-response, not quota`, async () => {
-		const home = await createConfig({
-			searchRouting: { providers: ["brightdata", "tavily"], fallbackOn: ["quota"] },
-		});
-		const child = runChild(`
-			const calls = [];
-			globalThis.fetch = async (url) => {
-				calls.push(String(url));
-				if (String(url) === "https://api.brightdata.com/request") return new Response(${JSON.stringify(scenario.body)}, { status: 200 });
-				if (String(url) === "https://api.tavily.com/search") throw new Error("Tavily must not run");
-				throw new Error("Unexpected fetch " + url);
-			};
-			const { search } = await import(${JSON.stringify(searchModuleUrl)});
-			try {
-				await search("billed route", { provider: "auto" });
-				console.log(JSON.stringify({ ok: true, calls }));
-			} catch (error) {
-				console.log(JSON.stringify({ ok: false, error: String(error), calls }));
-			}
-		`, {
-			PI_CODING_AGENT_DIR: home,
-			BRIGHTDATA_API_KEY: "bd-test-key",
-			BRIGHTDATA_SERP_ZONE: scenario.zone,
-			TAVILY_API_KEY: "tavily-test-key",
-		});
-
-		assert.equal(child.status, 0, child.stderr);
-		const output = JSON.parse(child.stdout.trim());
-		assert.equal(output.ok, false);
-		assert.match(output.error, /brightdata search failed \(invalid-response\)/);
-		assert.deepEqual(output.calls, ["https://api.brightdata.com/request"]);
-	});
-}
-
-for (const scenario of [
 	{ name: "server_error", fallbackOn: ["transient"], error: { type: "server_error", code: "internal_error", message: "backend exploded" } },
 	{ name: "rate_limit_exceeded", fallbackOn: ["quota"], error: { type: "requests", code: "rate_limit_exceeded", message: "slow down" } },
 	{ name: "unrecognised", fallbackOn: ["invalid-response"], error: { type: "mystery", code: "odd_failure", message: "something broke" } },
@@ -746,10 +711,10 @@ test("Curator auto default follows the same current-model Hosted Search eligibil
 		const { resolveCuratorDefaultProvider } = await import(${JSON.stringify(indexModuleUrl)});
 		const available = {
 			all: true, openai: true, brave: false, parallel: false, "parallel-mcp": false, tinyfish: false,
-			search1api: false, searchinfinity: false, querit: false, tavily: true, firecrawl: false,
-			jina: false, serpdive: false, searxng: false, duckduckgo: false, perplexity: false,
+			searchinfinity: false, querit: false, tavily: true, firecrawl: false,
+			jina: false, searxng: false, duckduckgo: false, perplexity: false,
 			exa: false, gemini: false, kagi: false, bocha: false, ollama: false, anysearch: false,
-			xai: false, brightdata: false, serpbase: false, serper: false, valyu: false,
+			xai: false, valyu: false,
 		};
 		const official = { model: { provider: "openai", api: "openai-responses", id: "gpt-5.6", baseUrl: "https://api.openai.com/v1" } };
 		const proxy = { model: { provider: "openai", api: "openai-responses", id: "gpt-5.6-sol", baseUrl: "https://ai.feei.cn/v1" } };

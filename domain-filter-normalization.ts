@@ -16,7 +16,7 @@ export function normalizeDomain(value: string): string | null {
 /**
  * Applies the shared include/exclude `domainFilter` to results from a provider
  * that has no server-side equivalent, so a filter never returns off-domain
- * results silently. Unparseable result URLs are dropped, matching XCrawl.
+ * results silently. Unparseable result URLs are dropped.
  */
 export function applyDomainFilter<T extends { url: string }>(results: T[], domainFilter: readonly string[] | undefined): T[] {
 	if (!domainFilter?.length) return results;

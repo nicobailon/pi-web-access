@@ -17,7 +17,6 @@ function runChild(script, env = {}) {
 		"BRAVE_API_KEY",
 		"PARALLEL_API_KEY",
 		"TINYFISH_API_KEY",
-		"SEARCH1API_KEY",
 		"SEARCHINFINITY_API_KEY",
 		"QUERIT_API_KEY",
 		"TAVILY_API_KEY",
@@ -25,7 +24,7 @@ function runChild(script, env = {}) {
 		"FIRECRAWL_BASE_URL",
 		"FIRECRAWL_API_KEY",
 		"JINA_API_KEY",
-		"SERPDIVE_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY",
+		"KAGI_API_KEY", "OLLAMA_API_KEY",
 		"ANYSEARCH_API_KEY",
 		"SEARXNG_BASE_URL",
 		"EXA_API_KEY",
@@ -49,7 +48,7 @@ test('provider "all" starts every eligible provider together, excludes AnySearch
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-all-"));
 	const child = runChild(`
 		const started = [];
-		const expected = new Set(["exa", "brave", "tinyfish", "search1api"]);
+		const expected = new Set(["exa", "brave", "tinyfish"]);
 		let releaseGate;
 		const gate = new Promise((resolve) => { releaseGate = resolve; });
 
@@ -94,13 +93,6 @@ test('provider "all" starts every eligible provider together, excludes AnySearch
 					page: 0,
 				}), { status: 200 });
 			}
-			if (target === "https://api.search1api.com/search") {
-				await waitForPeers("search1api");
-				return new Response(JSON.stringify({
-					searchParameters: { query: "combined" },
-					results: [{ title: "Search1API result", link: "https://example.com/search1api", snippet: "Search1API answer" }],
-				}), { status: 200 });
-			}
 			throw new Error("Unexpected fetch " + target);
 		};
 
@@ -113,23 +105,20 @@ test('provider "all" starts every eligible provider together, excludes AnySearch
 		PI_CODING_AGENT_DIR: home,
 		BRAVE_API_KEY: "brave-test-key",
 		TINYFISH_API_KEY: "tinyfish-test-key",
-		SEARCH1API_KEY: "search1api-test-key",
 	});
 
 	assert.equal(child.status, 0, child.stderr || child.error?.message);
 	const output = JSON.parse(child.stdout.trim());
-	assert.deepEqual([...output.started].sort(), ["brave", "exa", "search1api", "tinyfish"]);
+	assert.deepEqual([...output.started].sort(), ["brave", "exa", "tinyfish"]);
 	assert.equal(output.result.provider, "all");
-	assert.deepEqual(output.result.providerResponses.map((result) => result.provider), ["exa", "brave", "tinyfish", "search1api"]);
+	assert.deepEqual(output.result.providerResponses.map((result) => result.provider), ["exa", "brave", "tinyfish"]);
 	assert.deepEqual(output.result.results.map((result) => result.url), [
 		"https://example.com/shared",
 		"https://example.com/tinyfish",
-		"https://example.com/search1api",
 	]);
 	assert.match(output.result.answer, /## Exa/);
 	assert.match(output.result.answer, /## Brave/);
 	assert.match(output.result.answer, /## TinyFish/);
-	assert.match(output.result.answer, /## Search1API/);
 	assert.doesNotMatch(output.result.answer, /AnySearch/);
 });
 
@@ -330,11 +319,9 @@ test('"all" is a Curator provider but remains invalid inside sequential searchRo
 			brave: true,
 			parallel: false,
 			tinyfish: true,
-			search1api: false,
 			searchinfinity: false,
 			querit: false,
 			tavily: false,
-			serpdive: false,
 			searxng: false,
 			perplexity: false,
 			exa: true,
@@ -365,11 +352,9 @@ test('"all" is a Curator provider but remains invalid inside sequential searchRo
 			brave: false,
 			parallel: false,
 			tinyfish: false,
-			search1api: false,
 			searchinfinity: false,
 			querit: false,
 			tavily: false,
-			serpdive: false,
 			searxng: false,
 			perplexity: false,
 			exa: false,

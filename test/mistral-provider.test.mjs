@@ -19,11 +19,11 @@ function runChild(script, env = {}) {
 	const childEnv = { ...process.env };
 	for (const key of [
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "MISTRAL_API_KEY", "OPENAI_API_KEY", "BRAVE_API_KEY",
-		"PARALLEL_API_KEY", "TINYFISH_API_KEY", "SEARCH1API_API_KEY", "SEARCH1API_KEY", "SEARCHINFINITY_API_KEY",
+		"PARALLEL_API_KEY", "TINYFISH_API_KEY", "SEARCHINFINITY_API_KEY",
 		"QUERIT_API_KEY", "TAVILY_API_KEY", "FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "JINA_API_KEY",
-		"SERPDIVE_API_KEY", "KAGI_API_KEY", "BOCHA_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY",
-		"SERPER_API_KEY", "ANYSEARCH_API_KEY", "XCRAWL_API_KEY", "VALYU_API_KEY", "XAI_API_KEY",
-		"BRIGHTDATA_API_KEY", "BRIGHTDATA_SERP_ZONE", "SEARXNG_BASE_URL", "EXA_API_KEY", "PERPLEXITY_API_KEY",
+		"KAGI_API_KEY", "BOCHA_API_KEY", "OLLAMA_API_KEY",
+		"ANYSEARCH_API_KEY", "VALYU_API_KEY", "XAI_API_KEY",
+		"BRIGHTDATA_API_KEY", "SEARXNG_BASE_URL", "EXA_API_KEY", "PERPLEXITY_API_KEY",
 		"GEMINI_API_KEY", "CLOUDFLARE_API_KEY", "GOOGLE_GEMINI_BASE_URL",
 	]) delete childEnv[key];
 	Object.assign(childEnv, env);
@@ -317,13 +317,11 @@ test("Curator page exposes Mistral as an available manual provider", async () =>
 		parallel: false,
 		"parallel-mcp": false,
 		tinyfish: false,
-		search1api: false,
 		searchinfinity: false,
 		querit: false,
 		tavily: false,
 		firecrawl: false,
 		jina: false,
-		serpdive: false,
 		kagi: false,
 		bocha: false,
 		ollama: false,
@@ -334,12 +332,8 @@ test("Curator page exposes Mistral as an available manual provider", async () =>
 		gemini: false,
 		kimi: false,
 		anysearch: false,
-		xcrawl: false,
 		xai: false,
 		mistral: true,
-		brightdata: false,
-		serpbase: false,
-		serper: false,
 		valyu: false,
 	};
 	const page = generateCuratorPage(["query"], "token", 20, available, "mistral", "mistral", [], null);

@@ -94,8 +94,7 @@ function getZone(): string | null {
 
 // A zone is never defaulted. Zones are per-account names bound to a product
 // type, they are billed separately, and a guess is either an HTTP 400 or a
-// charge against the wrong product. The SERP zone from the search provider is
-// a different zone type and cannot serve Web Unlocker requests.
+// charge against the wrong product.
 function requireZone(): string {
 	const setting = zoneSetting();
 	const zone = setting ? normalizeZone(setting.raw) : null;
