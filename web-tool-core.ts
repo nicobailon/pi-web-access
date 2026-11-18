@@ -500,6 +500,91 @@ function formatFullResults(queryData: QueryResultData): string {
 	return output;
 }
 
+interface StoredEntry {
+	label: string;
+	content: string | null;
+	error: string | null;
+	info: Record<string, unknown>;
+}
+
+// A responseId with several queries or URLs and no index: list the entries, or run findText over all
+// of them, instead of failing the call (#687).
+function readAllStoredEntries(
+	params: GetSearchContentParams,
+	indexKey: "queryIndex" | "urlIndex",
+	noun: "queries" | "URLs",
+	entries: StoredEntry[],
+	maxChars: number,
+): WebToolResult {
+	const responseId = params.responseId;
+	const title = `${entries.length} stored ${noun}`;
+	if (params.findText === undefined) {
+		const lines = entries.map((entry, index) => `${index}: ${entry.label} (${entry.content === null ? `error: ${entry.error}` : `${entry.content.length} chars`})`);
+		return {
+			content: [{ type: "text", text: `responseId ${formatInputValue(responseId)} holds ${title}. Pass ${indexKey} to read one, or findText to search all of them.\n${lines.join("\n")}` }],
+			details: {
+				responseId,
+				title,
+				contentLength: entries.reduce((total, entry) => total + (entry.content?.length ?? 0), 0),
+				entries: entries.map((entry, index) => ({ [indexKey]: index, ...entry.info, ...(entry.content === null ? { error: entry.error } : { contentLength: entry.content.length }) })),
+			},
+		};
+	}
+
+	const findMode = params.findMode ?? "case-insensitive";
+	let queries: string[];
+	try {
+		queries = normalizeFindQueries(params.findText);
+	} catch (err) {
+		const error = err instanceof Error ? err.message : String(err);
+		return {
+			content: [{ type: "text", text: `Unable to find ${formatInputValue(params.findText)} in responseId ${formatInputValue(responseId)}: ${error}. Check findText and use a supported findMode.` }],
+			details: { error, responseId },
+		};
+	}
+	const sections: string[] = [];
+	const noMatches: number[] = [];
+	const failed: string[] = [];
+	const omitted: number[] = [];
+	let length = 0;
+	let matchCount = 0;
+	let returnedMatches = 0;
+	const entryDetails = entries.map((entry, index) => {
+		if (entry.content === null) {
+			failed.push(`${index} (${entry.error})`);
+			return { [indexKey]: index, ...entry.info, error: entry.error };
+		}
+		const found = findContent(entry.content, queries, findMode);
+		matchCount += found.matchCount;
+		if (found.matchCount === 0) noMatches.push(index);
+		else {
+			const section = `## ${indexKey} ${index}: ${entry.label}\n\n${found.text}`;
+			if (length + section.length <= maxChars) {
+				sections.push(section);
+				length += section.length;
+				returnedMatches += found.returnedMatches;
+			} else omitted.push(index);
+		}
+		return { [indexKey]: index, ...entry.info, matchCount: found.matchCount };
+	});
+	const notes: string[] = [];
+	if (noMatches.length > 0) notes.push(`No matches in ${indexKey} ${noMatches.join(", ")}.`);
+	if (failed.length > 0) notes.push(`Not searched (failed): ${indexKey} ${failed.join(", ")}.`);
+	if (omitted.length > 0) notes.push(`Matches in ${indexKey} ${omitted.join(", ")} omitted to stay under ${maxChars} chars; repeat with ${indexKey} to read them.`);
+	return {
+		content: [{ type: "text", text: [`findText searched ${title} in responseId ${formatInputValue(responseId)}.`, ...sections, ...notes].join("\n\n") }],
+		details: {
+			responseId,
+			title,
+			findMode,
+			matchCount,
+			returnedMatches,
+			entries: entryDetails,
+			...(failed.length === entries.length ? { error: "Every stored entry failed" } : {}),
+		},
+	};
+}
+
 function boundSearchPresentation(
 	text: string,
 	guidance: string,
@@ -1348,10 +1433,18 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 						details: { error: "Index out of range" },
 					};
 				}
+			} else if (data.queries.length === 1) {
+				queryData = data.queries[0];
+			} else if (data.queries.length > 1) {
+				return readAllStoredEntries(params, "queryIndex", "queries", data.queries.map((q) => ({
+					label: `"${q.query}"`,
+					content: q.error ? null : formatFullResults(q),
+					error: q.error,
+					info: { query: q.query },
+				})), maxInlineContentChars);
 			} else {
-				const available = data.queries.map((q, i) => `${i}: "${q.query}"`).join(", ");
 				return {
-					content: [{ type: "text", text: `Specify query or queryIndex for responseId ${formatInputValue(params.responseId)}. Available queries: ${available || "none"}.` }],
+					content: [{ type: "text", text: `Specify query or queryIndex for responseId ${formatInputValue(params.responseId)}. Available queries: none.` }],
 					details: { error: "No query specified" },
 				};
 			}
@@ -1451,10 +1544,16 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				// (common with findText on single-URL fetches) succeed without a retry.
 				selectedUrlIndex = 0;
 				urlData = data.urls[0];
+			} else if (data.urls.length > 1) {
+				return readAllStoredEntries(params, "urlIndex", "URLs", data.urls.map((u) => ({
+					label: u.title && u.title !== u.url ? `${u.title} — ${u.url}` : u.url,
+					content: u.error ? null : u.content,
+					error: u.error,
+					info: { url: u.url },
+				})), maxInlineContentChars);
 			} else {
-				const available = data.urls.map((u, i) => `${i}: ${u.url}`).join("\n  ");
 				return {
-					content: [{ type: "text", text: `Specify url or urlIndex for responseId ${formatInputValue(params.responseId)}. Available URLs:\n  ${available || "  none"}` }],
+					content: [{ type: "text", text: `Specify url or urlIndex for responseId ${formatInputValue(params.responseId)}. Available URLs:\n    none` }],
 					details: { error: "No URL specified" },
 				};
 			}

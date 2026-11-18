@@ -249,23 +249,80 @@ test("get_search_content defaults to the only stored URL when url and urlIndex a
 	assert.match(sliceResult.content[0].text, /short content with a unique needle/);
 });
 
-test("get_search_content still asks for a URL when multiple stored URLs exist", async () => {
-	const tool = getContentTool();
+function storeMultiFetch() {
 	storeResult("multi-fetch", {
 		id: "multi-fetch",
 		type: "fetch",
 		timestamp: Date.now(),
 		urls: [
 			{ url: "https://example.com/first", title: "First", content: "first content", error: null },
-			{ url: "https://example.com/second", title: "Second", content: "second content", error: null },
+			{ url: "https://example.com/second", title: "Second", content: "second content with a needle", error: null },
+			{ url: "https://example.com/broken", title: "", content: "", error: "HTTP 500" },
 		],
 	});
+}
 
-	const result = await tool.execute("call", { responseId: "multi-fetch" });
-	assert.equal(result.details.error, "No URL specified");
-	assert.match(result.content[0].text, /Specify url or urlIndex/);
-	assert.match(result.content[0].text, /0: https:\/\/example\.com\/first/);
-	assert.match(result.content[0].text, /1: https:\/\/example\.com\/second/);
+function storeMultiSearch() {
+	storeResult("multi-search", {
+		id: "multi-search",
+		type: "search",
+		timestamp: Date.now(),
+		queries: [
+			{ query: "taiwan news", answer: "Taipei summary", results: [{ title: "Taipei Times", url: "https://example.com/taipei", snippet: "Asia market" }], error: null },
+			{ query: "japan news", answer: "Tokyo summary", results: [{ title: "Japan Times", url: "https://example.com/tokyo", snippet: "Asia trade" }], error: null },
+			{ query: "korea news", answer: "", results: [], error: "provider failed" },
+		],
+	});
+}
+
+test("get_search_content lists the entries of a multi-URL or multi-query response called without an index", async () => {
+	const tool = getContentTool();
+	storeMultiFetch();
+	storeMultiSearch();
+
+	const urls = await tool.execute("call", { responseId: "multi-fetch" });
+	assert.equal(urls.isError, undefined);
+	assert.equal(urls.content[0].text, [
+		'responseId "multi-fetch" holds 3 stored URLs. Pass urlIndex to read one, or findText to search all of them.',
+		"0: First — https://example.com/first (13 chars)",
+		"1: Second — https://example.com/second (28 chars)",
+		"2: https://example.com/broken (error: HTTP 500)",
+	].join("\n"));
+
+	const queries = await tool.execute("call", { responseId: "multi-search" });
+	assert.equal(queries.isError, undefined);
+	assert.match(queries.content[0].text, /^responseId "multi-search" holds 3 stored queries\. Pass queryIndex to read one/);
+	assert.match(queries.content[0].text, /\n0: "taiwan news" \(\d+ chars\)\n1: "japan news" \(\d+ chars\)\n2: "korea news" \(error: provider failed\)$/);
+});
+
+test("get_search_content runs findText across every entry when no index is given", async () => {
+	const tool = getContentTool();
+	storeMultiFetch();
+	storeMultiSearch();
+
+	const urls = await tool.execute("call", { responseId: "multi-fetch", findText: "needle" });
+	assert.equal(urls.isError, undefined);
+	assert.equal(urls.details.matchCount, 1);
+	assert.match(urls.content[0].text, /## urlIndex 1: Second — https:\/\/example\.com\/second\n\nText matches \(case-insensitive\)/);
+	assert.match(urls.content[0].text, /second content with a needle/);
+	assert.match(urls.content[0].text, /No matches in urlIndex 0\./);
+	assert.match(urls.content[0].text, /Not searched \(failed\): urlIndex 2 \(HTTP 500\)\./);
+
+	const queries = await tool.execute("call", { responseId: "multi-search", findText: ["Asia", "Tokyo"], findMode: "exact" });
+	assert.equal(queries.isError, undefined);
+	assert.equal(queries.details.matchCount, 3);
+	assert.match(queries.content[0].text, /## queryIndex 0: "taiwan news"\n\nText matches \(exact\)[\s\S]*Asia market/);
+	assert.match(queries.content[0].text, /## queryIndex 1: "japan news"\n\nText matches \(exact\)[\s\S]*Tokyo summary/);
+});
+
+test("get_search_content reads a single-query search without query or queryIndex", async () => {
+	const tool = getContentTool();
+	storeSearchContent();
+
+	const result = await tool.execute("call", { responseId: "search-result" });
+	assert.equal(result.isError, undefined);
+	assert.equal(result.details.query, "CotEditor scripts");
+	assert.match(result.content[0].text, /ScriptManager\.swift/);
 });
 
 test("get_search_content normalizes bridge defaults for search matches", async () => {
