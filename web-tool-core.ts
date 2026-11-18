@@ -504,11 +504,17 @@ interface StoredEntry {
 	label: string;
 	content: string | null;
 	error: string | null;
-	info: Record<string, unknown>;
+}
+
+// Last resort for a limit smaller than the fixed wording; budgeting below keeps normal limits clear of it.
+function capText(text: string, maxChars: number): string {
+	if (text.length <= maxChars) return text;
+	const marker = "\n[Output truncated.]";
+	return marker.length >= maxChars ? text.slice(0, maxChars) : text.slice(0, maxChars - marker.length) + marker;
 }
 
 // A responseId with several queries or URLs and no index: list the entries, or run findText over all
-// of them, instead of failing the call (#687).
+// of them, instead of failing the call (#687). The returned text stays within maxChars.
 function readAllStoredEntries(
 	params: GetSearchContentParams,
 	indexKey: "queryIndex" | "urlIndex",
@@ -519,15 +525,22 @@ function readAllStoredEntries(
 	const responseId = params.responseId;
 	const title = `${entries.length} stored ${noun}`;
 	if (params.findText === undefined) {
+		const head = `responseId ${formatInputValue(responseId)} holds ${title}. Pass ${indexKey} to read one, or findText to search all of them.`;
 		const lines = entries.map((entry, index) => `${index}: ${entry.label} (${entry.content === null ? `error: ${entry.error}` : `${entry.content.length} chars`})`);
+		const notListed = (shown: number) => `${entries.length - shown} more not listed (${indexKey} ${shown}-${entries.length - 1}).`;
+		let text = [head, ...lines].join("\n");
+		if (text.length > maxChars) {
+			let shown = 0;
+			let length = head.length;
+			while (shown < lines.length && length + 1 + lines[shown].length + 1 + notListed(shown + 1).length <= maxChars) {
+				length += 1 + lines[shown].length;
+				shown++;
+			}
+			text = [head, ...lines.slice(0, shown), notListed(shown)].join("\n");
+		}
 		return {
-			content: [{ type: "text", text: `responseId ${formatInputValue(responseId)} holds ${title}. Pass ${indexKey} to read one, or findText to search all of them.\n${lines.join("\n")}` }],
-			details: {
-				responseId,
-				title,
-				contentLength: entries.reduce((total, entry) => total + (entry.content?.length ?? 0), 0),
-				entries: entries.map((entry, index) => ({ [indexKey]: index, ...entry.info, ...(entry.content === null ? { error: entry.error } : { contentLength: entry.content.length }) })),
-			},
+			content: [{ type: "text", text: capText(text, maxChars) }],
+			details: { responseId, title, contentLength: entries.reduce((total, entry) => total + (entry.content?.length ?? 0), 0) },
 		};
 	}
 
@@ -542,44 +555,40 @@ function readAllStoredEntries(
 			details: { error, responseId },
 		};
 	}
-	const sections: string[] = [];
-	const noMatches: number[] = [];
-	const failed: string[] = [];
-	const omitted: number[] = [];
-	let length = 0;
-	let matchCount = 0;
-	let returnedMatches = 0;
-	const entryDetails = entries.map((entry, index) => {
-		if (entry.content === null) {
-			failed.push(`${index} (${entry.error})`);
-			return { [indexKey]: index, ...entry.info, error: entry.error };
-		}
-		const found = findContent(entry.content, queries, findMode);
-		matchCount += found.matchCount;
-		if (found.matchCount === 0) noMatches.push(index);
-		else {
-			const section = `## ${indexKey} ${index}: ${entry.label}\n\n${found.text}`;
-			if (length + section.length <= maxChars) {
-				sections.push(section);
-				length += section.length;
-				returnedMatches += found.returnedMatches;
-			} else omitted.push(index);
-		}
-		return { [indexKey]: index, ...entry.info, matchCount: found.matchCount };
-	});
+	const found = entries.map((entry) => entry.content === null ? null : findContent(entry.content, queries, findMode));
+	const sections = found.flatMap((result, index) => result && result.matchCount > 0
+		? [{ index, text: `## ${indexKey} ${index}: ${entries[index].label}\n\n${result.text}`, returnedMatches: result.returnedMatches }]
+		: []);
+	const noMatches = found.flatMap((result, index) => result?.matchCount === 0 ? [index] : []);
+	const failed = entries.flatMap((entry, index) => entry.content === null ? [`${index} (${entry.error})`] : []);
 	const notes: string[] = [];
 	if (noMatches.length > 0) notes.push(`No matches in ${indexKey} ${noMatches.join(", ")}.`);
 	if (failed.length > 0) notes.push(`Not searched (failed): ${indexKey} ${failed.join(", ")}.`);
-	if (omitted.length > 0) notes.push(`Matches in ${indexKey} ${omitted.join(", ")} omitted to stay under ${maxChars} chars; repeat with ${indexKey} to read them.`);
+	const heading = `findText searched ${title} in responseId ${formatInputValue(responseId)}.`;
+	const omittedNotice = (omitted: number[]) => `Matches in ${indexKey} ${omitted.join(", ")} omitted to stay under ${maxChars} chars; repeat with ${indexKey} to read them.`;
+	const separator = "\n\n";
+	let shown = sections;
+	const omitted: number[] = [];
+	if ([heading, ...sections.map((section) => section.text), ...notes].join(separator).length > maxChars) {
+		// Reserve the notice's longest form, with every section omitted, so any subset still fits.
+		let budget = maxChars - [heading, ...notes, omittedNotice(sections.map((section) => section.index))].join(separator).length;
+		shown = [];
+		for (const section of sections) {
+			if (separator.length + section.text.length <= budget) {
+				shown.push(section);
+				budget -= separator.length + section.text.length;
+			} else omitted.push(section.index);
+		}
+	}
+	const text = [heading, ...shown.map((section) => section.text), ...notes, ...(omitted.length > 0 ? [omittedNotice(omitted)] : [])].join(separator);
 	return {
-		content: [{ type: "text", text: [`findText searched ${title} in responseId ${formatInputValue(responseId)}.`, ...sections, ...notes].join("\n\n") }],
+		content: [{ type: "text", text: capText(text, maxChars) }],
 		details: {
 			responseId,
 			title,
 			findMode,
-			matchCount,
-			returnedMatches,
-			entries: entryDetails,
+			matchCount: found.reduce((total, result) => total + (result?.matchCount ?? 0), 0),
+			returnedMatches: shown.reduce((total, section) => total + section.returnedMatches, 0),
 			...(failed.length === entries.length ? { error: "Every stored entry failed" } : {}),
 		},
 	};
@@ -1440,7 +1449,6 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					label: `"${q.query}"`,
 					content: q.error ? null : formatFullResults(q),
 					error: q.error,
-					info: { query: q.query },
 				})), maxInlineContentChars);
 			} else {
 				return {
@@ -1549,7 +1557,6 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					label: u.title && u.title !== u.url ? `${u.title} — ${u.url}` : u.url,
 					content: u.error ? null : u.content,
 					error: u.error,
-					info: { url: u.url },
 				})), maxInlineContentChars);
 			} else {
 				return {

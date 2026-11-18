@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { Value } from "typebox/value";
 
@@ -313,6 +317,46 @@ test("get_search_content runs findText across every entry when no index is given
 	assert.equal(queries.details.matchCount, 3);
 	assert.match(queries.content[0].text, /## queryIndex 0: "taiwan news"\n\nText matches \(exact\)[\s\S]*Asia market/);
 	assert.match(queries.content[0].text, /## queryIndex 1: "japan news"\n\nText matches \(exact\)[\s\S]*Tokyo summary/);
+});
+
+test("get_search_content keeps multi-entry lists and findText results within maxInlineContentChars", () => {
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-web-access-multi-entry-"));
+	writeFileSync(join(agentDir, "web-search.json"), JSON.stringify({ maxInlineContentChars: 1000 }));
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			import initializeExtension from ${JSON.stringify(new URL("../index.ts", import.meta.url).href)};
+			import { storeResult } from ${JSON.stringify(new URL("../storage.ts", import.meta.url).href)};
+			const page = (i) => ({ url: "https://example.com/page-" + i + "-" + "p".repeat(40), title: "Page " + i, content: "pad ".repeat(30) + "needle" + " pad".repeat(30), error: null });
+			storeResult("many", { id: "many", type: "fetch", timestamp: Date.now(), urls: Array.from({ length: 60 }, (_, i) => page(i)) });
+			storeResult("matches", { id: "matches", type: "fetch", timestamp: Date.now(), urls: [
+				...Array.from({ length: 4 }, (_, i) => page(i)),
+				{ url: "https://example.com/broken", title: "", content: "", error: "HTTP 500 " + "e".repeat(200) },
+			] });
+			const tools = [];
+			initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
+			const tool = tools.find(t => t.name === "get_search_content");
+			const list = await tool.execute("call", { responseId: "many" });
+			const find = await tool.execute("call", { responseId: "matches", findText: "needle" });
+			console.log(JSON.stringify({ list: list.content[0].text, find: find.content[0].text, findDetails: find.details }));
+		`,
+		encoding: "utf8",
+		env: { ...process.env, PI_CODING_AGENT_DIR: agentDir },
+	});
+	assert.equal(child.status, 0, child.stderr);
+	const { list, find, findDetails } = JSON.parse(child.stdout);
+
+	assert.ok(list.length <= 1000, `list is ${list.length} chars`);
+	assert.match(list, /^responseId "many" holds 60 stored URLs\./);
+	const shown = list.split("\n").filter(line => /^\d+: Page /.test(line)).length;
+	assert.ok(shown > 0 && shown < 60);
+	assert.ok(list.endsWith(`\n${60 - shown} more not listed (urlIndex ${shown}-59).`));
+
+	assert.ok(find.length <= 1000, `findText result is ${find.length} chars`);
+	assert.match(find, /## urlIndex 0: Page 0/);
+	assert.match(find, /Not searched \(failed\): urlIndex 4 \(HTTP 500 e+\)\./);
+	assert.match(find, /Matches in urlIndex (\d, )*3 omitted to stay under 1000 chars; repeat with urlIndex to read them\.$/);
+	assert.equal(findDetails.matchCount, 4);
+	assert.ok(findDetails.returnedMatches > 0 && findDetails.returnedMatches < 4);
 });
 
 test("get_search_content reads a single-query search without query or queryIndex", async () => {
