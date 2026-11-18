@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+
+- The README's Proxy section now says how other extensions can recognize this extension's `globalThis.fetch` proxy wrapper: `__piWebAccessSharedProxyFetch === true`, stable since 0.46.0. The older `__piWebAccessProxyFetch` marker stays limited to wrapping a pre-0.46 copy, because setting it on every wrapper would let such a copy skip its own wrapper and bypass the proxy. Thanks to [@wesperz](https://github.com/wesperz) for [issue #682](https://github.com/nicobailon/pi-web-access/issues/682) and [@mystery4f](https://github.com/mystery4f) for the reproduction.
+
 ## [0.48.0] - 2026-11-12
 
 ### Highlights
