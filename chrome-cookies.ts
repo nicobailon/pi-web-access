@@ -361,7 +361,10 @@ function cookieDatabasePath(profilePath: string, config: BrowserConfig): string 
 	const networkCookies = join(profilePath, "Network", "Cookies");
 	if (config.usesLocalAppData && existsSync(networkCookies)) return networkCookies;
 	const legacyCookies = join(profilePath, "Cookies");
-	return existsSync(legacyCookies) ? legacyCookies : null;
+	if (existsSync(legacyCookies)) return legacyCookies;
+	// Chrome on macOS is moving the database to Network/Cookies and deletes the legacy file when the move is done.
+	// While both exist the copy in Network/ can be incomplete, so the legacy file is used.
+	return existsSync(networkCookies) ? networkCookies : null;
 }
 
 function browserBasePath(home: string, config: BrowserConfig): string {
