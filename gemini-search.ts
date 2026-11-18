@@ -62,7 +62,8 @@ export type CustomSearchProvider = string & { readonly customSearchProvider: tru
 export type ResolvedSearchProvider = BuiltinSearchProvider | CustomSearchProvider;
 export type SearchProvider = "auto" | "all" | ResolvedSearchProvider;
 export type SearchProviderSelection = SearchProvider | ResolvedSearchProvider[];
-export type ProviderAvailability = { all: boolean } & Record<BuiltinSearchProvider, boolean>;
+/** `customProviders` lists the allowed custom providers that have a credential source, in config order. */
+export type ProviderAvailability = { all: boolean; customProviders?: string[] } & Record<BuiltinSearchProvider, boolean>;
 export type SearchProviderErrorKind =
 	| "transient"
 	| "quota"
@@ -303,6 +304,13 @@ export function getAllowedSearchProviders(): readonly ResolvedSearchProvider[] {
 
 export function getCustomSearchProviderNames(): string[] {
 	return [...getSearchConfig().customProviders.keys()];
+}
+
+export function getAvailableCustomSearchProviders(): string[] {
+	const allowed = getAllowedSearchProviders();
+	return [...getSearchConfig().customProviders]
+		.filter(([name, custom]) => allowed.includes(name as CustomSearchProvider) && isCustomSearchProviderAvailable(name, custom))
+		.map(([name]) => name);
 }
 
 export function normalizeSearchProviderSelection(value: unknown, label = "provider", customProviders?: ReadonlyMap<string, unknown>): SearchProviderSelection {

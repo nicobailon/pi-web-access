@@ -50,6 +50,7 @@ function buildProviderButtons(
 		{ value: "cloudflare", label: "Cloudflare", available: available.cloudflare },
 		{ value: "tabstack", label: "Tabstack", available: available.tabstack },
 		{ value: "deepseek", label: "DeepSeek", available: available.deepseek },
+		...(Array.isArray(available.customProviders) ? available.customProviders : []).map(name => ({ value: name, label: name, available: true })),
 	];
 
 	return providers
@@ -1463,6 +1464,9 @@ const SCRIPT = `(function() {
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
   var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "kagi", "bocha", "ollama", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xai", "mistral", "valyu", "baizhi", "you", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "cloudflare", "tabstack"];
   var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
+  // Custom provider names come from config; they are selectable like built-ins and labeled with their name.
+  var customProviders = Array.isArray(availProviders.customProviders) ? availProviders.customProviders : [];
+  customProviders.forEach(function(name) { providers.push(name); availProviders[name] = true; });
   var workflow = "summary-review";
   var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";
   if (providers.indexOf(initialDefaultProvider) === -1) initialDefaultProvider = "exa";
@@ -1700,6 +1704,7 @@ const SCRIPT = `(function() {
     if (provider === "ninerouter") return "9router";
     if (provider === "cloudflare") return "Cloudflare";
     if (provider === "deepseek") return "DeepSeek";
+    if (customProviders.indexOf(provider) !== -1) return provider;
     return "Unknown";
   }
 

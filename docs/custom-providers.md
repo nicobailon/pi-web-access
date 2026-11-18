@@ -33,7 +33,7 @@ Custom providers run only when you name them. `auto` and `all` never use them.
 | `headers` | no | Extra fixed headers, such as `"User-Agent"`. |
 | `query` | no | Query parameters. Values may use `{query}` and `{count}`. |
 | `body` | no | JSON body for a `POST`. String values may use `{query}` and `{count}`; a value of exactly `"{count}"` is sent as a number. |
-| `results` | no | Dotted path to the array of results in the response, such as `"organic"` or `"data.sources"`. Leave it out when the response itself is the array. |
+| `results` | no | Dotted path to the array of results in the response, such as `"organic"` or `"data.sources"`. Leave it out when the response itself is the array. If the path is missing from a response, the search returns no results, since many APIs leave the array out when nothing matched; a value that is there but isn't an array is an error. |
 | `fields` | yes | Dotted paths inside one result: `title` and `url` are required, `snippet` is optional. Results without a title or an `http(s)` URL are skipped. |
 
 `{query}` is the search text and `{count}` is the number of results asked for (5 by default, at most 20). Nothing else is filled in.
@@ -46,7 +46,13 @@ A name may contain lowercase letters, digits and `-`, and cannot be `auto`, `all
 
 Each recipe below was written from the built-in provider it replaces. Merge the `customSearchProviders` entry into your `web-search.json` and set the environment variable, or replace the `apiKey` value with the key itself.
 
-These recipes ask for plain Google results. The built-in versions also sent domain filters as `site:` terms and recency as a date parameter; the recipes leave both out.
+The recipes send only the query (and a result count where the API takes one). Domain filters are applied to the returned URLs, as for every custom provider, and recency is not sent. What the built-in versions did differently:
+
+- serper, serpapi, serply, serpbase and autom sent domain filters as Google `site:` terms and recency as Google's `tbs` time filter. searchapi did the same with its `time_period` filter.
+- cloro and outcrawl sent domain filters as `site:` terms and had no recency filter.
+- sofya sent domain filters as `include_domains` / `exclude_domains` and recency as `freshness`; search1api sent `include_sites` / `exclude_sites` and `time_range`.
+- serpdive added the recency to the question text as a hint.
+- xcrawl and specstream sent no filters either; they filtered the returned URLs, as the recipes do.
 
 ### serper
 

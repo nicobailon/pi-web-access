@@ -233,6 +233,42 @@ test("curator assigns one selectable result index per provider", async () => {
 	}
 });
 
+test("curator offers an available custom provider as a button and accepts it", async () => {
+	const { startCuratorServer } = await loadServer();
+	const providerChanges = [];
+	const searchedWith = [];
+	const callbacks = baseCallbacks(() => {});
+	callbacks.onProviderChange = (provider) => providerChanges.push(provider);
+	callbacks.onAddSearch = async (_query, provider) => {
+		searchedWith.push(provider);
+		return [{ answer: "", results: [], provider }];
+	};
+	const options = baseOptions(20);
+	const handle = await startCuratorServer({
+		...options,
+		availableProviders: { ...options.availableProviders, customProviders: ["serper"] },
+		defaultProvider: "serper",
+		searchProvider: "serper",
+	}, callbacks);
+	try {
+		const page = await (await fetch(handle.url)).text();
+		assert.match(page, /data-provider="serper"[^>]*>serper<\/button>/);
+		const post = (path, body) => fetch(new URL(path, handle.url), {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ token: "test-token", ...body }),
+		});
+		assert.equal((await post("/provider", { provider: "serper" })).status, 200);
+		assert.equal((await post("/search", { query: "q", provider: "serper" })).status, 200);
+		assert.equal((await post("/provider", { provider: "nosuch" })).status, 400);
+		await new Promise((resolve) => setImmediate(resolve));
+		assert.deepEqual(providerChanges, ["serper"]);
+		assert.deepEqual(searchedWith, ["serper"]);
+	} finally {
+		handle.close();
+	}
+});
+
 test("curator heartbeat timeout finalizes connected idle browser sessions", async () => {
 	const { startCuratorServer } = await loadServer();
 	let resolveCancel;

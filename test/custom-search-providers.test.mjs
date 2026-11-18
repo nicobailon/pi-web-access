@@ -175,6 +175,24 @@ test("a removed provider named in config fails with a link to its recipe instead
 	assert.deepEqual(output.calls, []);
 });
 
+test("a response without the results path means no results; a non-array there is an error", async () => {
+	const home = await createHome({ customSearchProviders: { mysearch: { url: "https://api.example.com/search/", results: "organic_results", fields: { title: "title", url: "link" } } } });
+	const output = runChild(`
+		const urls = [];
+		const bodies = [{ search_parameters: { q: "none" } }, { organic_results: "oops" }];
+		globalThis.fetch = async (url) => { urls.push(String(url)); return new Response(JSON.stringify(bodies[urls.length - 1]), { status: 200 }); };
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const empty = await search("q", { provider: "mysearch" });
+		let error = null;
+		try { await search("q", { provider: "mysearch" }); } catch (err) { error = err.message; }
+		console.log(JSON.stringify({ urls, results: empty.results, error }));
+	`, { PI_CODING_AGENT_DIR: home });
+	// The configured URL is sent as written, trailing slash included.
+	assert.equal(output.urls[0], "https://api.example.com/search/");
+	assert.deepEqual(output.results, []);
+	assert.match(output.error, /mysearch API returned invalid response: expected an array at "organic_results"/);
+});
+
 test("a custom provider cannot take a built-in provider's name", async () => {
 	const home = await createHome({ customSearchProviders: { brave: recipe("serper") } });
 	const output = runChild(`

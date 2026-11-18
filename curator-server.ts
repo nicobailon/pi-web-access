@@ -310,7 +310,7 @@ export function startCuratorServer(
 		if (provider === "ninerouter") return availableProviders.ninerouter;
 		if (provider === "cloudflare") return availableProviders.cloudflare;
 		if (provider === "deepseek") return availableProviders.deepseek;
-		return false;
+		return availableProviders.customProviders?.includes(provider) ?? false;
 	}
 
 	function writeSSE(res: ServerResponse, event: string, data: unknown): boolean {

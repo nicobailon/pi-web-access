@@ -47,7 +47,9 @@ function parseEntry(value: unknown, label: string): CustomSearchProviderConfig {
 	if (unknown.length > 0) throw new Error(`${label} has unknown field${unknown.length === 1 ? "" : "s"}: ${unknown.join(", ")}`);
 	const rawUrl = optionalString(value, "url", label);
 	if (rawUrl === undefined) throw new Error(`${label}.url is required`);
-	const url = resolveApiBaseUrl({ configKey: `${label}.url`, configuredValue: rawUrl, defaultValue: rawUrl, environmentKey: "", environmentValue: undefined });
+	// Validated like a base URL, but sent exactly as configured: a trailing slash can be part of the endpoint.
+	resolveApiBaseUrl({ configKey: `${label}.url`, configuredValue: rawUrl, defaultValue: rawUrl, environmentKey: "", environmentValue: undefined });
+	const url = new URL(rawUrl.trim()).href;
 	const method = value.method ?? "GET";
 	if (method !== "GET" && method !== "POST") throw new Error(`${label}.method must be "GET" or "POST"`);
 	const apiKey = optionalString(value, "apiKey", label);
@@ -190,7 +192,8 @@ export async function searchWithCustomProvider(
 		throw redacted;
 	}
 	activityMonitor.logComplete(activityId, response.status);
-	const entries = readPath(data, config.results);
+	// SERP APIs often omit the results array when nothing matched.
+	const entries = readPath(data, config.results) ?? [];
 	if (!Array.isArray(entries)) {
 		throw new Error(`${name} API returned invalid response: expected an array at ${config.results ? `"${config.results}"` : "the top level"}`);
 	}
