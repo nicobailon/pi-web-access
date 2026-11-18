@@ -994,7 +994,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			normalized = normalizeFetchContentParams(params);
 		} catch (err) {
 			const error = err instanceof Error ? err.message : String(err);
-			return { content: [{ type: "text", text: `Error: ${error} (received parameters: ${describeReceivedParams(params)})` }], details: { error } };
+			return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
 		}
 		const { urlList, options } = normalized;
 		const mode = options.mode ?? fetchModeConfig.defaultMode;
