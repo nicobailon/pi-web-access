@@ -62,15 +62,19 @@ import { isSpecStreamAvailable, searchWithSpecStream } from "./specstream.ts";
 import { isDeepSeekAvailable, searchWithDeepSeek } from "./deepseek.ts";
 import { isKimiSearchAvailable, searchWithKimi } from "./kimi-search.ts";
 import { isMistralAvailable, searchWithMistral } from "./mistral-search.ts";
+import { isCustomSearchProviderAvailable, parseCustomSearchProviders, searchWithCustomProvider, type CustomSearchProviderConfig } from "./custom-search.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "you", "firecrawl", "jina", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "serpdive", "kagi", "ollama", "anysearch", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "bocha", "xcrawl", "baizhi", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "cloudflare", "searchapi", "outcrawl", "sofya", "cloro", "autom", "specstream", "tabstack"] as const;
 export const SEARCH_PROVIDERS = ["auto", "all", ...RESOLVED_SEARCH_PROVIDERS] as const;
 
-export type ResolvedSearchProvider = typeof RESOLVED_SEARCH_PROVIDERS[number];
-export type SearchProvider = typeof SEARCH_PROVIDERS[number];
+export type BuiltinSearchProvider = typeof RESOLVED_SEARCH_PROVIDERS[number];
+/** A provider name defined under customSearchProviders in web-search.json. */
+export type CustomSearchProvider = string & { readonly customSearchProvider: true };
+export type ResolvedSearchProvider = BuiltinSearchProvider | CustomSearchProvider;
+export type SearchProvider = "auto" | "all" | ResolvedSearchProvider;
 export type SearchProviderSelection = SearchProvider | ResolvedSearchProvider[];
-export type ProviderAvailability = { all: boolean } & Record<ResolvedSearchProvider, boolean>;
+export type ProviderAvailability = { all: boolean } & Record<BuiltinSearchProvider, boolean>;
 export type SearchProviderErrorKind =
 	| "transient"
 	| "quota"
@@ -135,7 +139,7 @@ const CONFIG_PATH = getWebSearchConfigPath();
 const DEFAULT_SEARCH_MODEL = "gemini-3.6-flash";
 // Explicit-only providers (Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, XCrawl, xAI, Mistral, Bright Data, SerpBase, SerpApi, Serper, Serply, You.com, Valyu, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, Linkup, 9router, Cloudflare, SearchApi, Outcrawl, Sofya, cloro, Autom, SpecStream, Tabstack) are deliberately absent:
 // `all` must never fan out to an opt-in or paid provider without the user asking for it.
-export const ALL_SEARCH_PROVIDERS: ResolvedSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "ollama", "perplexity", "gemini", "bocha"];
+export const ALL_SEARCH_PROVIDERS: BuiltinSearchProvider[] = ["searxng", "openai", "exa", "brave", "parallel", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "ollama", "perplexity", "gemini", "bocha"];
 const VALID_ROUTING_KINDS = ["transient", "quota", "network", "invalid-response", "unsupported", "empty", "domain-miss", "off-topic"] as const;
 const MAX_ROUTING_TIMEOUT_MS = 600_000;
 
@@ -145,6 +149,7 @@ type SearchConfig = {
 	searchRouting?: SearchRoutingConfig;
 	searchModel?: string;
 	allowedProviders?: ResolvedSearchProvider[];
+	customProviders: Map<string, CustomSearchProviderConfig>;
 };
 
 let cachedSearchConfig: SearchConfig | null = null;
@@ -152,7 +157,7 @@ let cachedSearchConfig: SearchConfig | null = null;
 function getSearchConfig(): SearchConfig {
 	if (cachedSearchConfig) return cachedSearchConfig;
 	if (!existsSync(CONFIG_PATH)) {
-		cachedSearchConfig = { searchProvider: "auto", searchProviderConfigured: false };
+		cachedSearchConfig = { searchProvider: "auto", searchProviderConfigured: false, customProviders: new Map() };
 		return cachedSearchConfig;
 	}
 
@@ -170,22 +175,23 @@ function getSearchConfig(): SearchConfig {
 	}
 
 	const searchModel = normalizeSearchModel(raw.searchModel);
+	const customProviders = parseCustomSearchProviders(raw.customSearchProviders, RESOLVED_SEARCH_PROVIDERS, CONFIG_PATH);
 	const webSearch = raw.webSearch;
 	if (webSearch !== undefined && (!webSearch || typeof webSearch !== "object" || Array.isArray(webSearch))) {
 		throw new Error(`webSearch in ${CONFIG_PATH} must be an object`);
 	}
 	const allowedProviders = webSearch && Object.hasOwn(webSearch, "allowedProviders")
-		? normalizeResolvedProviderList((webSearch as Record<string, unknown>).allowedProviders, `webSearch.allowedProviders in ${CONFIG_PATH}`)
+		? normalizeResolvedProviderList((webSearch as Record<string, unknown>).allowedProviders, `webSearch.allowedProviders in ${CONFIG_PATH}`, customProviders)
 		: undefined;
 	const searchProviderConfigured = Object.hasOwn(raw, "searchProvider") || Object.hasOwn(raw, "provider");
-	const searchProvider = normalizeSearchProviderSelection(raw.searchProvider ?? raw.provider, `provider in ${CONFIG_PATH}`);
-	const searchRouting = Object.hasOwn(raw, "searchRouting") ? normalizeSearchRouting(raw.searchRouting) : undefined;
+	const searchProvider = normalizeSearchProviderSelection(raw.searchProvider ?? raw.provider, `provider in ${CONFIG_PATH}`, customProviders);
+	const searchRouting = Object.hasOwn(raw, "searchRouting") ? normalizeSearchRouting(raw.searchRouting, customProviders) : undefined;
 	if (allowedProviders) {
 		if (Object.hasOwn(raw, "searchProvider")) {
-			assertSearchProviderSelectionAllowed(normalizeSearchProviderSelection(raw.searchProvider), `searchProvider in ${CONFIG_PATH}`, allowedProviders);
+			assertSearchProviderSelectionAllowed(normalizeSearchProviderSelection(raw.searchProvider, "provider", customProviders), `searchProvider in ${CONFIG_PATH}`, allowedProviders);
 		}
 		if (Object.hasOwn(raw, "provider")) {
-			assertSearchProviderSelectionAllowed(normalizeSearchProviderSelection(raw.provider), `provider in ${CONFIG_PATH}`, allowedProviders);
+			assertSearchProviderSelectionAllowed(normalizeSearchProviderSelection(raw.provider, "provider", customProviders), `provider in ${CONFIG_PATH}`, allowedProviders);
 		}
 		if (searchRouting) assertSearchProviderSelectionAllowed(searchRouting.providers, `searchRouting.providers in ${CONFIG_PATH}`, allowedProviders);
 	}
@@ -195,16 +201,17 @@ function getSearchConfig(): SearchConfig {
 		...(searchRouting ? { searchRouting } : {}),
 		...(searchModel ? { searchModel } : {}),
 		...(allowedProviders ? { allowedProviders } : {}),
+		customProviders,
 	};
 	return cachedSearchConfig;
 }
 
-function normalizeSearchRouting(value: unknown): SearchRoutingConfig {
+function normalizeSearchRouting(value: unknown, customProviders: ReadonlyMap<string, unknown>): SearchRoutingConfig {
 	if (!value || typeof value !== "object" || Array.isArray(value)) {
 		throw new Error(`searchRouting in ${CONFIG_PATH} must be an object`);
 	}
 	const raw = value as Record<string, unknown>;
-	const providers = normalizeResolvedProviderList(raw.providers, `searchRouting.providers in ${CONFIG_PATH}`);
+	const providers = normalizeResolvedProviderList(raw.providers, `searchRouting.providers in ${CONFIG_PATH}`, customProviders);
 	const useCurrentModel = raw.useCurrentModel;
 	if (useCurrentModel !== undefined && typeof useCurrentModel !== "boolean") {
 		throw new Error(`searchRouting.useCurrentModel in ${CONFIG_PATH} must be a boolean`);
@@ -252,20 +259,26 @@ function normalizeSearchModel(value: unknown): string | undefined {
 	return normalized.length > 0 ? normalized : undefined;
 }
 
-function normalizeResolvedProviderList(value: unknown, label: string): ResolvedSearchProvider[] {
+// Built-in names are checked first so a call naming one never needs to read the config file.
+function knownProvider(name: string, customProviders?: ReadonlyMap<string, unknown>): ResolvedSearchProvider | undefined {
+	if (RESOLVED_SEARCH_PROVIDERS.includes(name as BuiltinSearchProvider)) return name as BuiltinSearchProvider;
+	return (customProviders ?? getSearchConfig().customProviders).has(name) ? name as CustomSearchProvider : undefined;
+}
+
+function normalizeResolvedProviderList(value: unknown, label: string, customProviders?: ReadonlyMap<string, unknown>): ResolvedSearchProvider[] {
 	if (!Array.isArray(value) || value.length === 0) {
 		throw new Error(`${label} must be a non-empty array`);
 	}
 	const providers: ResolvedSearchProvider[] = [];
 	for (const provider of value) {
-		const normalized = typeof provider === "string" ? provider.trim().toLowerCase() : "";
-		if (!RESOLVED_SEARCH_PROVIDERS.includes(normalized as ResolvedSearchProvider)) {
+		const normalized = knownProvider(typeof provider === "string" ? provider.trim().toLowerCase() : "", customProviders);
+		if (normalized === undefined) {
 			throw new Error(`${label} contains an invalid provider: ${String(provider)}`);
 		}
-		if (providers.includes(normalized as ResolvedSearchProvider)) {
+		if (providers.includes(normalized)) {
 			throw new Error(`${label} must not contain duplicates: ${normalized}`);
 		}
-		providers.push(normalized as ResolvedSearchProvider);
+		providers.push(normalized);
 	}
 	return providers;
 }
@@ -286,13 +299,19 @@ export function assertSearchProviderSelectionAllowed(
 }
 
 export function getAllowedSearchProviders(): readonly ResolvedSearchProvider[] {
-	return getSearchConfig().allowedProviders ?? RESOLVED_SEARCH_PROVIDERS;
+	const config = getSearchConfig();
+	return config.allowedProviders ?? [...RESOLVED_SEARCH_PROVIDERS, ...config.customProviders.keys() as Iterable<CustomSearchProvider>];
 }
 
-export function normalizeSearchProviderSelection(value: unknown, label = "provider"): SearchProviderSelection {
-	if (Array.isArray(value)) return normalizeResolvedProviderList(value, label);
+export function getCustomSearchProviderNames(): string[] {
+	return [...getSearchConfig().customProviders.keys()];
+}
+
+export function normalizeSearchProviderSelection(value: unknown, label = "provider", customProviders?: ReadonlyMap<string, unknown>): SearchProviderSelection {
+	if (Array.isArray(value)) return normalizeResolvedProviderList(value, label, customProviders);
 	const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
-	return SEARCH_PROVIDERS.includes(normalized as SearchProvider) ? normalized as SearchProvider : "auto";
+	if (normalized === "auto" || normalized === "all") return normalized;
+	return knownProvider(normalized, customProviders) ?? "auto";
 }
 
 /** Strict parser for tool-call `provider` arguments; config values keep the lenient normalizer. */
@@ -315,14 +334,16 @@ export function parseProviderArgument(value: unknown): SearchProviderSelection |
 	} else {
 		names = normalized.split(",").map(name => name.trim()).filter(Boolean);
 		if (names.length < 2) {
-			if (!SEARCH_PROVIDERS.includes(names[0] as SearchProvider)) throw unknown(names[0] ?? value);
-			return names[0] as SearchProvider;
+			if (names[0] === "auto" || names[0] === "all") return names[0];
+			const single = knownProvider(names[0] ?? "");
+			if (single === undefined) throw unknown(names[0] ?? value);
+			return single;
 		}
 	}
 	if (names.some(name => name === "auto" || name === "all")) {
 		throw new Error('"auto" and "all" cannot be combined with provider names');
 	}
-	const invalid = names.find(name => !RESOLVED_SEARCH_PROVIDERS.includes(name as ResolvedSearchProvider));
+	const invalid = names.find(name => knownProvider(name) === undefined);
 	if (invalid !== undefined) throw unknown(invalid);
 	return normalizeResolvedProviderList(names, "provider");
 }
@@ -492,6 +513,8 @@ async function searchWithResolvedProvider(
 	options: FullSearchOptions,
 	useCurrentModel = false,
 ): Promise<ProviderSearchResponse> {
+	const custom = getSearchConfig().customProviders.get(provider);
+	if (custom) return { ...(await searchWithCustomProvider(provider, custom, query, options)), provider };
 	if (provider === "openai") {
 		const result = useCurrentModel
 			? await searchWithCurrentModelOpenAI(query, options, options.extensionContext)
@@ -558,6 +581,8 @@ async function searchWithResolvedProvider(
 }
 
 async function isResolvedProviderAvailable(provider: ResolvedSearchProvider, options: FullSearchOptions, useCurrentModel = false): Promise<boolean> {
+	const custom = getSearchConfig().customProviders.get(provider);
+	if (custom) return isCustomSearchProviderAvailable(provider, custom);
 	if (provider === "openai") {
 		return useCurrentModel
 			? isCurrentModelHostedSearchEligible(options.extensionContext)
@@ -621,6 +646,7 @@ async function isGeminiWebOptionallyAvailable(): Promise<boolean> {
 }
 
 export function providerLabel(provider: ResolvedSearchProvider): string {
+	if (!RESOLVED_SEARCH_PROVIDERS.includes(provider as BuiltinSearchProvider)) return provider;
 	if (provider === "openai") return "OpenAI";
 	if (provider === "parallel-mcp") return "Parallel MCP";
 	if (provider === "tinyfish") return "TinyFish";

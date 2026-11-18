@@ -6,7 +6,7 @@ import { normalizeFetchContentParams } from "./fetch-params.ts";
 import { answerFromPage } from "./page-query.ts";
 import { rewriteSearchQuery } from "./query-rewrite.ts";
 import { clearCloneCache, releaseClonesUnusedSince, touchClones } from "./github-extract.ts";
-import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getConfiguredSearchRouting, parseProviderArgument, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
+import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getConfiguredSearchRouting, parseProviderArgument, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type BuiltinSearchProvider, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
 import { formatSeconds, getWebSearchConfigDir, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
 import {
@@ -236,7 +236,8 @@ function curatorResultIndex(queryIndex: number, entryIndex: number, queryCount: 
 }
 
 function curatorResultIndexCapacity(queryCount: number): number {
-	return queryCount * RESOLVED_SEARCH_PROVIDERS.length;
+	// Custom providers in a provider list add entries beyond the built-in count.
+	return queryCount * Math.max(RESOLVED_SEARCH_PROVIDERS.length, getAllowedSearchProviders().length);
 }
 
 function isCommandEnabled(config: WebSearchConfig, name: "websearch" | "curator" | "search" | "google-account"): boolean {
@@ -463,7 +464,8 @@ function resolveProvider(
 		if (routing) {
 			for (const candidate of routing.providers) {
 				if (candidate === "openai" && routing.useCurrentModel === true && !isCurrentModelHostedSearchEligible(ctx)) continue;
-				if (available[candidate]) return candidate;
+				// The curator has no availability entry for custom providers, so it moves past them.
+				if (available[candidate as BuiltinSearchProvider]) return candidate;
 			}
 			return routing.providers.find(candidate => candidate !== "openai" || routing.useCurrentModel !== true || isCurrentModelHostedSearchEligible(ctx)) ?? routing.providers[0];
 		}
@@ -472,7 +474,7 @@ function resolveProvider(
 	if (provider === "all") {
 		return available.all ? "all" : firstAvailableProvider(available, preferOpenAI, "exa");
 	}
-	if (ALL_SEARCH_PROVIDERS.includes(provider) && !available[provider]) {
+	if (ALL_SEARCH_PROVIDERS.includes(provider as BuiltinSearchProvider) && !available[provider as BuiltinSearchProvider]) {
 		return firstAvailableProvider(available, provider === "openai" ? false : preferOpenAI, provider);
 	}
 	return provider;
