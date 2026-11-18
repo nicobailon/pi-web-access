@@ -497,6 +497,7 @@ interface PendingCurate {
 	recencyFilter?: "day" | "week" | "month" | "year";
 	domainFilter?: string[];
 	category?: string;
+	objective?: string;
 	availableProviders: ProviderAvailability;
 	defaultProvider: SearchProvider;
 	searchProvider: SearchProviderSelection;
@@ -1285,6 +1286,7 @@ export default function (pi: ExtensionAPI) {
 								numResults: pc.numResults,
 								recencyFilter: pc.recencyFilter,
 								domainFilter: pc.domainFilter,
+								objective: pc.objective,
 								includeContent: pc.includeContent,
 								category: pc.category,
 								signal: addSearchSignal,
@@ -1442,12 +1444,13 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Search",
 		prepareArguments: (args) => parseStringifiedArrays(args, ["queries", "domainFilter"]) as never,
 		description:
-			`Search the web for sources or answers.${getSearchContentEnabled ? ` Full results are stored for retrieval with ${toolNames.getSearchContent} by responseId.` : ""} Prefer 2-4 varied queries.`,
+			`Search the web for sources or answers.${getSearchContentEnabled ? ` Full results are stored for ${toolNames.getSearchContent} by responseId.` : ""} Prefer 2-4 varied queries.`,
 		promptSnippet:
 			"Web research. Prefer {queries:[...]} with 2-4 varied angles; omit provider unless overriding the default.",
 		parameters: Type.Object({
 			query: Type.Optional(Type.String()),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Run concurrently (up to three at a time); vary the angle" })),
+			objective: Type.Optional(Type.String({ description: "Search goal; Exa API only" })),
 			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Default 5" })),
 			includeContent: Type.Optional(Type.Boolean({ description: "Also fetch full page content" })),
 			recencyFilter: Type.Optional(StringEnum(["day", "week", "month", "year"])),
@@ -1457,10 +1460,10 @@ export default function (pi: ExtensionAPI) {
 			provider: Type.Optional(Type.String({ description: providerDescription })),
 			workflow: Type.Optional(
 				StringEnum(["none", "summary-review", "auto-summary"], {
-					description: "Default none; summary-review opens the curator; auto-summary summarizes",
+					description: "Default none; summary-review opens the curator",
 				}),
 			),
-			proxy: Type.Optional(Type.String({ description: "Proxy URL; omit by default (env proxy vars ignored); \"\" forces direct" })),
+			proxy: Type.Optional(Type.String({ description: "Proxy URL; omit by default; \"\" forces direct" })),
 		}),
 		outputSchema: webSearchOutputSchema,
 		exposure: toolExposure,
@@ -1551,6 +1554,7 @@ export default function (pi: ExtensionAPI) {
 					recencyFilter,
 					domainFilter: params.domainFilter,
 					category: params.category,
+					objective: params.objective,
 					availableProviders,
 					defaultProvider,
 					searchProvider,
@@ -1614,6 +1618,7 @@ export default function (pi: ExtensionAPI) {
 							numResults: params.numResults,
 							recencyFilter,
 							domainFilter: params.domainFilter,
+							objective: params.objective,
 							includeContent: params.includeContent,
 							category: params.category,
 							signal: searchSignal,

@@ -39,6 +39,7 @@ export type FetchContentStructuredContent = {
 
 export interface WebSearchCallParams {
 	model?: string;
+	objective?: string;
 	query?: string;
 	queries?: string[];
 	numResults?: number;

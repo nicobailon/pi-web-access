@@ -838,6 +838,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 						numResults: params.numResults,
 						recencyFilter,
 						domainFilter: params.domainFilter,
+						objective: params.objective,
 						includeContent: params.includeContent,
 						category: params.category,
 						signal,

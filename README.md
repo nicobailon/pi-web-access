@@ -225,6 +225,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | Parameter | Description |
 | ----------- | ------------- |
 | `query` / `queries` | Single query or batch of queries |
+| `objective` | The goal this search serves, sent to Exa's API to rank results (max 4096 characters); keyless Exa and other providers ignore it |
 | `numResults` | Results per query (default: 5, max: 20) |
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |

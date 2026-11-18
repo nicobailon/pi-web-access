@@ -114,6 +114,27 @@ test("standalone auto search skips Pi-only routes and only calls where nothing s
 	assert.equal(out.partialCheck.isError, undefined);
 });
 
+test("web_search forwards objective to keyed Exa and not to other providers", () => {
+	const { out } = runStandalone(`
+		const originalFetch = globalThis.fetch;
+		const bodies = [];
+		globalThis.fetch = async (input, init) => {
+			if (String(input) === "https://api.exa.ai/search") {
+				bodies.push(JSON.parse(init.body));
+				return Response.json({ results: [{ title: "Source", url: "https://example.com/source", highlights: ["Evidence"] }] });
+			}
+			return originalFetch(input, init);
+		};
+		const core = createStandaloneWebToolCore();
+		const exa = await core.webSearch({ query: "exa objective", provider: "exa", objective: "Find the API limits." });
+		const brave = await core.webSearch({ query: "brave objective", provider: "brave", objective: "Find the API limits." });
+		return { bodies, exa, brave };
+	`, { config: { exaApiKey: "exa-test-key" } });
+	assert.equal(out.exa.isError, undefined);
+	assert.equal(out.brave.isError, undefined);
+	assert.deepEqual(out.bodies.map(body => body.objective), ["Find the API limits."]);
+});
+
 test("standalone includeContent waits for page content before returning", () => {
 	const { out, blocked } = runStandalone(`
 		const core = createStandaloneWebToolCore();

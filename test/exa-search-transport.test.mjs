@@ -25,7 +25,10 @@ async function runKeyedExa(calls) {
 				};
 				const { searchWithExa } = await import(${JSON.stringify(exaModuleUrl)});
 				const results = [];
-				for (const args of ${JSON.stringify(calls)}) results.push(await searchWithExa(...args));
+				for (const args of ${JSON.stringify(calls)}) {
+					try { results.push(await searchWithExa(...args)); }
+					catch (error) { results.push({ error: error.message }); }
+				}
 				console.log(JSON.stringify({ requests, results }));
 			`,
 			encoding: "utf8",
@@ -83,4 +86,15 @@ test("keyed Exa filtered searches keep filters and inline content on /search", a
 	assert.deepEqual(results[0].inlineContent, [
 		{ url: "https://exa.ai/docs", title: "Exa Docs", content: "full docs text", error: null },
 	]);
+});
+
+test("keyed Exa sends objective unchanged and rejects one over 4096 characters before sending", async () => {
+	const objective = "🐈".repeat(4096);
+	const { requests, results } = await runKeyedExa([
+		["at limit", { objective }],
+		["over limit", { objective: "x".repeat(4097) }],
+	]);
+	assert.equal(requests.length, 1);
+	assert.equal(requests[0].body.objective, objective);
+	assert.match(results[1].error, /4096 characters or fewer/);
 });

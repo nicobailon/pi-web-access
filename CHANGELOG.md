@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+- `web_search` accepts an optional `objective`, the goal the search serves (up to 4,096 characters), which Exa API searches use to rank results; keyless Exa and other providers ignore it. Thanks to [@ccc592](https://github.com/ccc592) for #688.
 - The README's Proxy section now says how other extensions can recognize this extension's `globalThis.fetch` proxy wrapper: `__piWebAccessSharedProxyFetch === true`, stable since 0.46.0. The older `__piWebAccessProxyFetch` marker stays limited to wrapping a pre-0.46 copy, because setting it on every wrapper would let such a copy skip its own wrapper and bypass the proxy. Thanks to [@wesperz](https://github.com/wesperz) for [issue #682](https://github.com/nicobailon/pi-web-access/issues/682) and [@mystery4f](https://github.com/mystery4f) for the reproduction.
 
 ### Changed
