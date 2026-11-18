@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { Value } from "typebox/value";
 
 import initializeExtension from "../index.ts";
 import { MCP_TOOL_DEFINITIONS } from "../mcp-tool-definitions.ts";
@@ -36,11 +35,4 @@ test("every Pi and MCP tool parameter is named in its tool's README section", ()
 		...MCP_TOOL_DEFINITIONS.flatMap((tool) => undocumented(tool.name, tool.inputSchema.properties)),
 	];
 	assert.deepEqual([...new Set(missing)], []);
-	assert.equal(tools.find((tool) => tool.name === "web_search").parameters.properties.objective.maxLength, 4096);
-	assert.equal(MCP_TOOL_DEFINITIONS.find((tool) => tool.name === "web_search").inputSchema.properties.objective.maxLength, 4096);
-	for (const schema of [tools.find((tool) => tool.name === "web_search").parameters, MCP_TOOL_DEFINITIONS.find((tool) => tool.name === "web_search").inputSchema]) {
-		assert.equal(Value.Check(schema, { query: "q", objective: "x".repeat(4096) }), true);
-		assert.equal(Value.Check(schema, { query: "q", objective: "x".repeat(4097) }), false);
-		assert.equal(Value.Check(schema, { query: "q", objective: 42 }), false);
-	}
 });

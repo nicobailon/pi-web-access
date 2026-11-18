@@ -32,7 +32,6 @@ export interface CuratorSearchEntry {
 	answer: string;
 	results: Array<{ title: string; url: string; domain: string; snippet?: string }>;
 	provider: string;
-	exaCostDollars?: Record<string, unknown>;
 	error?: string;
 }
 

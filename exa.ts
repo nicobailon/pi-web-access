@@ -20,7 +20,6 @@ interface WebSearchConfig {
 }
 
 interface ExaSearchResponse {
-	costDollars?: Record<string, unknown>;
 	results?: Array<{
 		title?: string;
 		url?: string;
@@ -236,11 +235,9 @@ function toSearchResponse(
 	answer: string,
 	results: SearchResponse["results"],
 	inlineContent: ExtractedContent[] | null,
-	exaCostDollars?: Record<string, unknown>,
 ): SearchResponse {
 	const response: SearchResponse = { answer, results };
 	if (inlineContent?.length) response.inlineContent = inlineContent;
-	if (exaCostDollars !== undefined) response.exaCostDollars = exaCostDollars;
 	return response;
 }
 
@@ -541,7 +538,6 @@ export async function searchWithExa(query: string, options: ExaSearchOptions = {
 			buildAnswerFromSearchResults(data.results),
 			mapResults(data.results),
 			options.includeContent ? mapInlineContent(data.results) : null,
-			isRecord(data.costDollars) ? data.costDollars : undefined,
 		);
 	} catch (err) {
 		const message = err instanceof Error ? err.message : String(err);

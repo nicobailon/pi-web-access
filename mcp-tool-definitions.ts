@@ -53,7 +53,7 @@ export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 		inputSchema: Type.Object({
 			query: Type.Optional(Type.String()),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Run concurrently; vary the angle" })),
-			objective: Type.Optional(Type.String({ maxLength: 4096, description: "Broader search goal; Exa API only." })),
+			objective: Type.Optional(Type.String({ maxLength: 4096, description: "Search goal; Exa API only" })),
 			numResults: Type.Optional(numResultsSchema),
 			includeContent: Type.Optional(Type.Boolean({ description: "Also fetch full page content" })),
 			recencyFilter: Type.Optional(recencySchema),

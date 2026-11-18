@@ -65,7 +65,7 @@ function runStandalone(body, { config = {}, env = {} } = {}) {
 					parentURL: import.meta.url,
 					data: { logPath: ${JSON.stringify(logPath)} },
 				});
-				const { createStandaloneWebToolCore, createWebToolCore, DEFAULT_TOOL_NAMES } = await import(${JSON.stringify(coreUrl)});
+				const { createStandaloneWebToolCore } = await import(${JSON.stringify(coreUrl)});
 				${fetchMock}
 				const out = await (async () => { ${body} })();
 				console.log(JSON.stringify({ out, requests }));
@@ -114,46 +114,25 @@ test("standalone auto search skips Pi-only routes and only calls where nothing s
 	assert.equal(out.partialCheck.isError, undefined);
 });
 
-test("standalone Exa search forwards objective and reports per-query API costs in details", () => {
-	const objective = "Find primary sources and summarize the limits of the API.";
-	const { out, requests } = runStandalone(`
+test("web_search forwards objective to keyed Exa and not to other providers", () => {
+	const { out } = runStandalone(`
 		const originalFetch = globalThis.fetch;
 		const bodies = [];
 		globalThis.fetch = async (input, init) => {
 			if (String(input) === "https://api.exa.ai/search") {
-				const body = JSON.parse(init.body);
-				bodies.push(body);
-				const costDollars = body.query === "zero cost" ? { total: 0 } : { total: 0.012, search: { neural: 0.01 }, contents: { highlights: 0.002 } };
-				return Response.json({ ...(body.query === "unknown cost" ? {} : { costDollars }), results: [{ title: "Source", url: "https://example.com/source", highlights: ["Evidence"] }] });
+				bodies.push(JSON.parse(init.body));
+				return Response.json({ results: [{ title: "Source", url: "https://example.com/source", highlights: ["Evidence"] }] });
 			}
 			return originalFetch(input, init);
 		};
 		const core = createStandaloneWebToolCore();
-		const result = await core.webSearch({ queries: ["exa cost", "zero cost", "unknown cost"], provider: "exa", objective: ${JSON.stringify(objective)} });
-		const mixed = await core.webSearch({ query: "mixed cost", provider: ["brave", "exa"], objective: ${JSON.stringify(objective)} });
-		const other = await core.webSearch({ query: "other provider", provider: "brave", objective: ${JSON.stringify(objective)} });
-		const unknown = await core.webSearch({ query: "unknown cost", provider: "exa" });
-		return { result, bodies, mixed, other, unknown };
+		const exa = await core.webSearch({ query: "exa objective", provider: "exa", objective: "Find the API limits." });
+		const brave = await core.webSearch({ query: "brave objective", provider: "brave", objective: "Find the API limits." });
+		return { bodies, exa, brave };
 	`, { config: { exaApiKey: "exa-test-key" } });
-	assert.equal(requests.length, 2);
-	for (const body of out.bodies.slice(0, 4)) assert.equal(body.objective, objective);
-	const costDollars = { total: 0.012, search: { neural: 0.01 }, contents: { highlights: 0.002 } };
-	assert.deepEqual(out.result.details.exaCostDollars, [{ query: "exa cost", costDollars }, { query: "zero cost", costDollars: { total: 0 } }]);
-	assert.deepEqual(out.mixed.details.exaCostDollars, [{ query: "mixed cost", costDollars }]);
-	assert.equal(Object.hasOwn(out.other.details, "exaCostDollars"), false);
-	assert.equal(Object.hasOwn(out.unknown.details, "exaCostDollars"), false);
-});
-
-test("curator selection keeps costs for completed searches left out of the answer", () => {
-	const { out } = runStandalone(`
-		const core = createWebToolCore({
-			settings: { toolNames: DEFAULT_TOOL_NAMES, enabledTools: { webSearch: true, sourceCheck: true, fetchContent: true, getSearchContent: true }, maxInlineContentChars: 30000, fetchModes: { defaultMode: "readable", allowedModes: ["readable", "raw"] } },
-			storeFetchedContent() {},
-		});
-		const completed = { query: "discarded", answer: "Evidence", results: [], error: null, provider: "exa", exaCostDollars: { total: 0.003 } };
-		return core.buildSearchReturn({ queryList: [], results: [], costResults: [completed], urls: [], includeContent: false, curated: true });
-	`);
-	assert.deepEqual(out.details.exaCostDollars, [{ query: "discarded", costDollars: { total: 0.003 } }]);
+	assert.equal(out.exa.isError, undefined);
+	assert.equal(out.brave.isError, undefined);
+	assert.deepEqual(out.bodies.map(body => body.objective), ["Find the API limits."]);
 });
 
 test("standalone includeContent waits for page content before returning", () => {
