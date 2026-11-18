@@ -12,7 +12,6 @@ function runChild(script, env) {
 	for (const key of [
 		"PI_CODING_AGENT_DIR",
 		"XDG_CONFIG_HOME",
-		"XCRAWL_API_KEY",
 		"OPENAI_API_KEY",
 		"BRAVE_API_KEY",
 		"PARALLEL_API_KEY",
@@ -36,11 +35,15 @@ function runChild(script, env) {
 
 async function setupHome() {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-317-"));
-	await writeFile(join(home, "web-search.json"), JSON.stringify({ xcrawlApiKey: "xc-test-key" }) + "\n", "utf8");
+	await writeFile(join(home, "web-search.json"), JSON.stringify({
+		customSearchProviders: {
+			stub: { url: "https://search.example.com/serp", method: "POST", body: { q: "{query}" }, results: "organic_results", fields: { title: "title", url: "link", snippet: "snippet" } },
+		},
+	}) + "\n", "utf8");
 	return home;
 }
 
-// Runs web_search with the given params and returns the result plus queries XCrawl received.
+// Runs web_search with the given params and returns the result plus queries the stub provider received.
 function runWebSearch(home, params) {
 	const child = runChild(`
 		const requests = [];
@@ -49,8 +52,6 @@ function runWebSearch(home, params) {
 			try { q = JSON.parse(init.body).q; } catch {}
 			requests.push({ url: String(url), q });
 			return new Response(JSON.stringify({
-				search_metadata: { status: "completed" },
-				total_credits_used: 1,
 				organic_results: [
 					{ position: 1, title: "R1", link: "https://example.com/1", snippet: "s1" },
 					{ position: 2, title: "R2", link: "https://example.com/2", snippet: "s2" },
@@ -71,7 +72,7 @@ function runWebSearch(home, params) {
 		const webSearch = tools.find((tool) => tool.name === "web_search");
 		const result = await webSearch.execute("call", ${JSON.stringify(params)});
 		const queries = requests
-			.filter((request) => request.url === "https://run.xcrawl.com/v1/serp")
+			.filter((request) => request.url === "https://search.example.com/serp")
 			.map((request) => request.q);
 		console.log(JSON.stringify({ result, queries }));
 	`, { PI_CODING_AGENT_DIR: home });
@@ -89,7 +90,7 @@ test("web_search expands a JSON-array string in query into separate searches", a
 	// a JSON string inside the single-string `query` field.
 	const queries = capturedQueries(home, {
 		query: '["AGP version", "Compose BOM", "CameraX"]',
-		provider: "xcrawl",
+		provider: "stub",
 		workflow: "none",
 		numResults: 2,
 	});
@@ -100,7 +101,7 @@ test("web_search keeps mixed JSON arrays in query as a single literal query", as
 	const home = await setupHome();
 	const queries = capturedQueries(home, {
 		query: '["AGP version", 5]',
-		provider: "xcrawl",
+		provider: "stub",
 		workflow: "none",
 		numResults: 2,
 	});
@@ -113,7 +114,7 @@ test("web_search does not reinterpret already-structured queries entries", async
 	const home = await setupHome();
 	const queries = capturedQueries(home, {
 		queries: ['["AGP version", "Compose BOM"]'],
-		provider: "xcrawl",
+		provider: "stub",
 		workflow: "none",
 		numResults: 2,
 	});
@@ -127,7 +128,7 @@ test("web_search reports the existing no-query error for empty JSON-array string
 	for (const query of ["[]", '["   "]']) {
 		const { result, queries } = runWebSearch(home, {
 			query,
-			provider: "xcrawl",
+			provider: "stub",
 			workflow: "none",
 			numResults: 2,
 		});

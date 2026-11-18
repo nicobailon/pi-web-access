@@ -19,7 +19,7 @@ function runChild(script, env) {
 	const childEnv = { ...process.env };
 	for (const key of [
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "XAI_API_KEY", "ANYSEARCH_API_KEY", "OPENAI_API_KEY", "BRAVE_API_KEY",
-		"PARALLEL_API_KEY", "TINYFISH_API_KEY", "TAVILY_API_KEY", "JINA_API_KEY", "SERPDIVE_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY", "SEARXNG_BASE_URL", "EXA_API_KEY",
+		"PARALLEL_API_KEY", "TINYFISH_API_KEY", "TAVILY_API_KEY", "JINA_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SEARXNG_BASE_URL", "EXA_API_KEY",
 		"PERPLEXITY_API_KEY", "GEMINI_API_KEY",
 	]) delete childEnv[key];
 	Object.assign(childEnv, env);
@@ -340,11 +340,9 @@ test("curator page exposes xAI as a manual provider", async () => {
 			brave: false,
 			parallel: false,
 			tinyfish: false,
-			search1api: false,
 			searchinfinity: false,
 			querit: false,
 			tavily: false,
-			serpdive: false,
 			searxng: false,
 			perplexity: false,
 			exa: false,

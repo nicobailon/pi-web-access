@@ -7,14 +7,10 @@ import { test } from "node:test";
 
 const providers = [
 	{ name: "Parallel", id: "parallel", env: "PARALLEL_BASE_URL", credential: "parallelApiKey", header: "x-api-key", paths: ["/v1/search", "/v1/extract"] },
-	{ name: "Serper", id: "serper", env: "SERPER_BASE_URL", credential: "serperApiKey", header: "X-API-KEY", paths: ["/search"] },
-	{ name: "SerpApi", id: "serpapi", env: "SERPAPI_BASE_URL", credential: "serpapiApiKey", header: null, paths: ["/search.json"] },
 ];
 const key = "gateway-test-key";
 const response = {
 	results: [{ title: "Result", url: "https://example.com/page", excerpts: ["Content ".repeat(100)] }],
-	organic: [],
-	organic_results: [],
 };
 
 async function runProvider(t, provider, script, config = {}) {
@@ -27,7 +23,7 @@ async function runProvider(t, provider, script, config = {}) {
 	const env = { ...process.env, HOME: home, USERPROFILE: home, PI_CODING_AGENT_DIR: home };
 	for (const item of providers) {
 		delete env[item.env];
-		delete env[({ parallel: "PARALLEL_API_KEY", serper: "SERPER_API_KEY", serpapi: "SERPAPI_KEY" })[item.id]];
+		delete env[({ parallel: "PARALLEL_API_KEY" })[item.id]];
 	}
 	delete env.XDG_CONFIG_HOME;
 	const moduleUrl = new URL(`../${provider.id}.ts`, import.meta.url).href;
@@ -38,7 +34,7 @@ async function runProvider(t, provider, script, config = {}) {
 			const key = ${JSON.stringify(key)};
 			const response = ${JSON.stringify(response)};
 			const module = await import(${JSON.stringify(moduleUrl)});
-			const search = module[${JSON.stringify({ parallel: "searchWithParallel", serper: "searchWithSerper", serpapi: "searchWithSerpApi" }[provider.id])}];
+			const search = module[${JSON.stringify({ parallel: "searchWithParallel" }[provider.id])}];
 			const invoke = async () => {
 				await search("gateway query");
 				if (provider.id === "parallel") await module.extractWithParallel("https://example.com/page");
@@ -62,7 +58,7 @@ for (const provider of providers) {
 			};
 			await invoke();
 			assert.deepEqual(calls.map(url => url.origin + url.pathname), provider.paths.map(path =>
-				({parallel: "https://api.parallel.ai", serper: "https://google.serper.dev", serpapi: "https://serpapi.com"})[provider.id] + path));
+				({parallel: "https://api.parallel.ai"})[provider.id] + path));
 		`);
 	});
 
@@ -140,20 +136,3 @@ for (const provider of providers) {
 		`, { [provider.id + "BaseUrl"]: `https://gateway.example.com/${provider.id}` });
 	});
 }
-
-test("SerpApi redirect-limit errors omit query credentials", async (t) => {
-	await runProvider(t, providers[2], `
-		let calls = 0;
-		globalThis.fetch = async (url) => {
-			calls++;
-			return new Response(null, {status: 307, headers: {location: String(url)}});
-		};
-		await assert.rejects(invoke, error => {
-			assert.match(error.message, /Too many API redirects/);
-			assert.ok(!error.message.includes(key));
-			assert.ok(!error.message.includes("api_key"));
-			return true;
-		});
-		assert.equal(calls, 6);
-	`);
-});

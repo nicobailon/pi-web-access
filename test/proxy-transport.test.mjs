@@ -666,19 +666,20 @@ test("fetch_content passes the explicit proxy through queued extraction", async 
 
 test("websearch command scopes searches but not model callbacks to configured proxy", async (t) => {
 	await withFakeCurl(t, {
-		"https://run.xcrawl.com/v1/serp": {
+		"https://search.example.com/serp": {
 			status: 200,
 			statusText: "OK",
 			body: JSON.stringify({
-				search_metadata: { status: "completed" },
 				organic_results: [{ title: "Result", link: "https://example.com/result", snippet: "Answer" }],
 			}),
 		},
 	}, async (logPath) => {
 		const configDir = dirname(logPath);
 		await writeFile(join(configDir, "web-search.json"), JSON.stringify({
-			provider: "xcrawl",
-			xcrawlApiKey: "xc-test-key",
+			provider: "stub",
+			customSearchProviders: {
+				stub: { url: "https://search.example.com/serp", method: "POST", body: { q: "{query}" }, results: "organic_results", fields: { title: "title", url: "link", snippet: "snippet" } },
+			},
 			proxy: "http://configured-proxy.example:8080",
 			autoOpenBrowser: false,
 			curatorTimeoutSeconds: 5,
@@ -781,7 +782,7 @@ test("websearch command scopes searches but not model callbacks to configured pr
 		});
 		const calls = await readCurlCalls(logPath);
 		assert.equal(calls.length, 2);
-		assert.equal(calls.filter((args) => args.at(-1) === "https://run.xcrawl.com/v1/serp").length, 2);
+		assert.equal(calls.filter((args) => args.at(-1) === "https://search.example.com/serp").length, 2);
 		assert.ok(calls.every((args) => ["http://configured-proxy.example:8080", "http://configured-proxy.example:8080/"].includes(proxyArg(args))));
 	});
 });

@@ -19,7 +19,7 @@ function runChild(script, env) {
 	const childEnv = { ...process.env };
 	for (const key of [
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "ANYSEARCH_API_KEY", "OPENAI_API_KEY", "BRAVE_API_KEY",
-		"PARALLEL_API_KEY", "TINYFISH_API_KEY", "TAVILY_API_KEY", "JINA_API_KEY", "SERPDIVE_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY", "BRIGHTDATA_API_KEY", "BRIGHTDATA_SERP_ZONE", "SEARXNG_BASE_URL", "EXA_API_KEY",
+		"PARALLEL_API_KEY", "TINYFISH_API_KEY", "TAVILY_API_KEY", "JINA_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "BRIGHTDATA_API_KEY", "SEARXNG_BASE_URL", "EXA_API_KEY",
 		"PERPLEXITY_API_KEY", "GEMINI_API_KEY",
 	]) delete childEnv[key];
 	Object.assign(childEnv, env);
@@ -288,7 +288,7 @@ test("AnySearch applies the shared domainFilter locally without adding request p
 	assert.deepEqual(output.included.results.map(result => result.url), ["https://example.com/on", "https://news.example.com/sub"]);
 	assert.deepEqual(output.included.inlineContent.map(entry => entry.url), ["https://example.com/on", "https://news.example.com/sub"]);
 	assert.equal(output.included.answer, "on\nSource: On domain (https://example.com/on)\n\nsub\nSource: On subdomain (https://news.example.com/sub)");
-	// The unparseable URL is dropped in both directions, matching XCrawl.
+	// The unparseable URL is dropped in both directions.
 	assert.deepEqual(output.excluded.results.map(result => result.url), ["https://example.com/on", "https://news.example.com/sub", "https://blog.example.com/post"]);
 	assert.deepEqual(output.nothing.results, []);
 	assert.equal(output.nothing.answer, "");

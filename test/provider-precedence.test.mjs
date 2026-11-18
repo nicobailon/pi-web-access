@@ -24,7 +24,7 @@ async function createConfig(config = {
 function runTool(agentDir, provider) {
 	const providerSource = provider === undefined ? "undefined" : JSON.stringify(provider);
 	const childEnv = { ...process.env, PI_CODING_AGENT_DIR: agentDir, OPENAI_API_KEY: "openai-test-key" };
-	for (const key of ["BRAVE_API_KEY", "PARALLEL_API_KEY", "TINYFISH_API_KEY", "SEARCH1API_KEY", "SEARCHINFINITY_API_KEY", "QUERIT_API_KEY", "TAVILY_API_KEY", "FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "JINA_API_KEY", "SERPDIVE_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY", "ANYSEARCH_API_KEY", "XAI_API_KEY", "BRIGHTDATA_API_KEY", "BRIGHTDATA_SERP_ZONE", "SEARXNG_BASE_URL", "EXA_API_KEY", "GEMINI_API_KEY", "PERPLEXITY_API_KEY"]) {
+	for (const key of ["BRAVE_API_KEY", "PARALLEL_API_KEY", "TINYFISH_API_KEY", "SEARCHINFINITY_API_KEY", "QUERIT_API_KEY", "TAVILY_API_KEY", "FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "JINA_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "ANYSEARCH_API_KEY", "XAI_API_KEY", "BRIGHTDATA_API_KEY", "SEARXNG_BASE_URL", "EXA_API_KEY", "GEMINI_API_KEY", "PERPLEXITY_API_KEY"]) {
 		delete childEnv[key];
 	}
 	const child = spawnSync(process.execPath, ["--input-type=module"], {
@@ -120,10 +120,10 @@ test("auto still uses provider fallback when no provider is configured", async (
 	assert.deepEqual(calls, ["https://api.openai.com/v1/responses"]);
 });
 
-test("configured explicit-only SerpBase fails instead of falling back", async () => {
-	const agentDir = await createConfig({ provider: "serpbase" });
+test("configured explicit-only You.com fails instead of falling back", async () => {
+	const agentDir = await createConfig({ provider: "you" });
 	const childEnv = { ...process.env, PI_CODING_AGENT_DIR: agentDir, OPENAI_API_KEY: "openai-test-key" };
-	for (const key of ["BRAVE_API_KEY", "PARALLEL_API_KEY", "TINYFISH_API_KEY", "SEARCH1API_KEY", "SEARCHINFINITY_API_KEY", "QUERIT_API_KEY", "TAVILY_API_KEY", "FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "JINA_API_KEY", "SERPDIVE_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY", "ANYSEARCH_API_KEY", "XAI_API_KEY", "BRIGHTDATA_API_KEY", "BRIGHTDATA_SERP_ZONE", "SEARXNG_BASE_URL", "EXA_API_KEY", "GEMINI_API_KEY", "PERPLEXITY_API_KEY"]) {
+	for (const key of ["BRAVE_API_KEY", "PARALLEL_API_KEY", "TINYFISH_API_KEY", "SEARCHINFINITY_API_KEY", "QUERIT_API_KEY", "TAVILY_API_KEY", "FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "JINA_API_KEY", "KAGI_API_KEY", "OLLAMA_API_KEY", "YDC_API_KEY", "ANYSEARCH_API_KEY", "XAI_API_KEY", "BRIGHTDATA_API_KEY", "SEARXNG_BASE_URL", "EXA_API_KEY", "GEMINI_API_KEY", "PERPLEXITY_API_KEY"]) {
 		delete childEnv[key];
 	}
 	const child = spawnSync(process.execPath, ["--input-type=module"], {
@@ -141,7 +141,7 @@ test("configured explicit-only SerpBase fails instead of falling back", async ()
 		const extension = (await import(${JSON.stringify(indexUrl)})).default;
 		extension(pi);
 		const tool = tools.find((candidate) => candidate.name === "web_search");
-		const result = await tool.execute("serpbase-no-fallback-test", { query: "provider precedence", workflow: "none" });
+		const result = await tool.execute("you-no-fallback-test", { query: "provider precedence", workflow: "none" });
 		console.log(JSON.stringify(result));
 	`,
 		encoding: "utf8",
@@ -150,7 +150,7 @@ test("configured explicit-only SerpBase fails instead of falling back", async ()
 	});
 	assert.equal(child.status, 0, child.stderr);
 	const result = JSON.parse(child.stdout.trim());
-	assert.match(result.content[0].text, /SerpBase API key not found/);
+	assert.match(result.content[0].text, /You\.com API key not found/);
 	assert.doesNotMatch(result.content[0].text, /Unexpected fallback fetch/);
 });
 

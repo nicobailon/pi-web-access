@@ -281,14 +281,12 @@ export function startCuratorServer(
 		if (provider === "parallel") return availableProviders.parallel;
 		if (provider === "parallel-mcp") return availableProviders["parallel-mcp"];
 		if (provider === "tinyfish") return availableProviders.tinyfish;
-		if (provider === "search1api") return availableProviders.search1api;
 		if (provider === "searchinfinity") return availableProviders.searchinfinity;
 		if (provider === "querit") return availableProviders.querit;
 		if (provider === "tavily") return availableProviders.tavily;
 		if (provider === "tabstack") return availableProviders.tabstack;
 		if (provider === "firecrawl") return availableProviders.firecrawl;
 		if (provider === "jina") return availableProviders.jina;
-		if (provider === "serpdive") return availableProviders.serpdive;
 		if (provider === "kagi") return availableProviders.kagi;
 		if (provider === "bocha") return availableProviders.bocha;
 		if (provider === "ollama") return availableProviders.ollama;
@@ -300,13 +298,8 @@ export function startCuratorServer(
 		if (provider === "gemini") return availableProviders.gemini;
 		if (provider === "kimi") return availableProviders.kimi;
 		if (provider === "anysearch") return availableProviders.anysearch;
-		if (provider === "xcrawl") return availableProviders.xcrawl;
 		if (provider === "xai") return availableProviders.xai;
 		if (provider === "mistral") return availableProviders.mistral;
-		if (provider === "brightdata") return availableProviders.brightdata;
-		if (provider === "serpbase") return availableProviders.serpbase;
-		if (provider === "serper") return availableProviders.serper;
-		if (provider === "serply") return availableProviders.serply;
 		if (provider === "you") return availableProviders.you;
 		if (provider === "baizhi") return availableProviders.baizhi;
 		if (provider === "zai") return availableProviders.zai;
@@ -316,14 +309,8 @@ export function startCuratorServer(
 		if (provider === "linkup") return availableProviders.linkup;
 		if (provider === "ninerouter") return availableProviders.ninerouter;
 		if (provider === "cloudflare") return availableProviders.cloudflare;
-		if (provider === "searchapi") return availableProviders.searchapi;
-		if (provider === "outcrawl") return availableProviders.outcrawl;
-		if (provider === "sofya") return availableProviders.sofya;
-		if (provider === "cloro") return availableProviders.cloro;
-		if (provider === "autom") return availableProviders.autom;
-		if (provider === "specstream") return availableProviders.specstream;
 		if (provider === "deepseek") return availableProviders.deepseek;
-		return false;
+		return availableProviders.customProviders?.includes(provider) ?? false;
 	}
 
 	function writeSSE(res: ServerResponse, event: string, data: unknown): boolean {

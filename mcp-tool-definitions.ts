@@ -6,7 +6,7 @@
 
 import { Type, type TSchema } from "typebox";
 import { Value } from "typebox/value";
-import { RESOLVED_SEARCH_PROVIDERS } from "./gemini-search.ts";
+import { getCustomSearchProviderNames, RESOLVED_SEARCH_PROVIDERS, removedSearchProviderMessage } from "./gemini-search.ts";
 
 function stringEnum(values: readonly string[], description?: string) {
 	return Type.Unsafe<string>({ type: "string", enum: [...values], ...(description && { description }) });
@@ -24,11 +24,21 @@ const providerSchema = Type.Union([
 const PROVIDER_CHOICES = `Use auto, all, or one or more of: ${MCP_SEARCH_PROVIDERS.join(", ")}.`;
 
 function providerProblem(value: unknown): string | undefined {
-	const invalid = typeof value === "string"
+	const unlisted = typeof value === "string"
 		? (value === "auto" || value === "all" || MCP_SEARCH_PROVIDERS.includes(value as never) ? [] : [value])
 		: Array.isArray(value) ? value.filter((name) => !MCP_SEARCH_PROVIDERS.includes(name)) : [];
+	if (unlisted.length === 0) return undefined;
+	let custom: readonly string[];
+	try {
+		custom = getCustomSearchProviderNames();
+	} catch {
+		return undefined; // The core reports the same configuration error.
+	}
+	const invalid = unlisted.filter((name) => !custom.includes(name));
 	if (invalid.length === 0) return undefined;
-	return `/provider: unknown provider ${invalid.map((name) => JSON.stringify(name)).join(", ")}. ${PROVIDER_CHOICES}`;
+	const removed = invalid.map((name) => removedSearchProviderMessage(name)).find(Boolean);
+	if (removed) return `/provider: ${removed}`;
+	return `/provider: unknown provider ${invalid.map((name) => JSON.stringify(name)).join(", ")}. ${PROVIDER_CHOICES}${custom.length > 0 ? ` Custom: ${custom.join(", ")}.` : ""}`;
 }
 
 const recencySchema = stringEnum(["day", "week", "month", "year"]);

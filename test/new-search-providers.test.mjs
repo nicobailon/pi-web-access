@@ -10,7 +10,6 @@ const bochaModuleUrl = new URL("../bocha.ts", import.meta.url).href;
 const curatorPageModuleUrl = new URL("../curator-page.ts", import.meta.url).href;
 const ollamaModuleUrl = new URL("../ollama.ts", import.meta.url).href;
 const searchModuleUrl = new URL("../gemini-search.ts", import.meta.url).href;
-const serpbaseModuleUrl = new URL("../serpbase.ts", import.meta.url).href;
 
 async function createHome(config) {
 	const home = await mkdtemp(join(tmpdir(), "pi-web-access-new-providers-"));
@@ -22,9 +21,9 @@ function runChild(script, env) {
 	const childEnv = { ...process.env };
 	for (const key of [
 		"PI_CODING_AGENT_DIR", "XDG_CONFIG_HOME", "OPENAI_API_KEY", "BRAVE_API_KEY", "PARALLEL_API_KEY",
-		"TINYFISH_API_KEY", "SEARCH1API_KEY", "SEARCHINFINITY_API_KEY", "QUERIT_API_KEY", "TAVILY_API_KEY",
-		"FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "JINA_API_KEY", "SERPDIVE_API_KEY", "KAGI_API_KEY", "BOCHA_API_KEY", "OLLAMA_API_KEY", "SERPBASE_API_KEY", "ANYSEARCH_API_KEY",
-		"XAI_API_KEY", "BRIGHTDATA_API_KEY", "BRIGHTDATA_SERP_ZONE", "SEARXNG_BASE_URL", "EXA_API_KEY",
+		"TINYFISH_API_KEY", "SEARCHINFINITY_API_KEY", "QUERIT_API_KEY", "TAVILY_API_KEY",
+		"FIRECRAWL_BASE_URL", "FIRECRAWL_API_KEY", "JINA_API_KEY", "KAGI_API_KEY", "BOCHA_API_KEY", "OLLAMA_API_KEY", "ANYSEARCH_API_KEY",
+		"XAI_API_KEY", "BRIGHTDATA_API_KEY", "SEARXNG_BASE_URL", "EXA_API_KEY",
 		"PERPLEXITY_API_KEY", "GEMINI_API_KEY", "CLOUDFLARE_API_KEY", "GOOGLE_GEMINI_BASE_URL",
 	]) delete childEnv[key];
 	Object.assign(childEnv, env);
@@ -99,37 +98,6 @@ test("Kagi search maps v1 results and Extract maps markdown", async () => {
 	assert.equal(output.fetched.content, "Kagi markdown");
 });
 
-test("SerpBase is explicit-only and maps Google organic results", async () => {
-	const home = await createHome({ serpbaseApiKey: "serpbase-test-key" });
-	const child = runChild(`
-		const calls = [];
-		globalThis.fetch = async (url) => {
-			calls.push(String(url));
-			if (String(url).startsWith("https://api.serpbase.dev/google/search?")) {
-				return new Response(JSON.stringify({ organic_results: [{ title: "SerpBase result", link: "https://example.com/result", snippet: "Google snippet" }] }), { status: 200 });
-			}
-			throw new Error("Unexpected fetch " + url);
-		};
-		const { searchWithSerpBase } = await import(${JSON.stringify(serpbaseModuleUrl)});
-		const direct = await searchWithSerpBase("google query", { numResults: 4, recencyFilter: "week", domainFilter: ["example.com"] });
-		const { search } = await import(${JSON.stringify(searchModuleUrl)});
-		try { await search("auto must not spend", { provider: "auto" }); }
-		catch (error) { var autoError = String(error); }
-		console.log(JSON.stringify({ calls, direct, autoError }));
-	`, { PI_CODING_AGENT_DIR: home });
-	assert.equal(child.status, 0, child.stderr);
-	const output = JSON.parse(child.stdout.trim());
-	const url = new URL(output.calls[0]);
-	assert.equal(url.origin + url.pathname, "https://api.serpbase.dev/google/search");
-	assert.equal(url.searchParams.get("api_key"), "serpbase-test-key");
-	assert.equal(url.searchParams.get("num"), "4");
-	assert.equal(url.searchParams.get("tbs"), "qdr:w");
-	assert.match(url.searchParams.get("q"), /site:example\.com/);
-	assert.deepEqual(output.direct.results, [{ title: "SerpBase result", url: "https://example.com/result", snippet: "Google snippet" }]);
-	assert.equal(output.calls.filter(call => call.startsWith("https://api.serpbase.dev/google/search?")).length, 1);
-	assert.doesNotMatch(output.autoError, /SerpBase/);
-});
-
 test("Bocha search filters domains and closes activity on API errors", async () => {
 	const home = await createHome({ bochaApiKey: "bocha-test-key" });
 	const child = runChild(`
@@ -177,10 +145,10 @@ test("Curator page exposes Bocha as a manual provider", async () => {
 		"session-token",
 		20,
 		{
-			all: false, openai: false, brave: false, parallel: false, tinyfish: false, search1api: false,
-			searchinfinity: false, querit: false, tavily: false, jina: false, serpdive: false, kagi: false,
+			all: false, openai: false, brave: false, parallel: false, tinyfish: false,
+			searchinfinity: false, querit: false, tavily: false, jina: false, kagi: false,
 			bocha: true, ollama: false, searxng: false, duckduckgo: false, perplexity: false, exa: false,
-			gemini: false, kimi: false, anysearch: false, xai: false, brightdata: false, serpbase: false,
+			gemini: false, kimi: false, anysearch: false, xai: false,
 		},
 		"bocha",
 		"bocha",

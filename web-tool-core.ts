@@ -51,15 +51,9 @@ export const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
 
 export interface WebSearchConfig {
 	anysearchApiKey?: unknown;
-	xcrawlApiKey?: unknown;
 	brightdataApiKey?: unknown;
-	brightdataSerpZone?: unknown;
 	kagiApiKey?: unknown;
 	ollamaApiKey?: unknown;
-	serpbaseApiKey?: unknown;
-	serpapiApiKey?: unknown;
-	serperApiKey?: unknown;
-	serplyApiKey?: unknown;
 	youApiKey?: unknown;
 	baizhiApiKey?: unknown;
 	zaiApiKey?: unknown;
@@ -75,19 +69,6 @@ export interface WebSearchConfig {
 	cloudflareAccountId?: unknown;
 	cloudflareGatewayId?: unknown;
 	cloudflareSearchProvider?: unknown;
-	searchapiApiKey?: unknown;
-	searchapiBaseUrl?: unknown;
-	outcrawlApiKey?: unknown;
-	outcrawlBaseUrl?: unknown;
-	sofyaApiKey?: unknown;
-	sofyaBaseUrl?: unknown;
-	cloroApiKey?: unknown;
-	cloroBaseUrl?: unknown;
-	cloroMode?: unknown;
-	automApiKey?: unknown;
-	automBaseUrl?: unknown;
-	specstreamApiKey?: unknown;
-	specstreamBaseUrl?: unknown;
 	tabstackBaseUrl?: unknown;
 	tabstackApiKey?: unknown;
 	tabstackResearchMode?: unknown;

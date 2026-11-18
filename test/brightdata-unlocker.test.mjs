@@ -35,7 +35,6 @@ function runChild(script, env = {}) {
 		"KAGI_API_KEY",
 		"OLLAMA_API_KEY",
 		"BRIGHTDATA_UNLOCKER_ZONE",
-		"BRIGHTDATA_SERP_ZONE",
 		"FIRECRAWL_BASE_URL",
 		"FIRECRAWL_API_KEY",
 		"PARALLEL_API_KEY",
@@ -353,10 +352,9 @@ test("BRIGHTDATA_UNLOCKER_ZONE takes precedence over brightdataUnlockerZone in t
 	}
 });
 
-test("Bright Data Web Unlocker requires its own zone and never borrows the SERP zone", async () => {
+test("Bright Data Web Unlocker without a zone fails before any request", async () => {
 	const home = await configHome({
 		brightdataApiKey: "bd-test-key",
-		brightdataSerpZone: "serp_zone1",
 	});
 	const child = runChild(
 		`
@@ -373,7 +371,7 @@ test("Bright Data Web Unlocker requires its own zone and never borrows the SERP 
 	);
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	// A SERP-only configuration must not opt the user into Web Unlocker spend.
+	// A key alone must not opt the user into Web Unlocker spend.
 	assert.equal(output.available, false);
 	assert.equal(output.fetchCalls, 0);
 	assert.match(

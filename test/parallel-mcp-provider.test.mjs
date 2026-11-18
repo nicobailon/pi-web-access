@@ -137,10 +137,10 @@ test("Parallel MCP stays outside provider all and the default fetch route", asyn
 test("Curator page exposes a usable Parallel MCP provider entry", async () => {
 	const { generateCuratorPage } = await import(curatorPageModuleUrl);
 	const available = {
-		all: false, openai: false, brave: false, parallel: false, "parallel-mcp": true, tinyfish: false, search1api: false,
-		searchinfinity: false, querit: false, tavily: false, firecrawl: false, jina: false, serpdive: false, kagi: false,
+		all: false, openai: false, brave: false, parallel: false, "parallel-mcp": true, tinyfish: false,
+		searchinfinity: false, querit: false, tavily: false, firecrawl: false, jina: false, kagi: false,
 		bocha: false, ollama: false, searxng: false, duckduckgo: false, perplexity: false, exa: false, gemini: false, kimi: false,
-		anysearch: false, xai: false, brightdata: false, serpbase: false, serper: false, valyu: false,
+		anysearch: false, xai: false, valyu: false,
 	};
 	const page = generateCuratorPage(["query"], "session-token", 20, available, "parallel-mcp", "parallel-mcp", [], null);
 	assert.match(page, /data-provider="parallel-mcp"/);

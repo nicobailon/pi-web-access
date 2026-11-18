@@ -22,13 +22,11 @@ function buildProviderButtons(
 		{ value: "parallel", label: "Parallel", available: available.parallel },
 		{ value: "parallel-mcp", label: "Parallel MCP", available: available["parallel-mcp"] },
 		{ value: "tinyfish", label: "TinyFish", available: available.tinyfish },
-		{ value: "search1api", label: "Search1API", available: available.search1api },
 		{ value: "searchinfinity", label: "Searchinfinity", available: available.searchinfinity },
 		{ value: "querit", label: "Querit", available: available.querit },
 		{ value: "tavily", label: "Tavily", available: available.tavily },
 		{ value: "firecrawl", label: "Firecrawl", available: available.firecrawl },
 		{ value: "jina", label: "Jina", available: available.jina },
-		{ value: "serpdive", label: "SERPdive", available: available.serpdive },
 		{ value: "kagi", label: "Kagi", available: available.kagi },
 		{ value: "bocha", label: "Bocha", available: available.bocha },
 		{ value: "ollama", label: "Ollama", available: available.ollama },
@@ -39,14 +37,8 @@ function buildProviderButtons(
 		{ value: "gemini", label: "Gemini", available: available.gemini },
 		{ value: "kimi", label: "Kimi", available: available.kimi },
 		{ value: "anysearch", label: "AnySearch", available: available.anysearch },
-		{ value: "xcrawl", label: "XCrawl", available: available.xcrawl },
 		{ value: "xai", label: "xAI", available: available.xai },
 		{ value: "mistral", label: "Mistral", available: available.mistral },
-		{ value: "brightdata", label: "Bright Data", available: available.brightdata },
-		{ value: "serpbase", label: "SerpBase", available: available.serpbase },
-		{ value: "serpapi", label: "SerpApi", available: available.serpapi },
-		{ value: "serper", label: "Serper", available: available.serper },
-		{ value: "serply", label: "Serply", available: available.serply },
 		{ value: "you", label: "You.com", available: available.you },
 		{ value: "baizhi", label: "Baizhi", available: available.baizhi },
 		{ value: "zai", label: "Z.ai", available: available.zai },
@@ -56,14 +48,9 @@ function buildProviderButtons(
 		{ value: "linkup", label: "Linkup", available: available.linkup },
 		{ value: "ninerouter", label: "9router", available: available.ninerouter },
 		{ value: "cloudflare", label: "Cloudflare", available: available.cloudflare },
-		{ value: "searchapi", label: "SearchApi", available: available.searchapi },
-		{ value: "outcrawl", label: "Outcrawl", available: available.outcrawl },
-		{ value: "sofya", label: "Sofya", available: available.sofya },
-		{ value: "cloro", label: "cloro", available: available.cloro },
-		{ value: "autom", label: "Autom", available: available.autom },
-		{ value: "specstream", label: "SpecStream", available: available.specstream },
 		{ value: "tabstack", label: "Tabstack", available: available.tabstack },
 		{ value: "deepseek", label: "DeepSeek", available: available.deepseek },
+		...(Array.isArray(available.customProviders) ? available.customProviders : []).map(name => ({ value: name, label: name, available: true })),
 	];
 
 	return providers
@@ -701,11 +688,6 @@ main {
   background: rgba(249, 199, 79, 0.14);
   border-color: rgba(249, 199, 79, 0.3);
 }
-.provider-tag.provider-xcrawl {
-  color: #7dd3ae;
-  background: rgba(125, 211, 174, 0.14);
-  border-color: rgba(125, 211, 174, 0.3);
-}
 .provider-tag.provider-xai {
   color: #c4b5fd;
   background: rgba(196, 181, 253, 0.14);
@@ -731,11 +713,6 @@ main {
   background: rgba(116, 199, 236, 0.14);
   border-color: rgba(116, 199, 236, 0.3);
 }
-.provider-tag.provider-search1api {
-  color: #89b4fa;
-  background: rgba(137, 180, 250, 0.14);
-  border-color: rgba(137, 180, 250, 0.3);
-}
 .provider-tag.provider-searchinfinity {
   color: #f9e2af;
   background: rgba(249, 226, 175, 0.14);
@@ -760,16 +737,6 @@ main {
   color: #f9e2af;
   background: rgba(249, 226, 175, 0.14);
   border-color: rgba(249, 226, 175, 0.3);
-}
-.provider-tag.provider-serpdive {
-  color: #94e2d5;
-  background: rgba(148, 226, 213, 0.14);
-  border-color: rgba(148, 226, 213, 0.3);
-}
-.provider-tag.provider-brightdata {
-  color: #b4befe;
-  background: rgba(180, 190, 254, 0.14);
-  border-color: rgba(180, 190, 254, 0.3);
 }
 .provider-tag.provider-unknown {
   color: var(--fg-muted);
@@ -1495,8 +1462,11 @@ const SCRIPT = `(function() {
   var token = DATA.sessionToken;
   var timeoutSec = DATA.timeout;
   var queries = Array.isArray(DATA.queries) ? DATA.queries : [];
-  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "search1api", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "serpdive", "kagi", "bocha", "ollama", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xcrawl", "xai", "mistral", "brightdata", "serpbase", "serpapi", "serper", "serply", "valyu", "baizhi", "you", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "cloudflare", "searchapi", "outcrawl", "sofya", "cloro", "autom", "specstream", "tabstack"];
+  var providers = ["auto", "all", "openai", "exa", "brave", "parallel", "parallel-mcp", "tinyfish", "searchinfinity", "querit", "tavily", "firecrawl", "jina", "kagi", "bocha", "ollama", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "anysearch", "xai", "mistral", "valyu", "baizhi", "you", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "cloudflare", "tabstack"];
   var availProviders = DATA.availableProviders && typeof DATA.availableProviders === "object" ? DATA.availableProviders : {};
+  // Custom provider names come from config; they are selectable like built-ins and labeled with their name.
+  var customProviders = Array.isArray(availProviders.customProviders) ? availProviders.customProviders : [];
+  customProviders.forEach(function(name) { providers.push(name); availProviders[name] = true; });
   var workflow = "summary-review";
   var initialDefaultProvider = typeof DATA.defaultProvider === "string" ? DATA.defaultProvider : "exa";
   if (providers.indexOf(initialDefaultProvider) === -1) initialDefaultProvider = "exa";
@@ -1705,14 +1675,12 @@ const SCRIPT = `(function() {
     if (provider === "brave") return "Brave";
     if (provider === "parallel") return "Parallel";
     if (provider === "tinyfish") return "TinyFish";
-    if (provider === "search1api") return "Search1API";
     if (provider === "searchinfinity") return "Searchinfinity";
     if (provider === "querit") return "Querit";
     if (provider === "tavily") return "Tavily";
     if (provider === "tabstack") return "Tabstack";
     if (provider === "firecrawl") return "Firecrawl";
     if (provider === "jina") return "Jina";
-    if (provider === "serpdive") return "SERPdive";
     if (provider === "kagi") return "Kagi";
     if (provider === "bocha") return "Bocha";
     if (provider === "ollama") return "Ollama";
@@ -1724,14 +1692,8 @@ const SCRIPT = `(function() {
     if (provider === "gemini") return "Gemini";
     if (provider === "kimi") return "Kimi";
     if (provider === "anysearch") return "AnySearch";
-    if (provider === "xcrawl") return "XCrawl";
     if (provider === "xai") return "xAI";
     if (provider === "mistral") return "Mistral";
-    if (provider === "brightdata") return "Bright Data";
-    if (provider === "serpbase") return "SerpBase";
-    if (provider === "serpapi") return "SerpApi";
-    if (provider === "serper") return "Serper";
-    if (provider === "serply") return "Serply";
     if (provider === "you") return "You.com";
     if (provider === "baizhi") return "Baizhi";
     if (provider === "zai") return "Z.ai";
@@ -1741,13 +1703,8 @@ const SCRIPT = `(function() {
     if (provider === "linkup") return "Linkup";
     if (provider === "ninerouter") return "9router";
     if (provider === "cloudflare") return "Cloudflare";
-    if (provider === "searchapi") return "SearchApi";
-    if (provider === "outcrawl") return "Outcrawl";
-    if (provider === "sofya") return "Sofya";
-    if (provider === "cloro") return "cloro";
-    if (provider === "autom") return "Autom";
-    if (provider === "specstream") return "SpecStream";
     if (provider === "deepseek") return "DeepSeek";
+    if (customProviders.indexOf(provider) !== -1) return provider;
     return "Unknown";
   }
 
