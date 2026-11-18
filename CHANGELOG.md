@@ -8,6 +8,10 @@ All notable changes to this project will be documented in this file.
 
 - The README's Proxy section now says how other extensions can recognize this extension's `globalThis.fetch` proxy wrapper: `__piWebAccessSharedProxyFetch === true`, stable since 0.46.0. The older `__piWebAccessProxyFetch` marker stays limited to wrapping a pre-0.46 copy, because setting it on every wrapper would let such a copy skip its own wrapper and bypass the proxy. Thanks to [@wesperz](https://github.com/wesperz) for [issue #682](https://github.com/nicobailon/pi-web-access/issues/682) and [@mystery4f](https://github.com/mystery4f) for the reproduction.
 
+### Changed
+
+- A `fetch_content` call with invalid arguments now reports every problem in one error, a missing URL first, and names the parameters it received. A model that dropped `url` from its call can see that and fix it, instead of repeating the same failing call. Thanks to [@j-koester](https://github.com/j-koester) for [PR #685](https://github.com/nicobailon/pi-web-access/pull/685) and [@anibalsanchez](https://github.com/anibalsanchez) for the report in [PR #686](https://github.com/nicobailon/pi-web-access/pull/686).
+
 ### Fixed
 
 - Gemini Web and `authFetch` browser-cookie lookup now finds Chrome profiles on macOS and Linux whose cookie database has moved to `<profile>/Network/Cookies`. Chrome on macOS moves it there and deletes the old `Cookies` file, so those profiles were reported as having no cookie database. A profile that still has the old `Cookies` file keeps reading it, since a half-finished move leaves an incomplete copy in `Network/`. Thanks to [@Dartsac](https://github.com/Dartsac) for [issue #683](https://github.com/nicobailon/pi-web-access/issues/683) and [PR #684](https://github.com/nicobailon/pi-web-access/pull/684).
