@@ -202,7 +202,7 @@ test("standalone validation failures are flagged as errors before any network ca
 	assert.deepEqual(blocked, []);
 	for (const result of Object.values(out)) {
 		assert.equal(result.isError, true);
-		assert.equal(result.details.error, result === out.findModeWithoutFindText ? "findMode requires findText" : (result === out.noQuery ? "No query provided" : (result === out.noClaim ? "Missing claim" : "No URL provided")));
+		assert.equal(result.details.error, result === out.findModeWithoutFindText ? "findMode requires findText" : (result === out.noQuery ? "No query provided" : (result === out.noClaim ? "Missing claim" : "No URL provided (received parameters: none). Use the 'url' parameter, or 'urls' for parallel fetches")));
 	}
-	assert.match(out.noUrl.content[0].text, /No URL provided\. Use the 'url' parameter/);
+	assert.match(out.noUrl.content[0].text, /No URL provided \(received parameters: none\)\. Use the 'url' parameter/);
 });

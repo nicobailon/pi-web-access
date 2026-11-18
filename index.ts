@@ -2072,6 +2072,9 @@ export default function (pi: ExtensionAPI) {
 			} catch {
 				return new Text(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("error", "(invalid parameters)"), 0, 0);
 			}
+			if (normalized.problems.length > 0) {
+				return new Text(theme.fg("toolTitle", theme.bold("fetch ")) + theme.fg("error", "(invalid parameters)"), 0, 0);
+			}
 			const { urlList, options } = normalized;
 			const { prompt, timestamp, frames, model, mode, answerModel, auth } = options;
 			if (urlList.length === 0) {

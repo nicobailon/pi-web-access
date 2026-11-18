@@ -73,14 +73,15 @@ test("fetch_content params validate fetch and answer modes", () => {
 		normalizeFetchContentParams({ mode: "answer", answerModel: " test/page-model " }).options,
 		{ mode: "answer", answerModel: "test/page-model" },
 	);
-	assert.throws(() => normalizeFetchContentParams({ mode: "invalid" }), /mode must be/);
+	assert.deepEqual(normalizeFetchContentParams({ mode: "invalid" }).problems, ['mode must be "readable", "raw", "answer", or "extract"']);
+	assert.equal(normalizeFetchContentParams({ mode: "raw" }).problems.length, 0);
 });
 
 test("fetch_content params accept only the same-origin redirect policy", () => {
 	assert.equal(normalizeFetchContentParams({ redirects: "same-origin" }).options.redirects, "same-origin");
 	assert.equal("redirects" in normalizeFetchContentParams({ url: "https://example.com" }).options, false);
 	for (const redirects of ["follow", "", null, false, true]) {
-		assert.throws(() => normalizeFetchContentParams({ redirects }), /redirects must be "same-origin"/, JSON.stringify(redirects));
+		assert.deepEqual(normalizeFetchContentParams({ redirects }).problems, ['redirects must be "same-origin"'], JSON.stringify(redirects));
 	}
 });
 
@@ -89,6 +90,17 @@ test("fetch_content params validate auth profile input", () => {
 	assert.equal(normalizeFetchContentParams({ auth: true }).options.auth, true);
 	assert.equal(normalizeFetchContentParams({ auth: " work " }).options.auth, "work");
 	assert.equal(normalizeFetchContentParams({ auth: false }).options.auth, undefined);
-	assert.throws(() => normalizeFetchContentParams({ auth: " " }), /auth must be/);
-	assert.throws(() => normalizeFetchContentParams({ auth: 1 }), /auth must be/);
+	for (const auth of [" ", 1]) {
+		assert.deepEqual(normalizeFetchContentParams({ auth }).problems, ["auth must be a profile name, true, or false"], JSON.stringify(auth));
+	}
+});
+
+test("fetch_content params collect every normalization problem in one pass", () => {
+	const { problems } = normalizeFetchContentParams({ mode: "invalid", auth: 1, proxy: null, redirects: "follow" });
+	assert.deepEqual(problems, [
+		'mode must be "readable", "raw", "answer", or "extract"',
+		"auth must be a profile name, true, or false",
+		"proxy must be an http(s) or socks proxy URL string",
+		'redirects must be "same-origin"',
+	]);
 });

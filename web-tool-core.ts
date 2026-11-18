@@ -9,7 +9,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
 import pLimit from "p-limit";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
-import { normalizeFetchContentParams, type FetchContentParams } from "./fetch-params.ts";
+import { describeReceivedParams, normalizeFetchContentParams, type FetchContentParams } from "./fetch-params.ts";
 import { resolveAuthFetchProfile, type AuthFetchProfile } from "./auth-fetch.ts";
 import { findContent, type FindMode } from "./content-find.ts";
 import { extractPageFields, formatPageExtraction, parseExtractFields } from "./field-extract.ts";
@@ -1002,36 +1002,43 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			const error = `Fetch mode "${mode}" is disabled by fetch.allowedModes.`;
 			return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
 		}
+		// Aggregate all validation problems instead of failing on the first
+		// one, and check the URL first: a missing URL is the root cause of
+		// most retries, and naming the parameters that actually arrived helps
+		// tell dropped tool-call arguments (provider issue) apart from
+		// malformed ones (caller issue). Parameter-level normalization
+		// problems (mode, redirects, auth, proxy) are collected too, so one
+		// round-trip reports every fixable parameter at once.
+		const problems: string[] = [];
+		if (urlList.length === 0) {
+			problems.push("url" in params || "urls" in params
+				? `No usable URL provided (received parameters: ${describeReceivedParams(params)}). 'url' must be a non-empty string or 'urls' a non-empty array`
+				: `No URL provided (received parameters: ${describeReceivedParams(params)}). Use the 'url' parameter, or 'urls' for parallel fetches`);
+		}
+		problems.push(...normalized.problems);
+		if (mode === "answer" && !options.prompt) problems.push("mode answer requires prompt");
+		if (mode === "raw" && (options.forceClone === true || options.timestamp || options.frames || options.prompt || options.model || options.answerModel)) {
+			problems.push("mode raw cannot be combined with forceClone, prompt, timestamp, frames, model, or answerModel");
+		}
+		if (mode !== "answer" && options.answerModel) problems.push("answerModel requires mode answer");
+		if (mode === "answer" && options.model) problems.push("use answerModel, not model, with mode answer");
+		// Authenticated page text never goes to a hosted model.
+		if ((mode === "answer" || mode === "extract") && options.auth !== undefined) problems.push(`auth cannot be combined with mode ${mode}`);
+		if (mode !== "extract" && params.fields !== undefined) problems.push("fields requires mode extract");
+		let extractFields: ReturnType<typeof parseExtractFields> | undefined;
+		if (mode === "extract") {
+			try {
+				if (params.fields === undefined) throw new Error("mode extract requires fields");
+				extractFields = parseExtractFields(params.fields);
+			} catch (err) {
+				problems.push(err instanceof Error ? err.message : String(err));
+			}
+		}
+		if (problems.length > 0) {
+			const error = problems.join("; ");
+			return { content: [{ type: "text", text: `Error: ${error}.` }], details: { error, problems } };
+		}
 		return runWithProxy(options.proxy, async () => {
-			if (mode === "answer" && !options.prompt) {
-				return { content: [{ type: "text", text: "Error: mode answer requires prompt." }], details: { error: "mode answer requires prompt" } };
-			}
-			if (mode === "raw" && (options.forceClone === true || options.timestamp || options.frames || options.prompt || options.model || options.answerModel)) {
-				return { content: [{ type: "text", text: "Error: mode raw cannot be combined with forceClone, prompt, timestamp, frames, model, or answerModel." }], details: { error: "Incompatible raw mode options" } };
-			}
-			if (mode !== "answer" && options.answerModel) {
-				return { content: [{ type: "text", text: "Error: answerModel requires mode answer." }], details: { error: "answerModel requires mode answer" } };
-			}
-			if (mode === "answer" && options.model) {
-				return { content: [{ type: "text", text: "Error: use answerModel, not model, with mode answer." }], details: { error: "model is incompatible with mode answer" } };
-			}
-			// Authenticated page text never goes to a hosted model.
-			if ((mode === "answer" || mode === "extract") && options.auth !== undefined) {
-				return { content: [{ type: "text", text: `Error: auth cannot be combined with mode ${mode}.` }], details: { error: `auth cannot be combined with mode ${mode}` } };
-			}
-			if (mode !== "extract" && params.fields !== undefined) {
-				return { content: [{ type: "text", text: "Error: fields requires mode extract." }], details: { error: "fields requires mode extract" } };
-			}
-			let extractFields: ReturnType<typeof parseExtractFields> | undefined;
-			if (mode === "extract") {
-				try {
-					if (params.fields === undefined) throw new Error("mode extract requires fields");
-					extractFields = parseExtractFields(params.fields);
-				} catch (err) {
-					const error = err instanceof Error ? err.message : String(err);
-					return { content: [{ type: "text", text: `Error: ${error}.` }], details: { error } };
-				}
-			}
 			let authFetchProfile: AuthFetchProfile | undefined;
 			if (options.auth !== undefined) {
 				try {
@@ -1040,12 +1047,6 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 					const error = err instanceof Error ? err.message : String(err);
 					return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
 				}
-			}
-			if (urlList.length === 0) {
-				return {
-					content: [{ type: "text", text: "Error: No URL provided. Use the 'url' parameter, or 'urls' for parallel fetches." }],
-					details: { error: "No URL provided" },
-				};
 			}
 
 			onUpdate?.({
