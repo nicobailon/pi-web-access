@@ -11,7 +11,7 @@ const python = process.platform === "win32" ? null : "python3";
 
 function createFixture(home, profile, rows = [], options = {}) {
 	if (!python) return;
-	const { browser = "Chrome", targetPlatform = process.platform } = options;
+	const { browser = "Chrome", targetPlatform = process.platform, networkCookies = targetPlatform === "win32" } = options;
 	const base = targetPlatform === "darwin"
 		? browser === "Brave"
 			? join(home, "Library", "Application Support", "BraveSoftware", "Brave-Browser")
@@ -25,7 +25,7 @@ function createFixture(home, profile, rows = [], options = {}) {
 				? join(home, "AppData", "Local", "Microsoft", "Edge", "User Data")
 				: join(home, "AppData", "Local", "Google", "Chrome", "User Data")
 		: browser === "Chromium" ? join(home, ".config", "chromium") : join(home, ".config", "google-chrome");
-	const dbPath = targetPlatform === "win32" ? join(base, profile, "Network", "Cookies") : join(base, profile, "Cookies");
+	const dbPath = networkCookies ? join(base, profile, "Network", "Cookies") : join(base, profile, "Cookies");
 	mkdirSync(dirname(dbPath), { recursive: true });
 	execFileSync(python, ["-c", `
 import json, sqlite3, sys
@@ -309,6 +309,46 @@ test("auto-discovery finds a Brave profile on macOS", (t) => {
 	rmSync(home, { recursive: true, force: true });
 	rmSync(bin, { recursive: true, force: true });
 });
+
+for (const targetPlatform of ["darwin", "linux"]) {
+	test(`${targetPlatform} finds a profile whose only cookie database is Network/Cookies`, (t) => {
+		skipWithoutPython(t);
+		const home = mkdtempSync(join(tmpdir(), "pi-cookie-network-only-"));
+		const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
+		createFixture(home, "Profile 3", [
+			["__Secure-1PSID", "one", ".google.com", null, 1],
+			["__Secure-1PSIDTS", "two", ".google.com", null, 2],
+		], { targetPlatform, networkCookies: true });
+		const env = makeEnvironment(home, bin);
+		Object.assign(env, writePasswordCommand(bin, join(home, "password-count"), targetPlatform));
+		const discovered = runCookies(home, env, undefined, targetPlatform);
+		assert.deepEqual(discovered.result.cookies, { "__Secure-1PSIDTS": "two", "__Secure-1PSID": "one" });
+		const configured = runCookies(home, env, "{ browser: 'chrome', profile: 'Profile 3', requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] }", targetPlatform);
+		assert.deepEqual(configured.result.cookies, { "__Secure-1PSIDTS": "two", "__Secure-1PSID": "one" });
+		rmSync(home, { recursive: true, force: true });
+		rmSync(bin, { recursive: true, force: true });
+	});
+
+	test(`${targetPlatform} keeps the legacy Cookies database while Network/Cookies also exists`, (t) => {
+		skipWithoutPython(t);
+		const home = mkdtempSync(join(tmpdir(), "pi-cookie-both-layouts-"));
+		const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
+		createFixture(home, "Default", [
+			["__Secure-1PSID", "legacy-one", ".google.com", null, 1],
+			["__Secure-1PSIDTS", "legacy-two", ".google.com", null, 2],
+		], { targetPlatform });
+		createFixture(home, "Default", [
+			["__Secure-1PSID", "network-one", ".google.com", null, 1],
+			["__Secure-1PSIDTS", "network-two", ".google.com", null, 2],
+		], { targetPlatform, networkCookies: true });
+		const env = makeEnvironment(home, bin);
+		Object.assign(env, writePasswordCommand(bin, join(home, "password-count"), targetPlatform));
+		const result = runCookies(home, env, undefined, targetPlatform);
+		assert.deepEqual(result.result.cookies, { "__Secure-1PSIDTS": "legacy-two", "__Secure-1PSID": "legacy-one" });
+		rmSync(home, { recursive: true, force: true });
+		rmSync(bin, { recursive: true, force: true });
+	});
+}
 
 test("browser selection checks only the requested preset", (t) => {
 	skipWithoutPython(t);
