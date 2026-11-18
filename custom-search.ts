@@ -159,9 +159,10 @@ export async function searchWithCustomProvider(
 	const url = new URL(config.url);
 	for (const [key, value] of Object.entries(config.query)) url.searchParams.set(key, fill(value, query, count));
 	if (apiKey && config.apiKeyQuery) url.searchParams.set(config.apiKeyQuery, apiKey);
-	const headers: Record<string, string> = { Accept: "application/json", ...config.headers };
-	if (config.body !== undefined) headers["Content-Type"] = "application/json";
-	if (apiKey && config.apiKeyHeader) headers[config.apiKeyHeader] = (config.apiKeyPrefix ?? "") + apiKey;
+	// Headers matches names case-insensitively, so a configured "content-type" isn't sent twice.
+	const headers = new Headers({ Accept: "application/json", ...config.headers });
+	if (config.body !== undefined) headers.set("Content-Type", "application/json");
+	if (apiKey && config.apiKeyHeader) headers.set(config.apiKeyHeader, (config.apiKeyPrefix ?? "") + apiKey);
 	const redact = (text: string) => redactCredential(text, apiKey);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
@@ -180,12 +181,24 @@ export async function searchWithCustomProvider(
 		try {
 			data = await response.json();
 		} catch (err) {
-			throw new Error(`${name} API returned invalid JSON: ${errorMessage(err)}`);
+			// Only a parse failure is invalid JSON; a dropped connection keeps its own classification.
+			// The parser's message quotes the body, which can hold a partial key that redaction can't match.
+			if (!(err instanceof SyntaxError)) throw err;
+			throw new Error(`${name} API returned invalid JSON`);
 		}
 	} catch (err) {
+		if (options.signal?.aborted) {
+			activityMonitor.logComplete(activityId, 0);
+			throw new Error("Aborted");
+		}
+		// A proxy can turn the provider timeout into a plain abort; name it so routing falls back.
+		if (timeoutSignal.aborted || (err instanceof Error && err.name === "TimeoutError")) {
+			const timedOut = new Error(`${name} request timed out after ${SEARCH_TIMEOUT_MS / 1000}s`);
+			activityMonitor.logError(activityId, timedOut.message);
+			throw timedOut;
+		}
 		const message = redact(errorMessage(err));
-		if (message.toLowerCase().includes("abort") && !message.includes("due to timeout")) activityMonitor.logComplete(activityId, 0);
-		else activityMonitor.logError(activityId, message);
+		activityMonitor.logError(activityId, message);
 		if (message === errorMessage(err)) throw err;
 		const redacted = new Error(message);
 		if (err instanceof Error) redacted.name = err.name;

@@ -193,6 +193,27 @@ test("a response without the results path means no results; a non-array there is
 	assert.match(output.error, /mysearch API returned invalid response: expected an array at "organic_results"/);
 });
 
+test("a dropped connection while reading the body falls back like a network error, and headers are not duplicated", async () => {
+	const entry = (host) => ({ url: `https://${host}.example.com/search`, method: "POST", headers: { "content-type": "application/json" }, body: { q: "{query}" }, results: "items", fields: { title: "title", url: "link" } });
+	const home = await createHome({
+		customSearchProviders: { first: entry("first"), second: entry("second") },
+		searchRouting: { providers: ["first", "second"], fallbackOn: ["network"] },
+	});
+	const output = runChild(`
+		const contentTypes = [];
+		globalThis.fetch = async (url, init = {}) => {
+			contentTypes.push(new Headers(init.headers).get("content-type"));
+			if (String(url).startsWith("https://first.")) return { ok: true, status: 200, json: async () => { throw new TypeError("terminated"); } };
+			return new Response(JSON.stringify({ items: [{ title: "Second", link: "https://example.com/second" }] }), { status: 200 });
+		};
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		const result = await search("q");
+		console.log(JSON.stringify({ provider: result.provider, contentTypes }));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(output.provider, "second");
+	assert.deepEqual(output.contentTypes, ["application/json", "application/json"]);
+});
+
 test("a custom provider cannot take a built-in provider's name", async () => {
 	const home = await createHome({ customSearchProviders: { brave: recipe("serper") } });
 	const output = runChild(`
