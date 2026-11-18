@@ -500,6 +500,100 @@ function formatFullResults(queryData: QueryResultData): string {
 	return output;
 }
 
+interface StoredEntry {
+	label: string;
+	content: string | null;
+	error: string | null;
+}
+
+// Last resort for a limit smaller than the fixed wording; budgeting below keeps normal limits clear of it.
+function capText(text: string, maxChars: number): string {
+	if (text.length <= maxChars) return text;
+	const marker = "\n[Output truncated.]";
+	return marker.length >= maxChars ? text.slice(0, maxChars) : text.slice(0, maxChars - marker.length) + marker;
+}
+
+// A responseId with several queries or URLs and no index: list the entries, or run findText over all
+// of them, instead of failing the call (#687). The returned text stays within maxChars.
+function readAllStoredEntries(
+	params: GetSearchContentParams,
+	indexKey: "queryIndex" | "urlIndex",
+	noun: "queries" | "URLs",
+	entries: StoredEntry[],
+	maxChars: number,
+): WebToolResult {
+	const responseId = params.responseId;
+	const title = `${entries.length} stored ${noun}`;
+	if (params.findText === undefined) {
+		const head = `responseId ${formatInputValue(responseId)} holds ${title}. Pass ${indexKey} to read one, or findText to search all of them.`;
+		const lines = entries.map((entry, index) => `${index}: ${entry.label} (${entry.content === null ? `error: ${entry.error}` : `${entry.content.length} chars`})`);
+		const notListed = (shown: number) => `${entries.length - shown} more not listed (${indexKey} ${shown}-${entries.length - 1}).`;
+		let text = [head, ...lines].join("\n");
+		if (text.length > maxChars) {
+			let shown = 0;
+			let length = head.length;
+			while (shown < lines.length && length + 1 + lines[shown].length + 1 + notListed(shown + 1).length <= maxChars) {
+				length += 1 + lines[shown].length;
+				shown++;
+			}
+			text = [head, ...lines.slice(0, shown), notListed(shown)].join("\n");
+		}
+		return {
+			content: [{ type: "text", text: capText(text, maxChars) }],
+			details: { responseId, title, contentLength: entries.reduce((total, entry) => total + (entry.content?.length ?? 0), 0) },
+		};
+	}
+
+	const findMode = params.findMode ?? "case-insensitive";
+	let queries: string[];
+	try {
+		queries = normalizeFindQueries(params.findText);
+	} catch (err) {
+		const error = err instanceof Error ? err.message : String(err);
+		return {
+			content: [{ type: "text", text: `Unable to find ${formatInputValue(params.findText)} in responseId ${formatInputValue(responseId)}: ${error}. Check findText and use a supported findMode.` }],
+			details: { error, responseId },
+		};
+	}
+	const found = entries.map((entry) => entry.content === null ? null : findContent(entry.content, queries, findMode));
+	const sections = found.flatMap((result, index) => result && result.matchCount > 0
+		? [{ index, text: `## ${indexKey} ${index}: ${entries[index].label}\n\n${result.text}`, returnedMatches: result.returnedMatches }]
+		: []);
+	const noMatches = found.flatMap((result, index) => result?.matchCount === 0 ? [index] : []);
+	const failed = entries.flatMap((entry, index) => entry.content === null ? [`${index} (${entry.error})`] : []);
+	const notes: string[] = [];
+	if (noMatches.length > 0) notes.push(`No matches in ${indexKey} ${noMatches.join(", ")}.`);
+	if (failed.length > 0) notes.push(`Not searched (failed): ${indexKey} ${failed.join(", ")}.`);
+	const heading = `findText searched ${title} in responseId ${formatInputValue(responseId)}.`;
+	const omittedNotice = (omitted: number[]) => `Matches in ${indexKey} ${omitted.join(", ")} omitted to stay under ${maxChars} chars; repeat with ${indexKey} to read them.`;
+	const separator = "\n\n";
+	let shown = sections;
+	const omitted: number[] = [];
+	if ([heading, ...sections.map((section) => section.text), ...notes].join(separator).length > maxChars) {
+		// Reserve the notice's longest form, with every section omitted, so any subset still fits.
+		let budget = maxChars - [heading, ...notes, omittedNotice(sections.map((section) => section.index))].join(separator).length;
+		shown = [];
+		for (const section of sections) {
+			if (separator.length + section.text.length <= budget) {
+				shown.push(section);
+				budget -= separator.length + section.text.length;
+			} else omitted.push(section.index);
+		}
+	}
+	const text = [heading, ...shown.map((section) => section.text), ...notes, ...(omitted.length > 0 ? [omittedNotice(omitted)] : [])].join(separator);
+	return {
+		content: [{ type: "text", text: capText(text, maxChars) }],
+		details: {
+			responseId,
+			title,
+			findMode,
+			matchCount: found.reduce((total, result) => total + (result?.matchCount ?? 0), 0),
+			returnedMatches: shown.reduce((total, section) => total + section.returnedMatches, 0),
+			...(failed.length === entries.length ? { error: "Every stored entry failed" } : {}),
+		},
+	};
+}
+
 function boundSearchPresentation(
 	text: string,
 	guidance: string,
@@ -1349,10 +1443,17 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 						details: { error: "Index out of range" },
 					};
 				}
+			} else if (data.queries.length === 1) {
+				queryData = data.queries[0];
+			} else if (data.queries.length > 1) {
+				return readAllStoredEntries(params, "queryIndex", "queries", data.queries.map((q) => ({
+					label: `"${q.query}"`,
+					content: q.error ? null : formatFullResults(q),
+					error: q.error,
+				})), maxInlineContentChars);
 			} else {
-				const available = data.queries.map((q, i) => `${i}: "${q.query}"`).join(", ");
 				return {
-					content: [{ type: "text", text: `Specify query or queryIndex for responseId ${formatInputValue(params.responseId)}. Available queries: ${available || "none"}.` }],
+					content: [{ type: "text", text: `Specify query or queryIndex for responseId ${formatInputValue(params.responseId)}. Available queries: none.` }],
 					details: { error: "No query specified" },
 				};
 			}
@@ -1452,10 +1553,15 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 				// (common with findText on single-URL fetches) succeed without a retry.
 				selectedUrlIndex = 0;
 				urlData = data.urls[0];
+			} else if (data.urls.length > 1) {
+				return readAllStoredEntries(params, "urlIndex", "URLs", data.urls.map((u) => ({
+					label: u.title && u.title !== u.url ? `${u.title} — ${u.url}` : u.url,
+					content: u.error ? null : u.content,
+					error: u.error,
+				})), maxInlineContentChars);
 			} else {
-				const available = data.urls.map((u, i) => `${i}: ${u.url}`).join("\n  ");
 				return {
-					content: [{ type: "text", text: `Specify url or urlIndex for responseId ${formatInputValue(params.responseId)}. Available URLs:\n  ${available || "  none"}` }],
+					content: [{ type: "text", text: `Specify url or urlIndex for responseId ${formatInputValue(params.responseId)}. Available URLs:\n    none` }],
 					details: { error: "No URL specified" },
 				};
 			}

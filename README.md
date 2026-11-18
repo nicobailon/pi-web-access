@@ -293,6 +293,7 @@ get_search_content({ responseId: "abc123", urlIndex: 0, findText: ["timeout", "r
 
 Pass the `responseId` from a `web_search`, `fetch_content`, or `source_check` result.
 Choose the stored item with `query` or `queryIndex` for a search, or `url` or `urlIndex` for a fetched page. `offset` (default 0) and `limit` page through it.
+When the response holds a single query or URL, it is chosen for you. With several and no choice, `findText` searches all of them and labels each match with its index, and a call without `findText` lists them.
 
 `findMode` supports `exact`, `case-insensitive` (default), and `fuzzy`. Finder output is capped at 20,000 characters with match counts and nearby context. Fitting responses retain their existing format and document order. Overflow responses identify queries as `Q1`, `Q2`, and so on, list each full query once, and reserve a representative excerpt for each query whose discovered match span fits the output budget. Queries with oversized spans are listed as having no representative excerpt. `findText` cannot be combined with `offset` or `limit`. The default `limit` and maximum permitted `limit` use `maxInlineContentChars`; search-page continuation guidance shares that overall output budget and may reduce the returned stored-content characters.
 

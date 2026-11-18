@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import { Value } from "typebox/value";
 
@@ -249,23 +253,120 @@ test("get_search_content defaults to the only stored URL when url and urlIndex a
 	assert.match(sliceResult.content[0].text, /short content with a unique needle/);
 });
 
-test("get_search_content still asks for a URL when multiple stored URLs exist", async () => {
-	const tool = getContentTool();
+function storeMultiFetch() {
 	storeResult("multi-fetch", {
 		id: "multi-fetch",
 		type: "fetch",
 		timestamp: Date.now(),
 		urls: [
 			{ url: "https://example.com/first", title: "First", content: "first content", error: null },
-			{ url: "https://example.com/second", title: "Second", content: "second content", error: null },
+			{ url: "https://example.com/second", title: "Second", content: "second content with a needle", error: null },
+			{ url: "https://example.com/broken", title: "", content: "", error: "HTTP 500" },
 		],
 	});
+}
 
-	const result = await tool.execute("call", { responseId: "multi-fetch" });
-	assert.equal(result.details.error, "No URL specified");
-	assert.match(result.content[0].text, /Specify url or urlIndex/);
-	assert.match(result.content[0].text, /0: https:\/\/example\.com\/first/);
-	assert.match(result.content[0].text, /1: https:\/\/example\.com\/second/);
+function storeMultiSearch() {
+	storeResult("multi-search", {
+		id: "multi-search",
+		type: "search",
+		timestamp: Date.now(),
+		queries: [
+			{ query: "taiwan news", answer: "Taipei summary", results: [{ title: "Taipei Times", url: "https://example.com/taipei", snippet: "Asia market" }], error: null },
+			{ query: "japan news", answer: "Tokyo summary", results: [{ title: "Japan Times", url: "https://example.com/tokyo", snippet: "Asia trade" }], error: null },
+			{ query: "korea news", answer: "", results: [], error: "provider failed" },
+		],
+	});
+}
+
+test("get_search_content lists the entries of a multi-URL or multi-query response called without an index", async () => {
+	const tool = getContentTool();
+	storeMultiFetch();
+	storeMultiSearch();
+
+	const urls = await tool.execute("call", { responseId: "multi-fetch" });
+	assert.equal(urls.isError, undefined);
+	assert.equal(urls.content[0].text, [
+		'responseId "multi-fetch" holds 3 stored URLs. Pass urlIndex to read one, or findText to search all of them.',
+		"0: First — https://example.com/first (13 chars)",
+		"1: Second — https://example.com/second (28 chars)",
+		"2: https://example.com/broken (error: HTTP 500)",
+	].join("\n"));
+
+	const queries = await tool.execute("call", { responseId: "multi-search" });
+	assert.equal(queries.isError, undefined);
+	assert.match(queries.content[0].text, /^responseId "multi-search" holds 3 stored queries\. Pass queryIndex to read one/);
+	assert.match(queries.content[0].text, /\n0: "taiwan news" \(\d+ chars\)\n1: "japan news" \(\d+ chars\)\n2: "korea news" \(error: provider failed\)$/);
+});
+
+test("get_search_content runs findText across every entry when no index is given", async () => {
+	const tool = getContentTool();
+	storeMultiFetch();
+	storeMultiSearch();
+
+	const urls = await tool.execute("call", { responseId: "multi-fetch", findText: "needle" });
+	assert.equal(urls.isError, undefined);
+	assert.equal(urls.details.matchCount, 1);
+	assert.match(urls.content[0].text, /## urlIndex 1: Second — https:\/\/example\.com\/second\n\nText matches \(case-insensitive\)/);
+	assert.match(urls.content[0].text, /second content with a needle/);
+	assert.match(urls.content[0].text, /No matches in urlIndex 0\./);
+	assert.match(urls.content[0].text, /Not searched \(failed\): urlIndex 2 \(HTTP 500\)\./);
+
+	const queries = await tool.execute("call", { responseId: "multi-search", findText: ["Asia", "Tokyo"], findMode: "exact" });
+	assert.equal(queries.isError, undefined);
+	assert.equal(queries.details.matchCount, 3);
+	assert.match(queries.content[0].text, /## queryIndex 0: "taiwan news"\n\nText matches \(exact\)[\s\S]*Asia market/);
+	assert.match(queries.content[0].text, /## queryIndex 1: "japan news"\n\nText matches \(exact\)[\s\S]*Tokyo summary/);
+});
+
+test("get_search_content keeps multi-entry lists and findText results within maxInlineContentChars", () => {
+	const agentDir = mkdtempSync(join(tmpdir(), "pi-web-access-multi-entry-"));
+	writeFileSync(join(agentDir, "web-search.json"), JSON.stringify({ maxInlineContentChars: 1000 }));
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			import initializeExtension from ${JSON.stringify(new URL("../index.ts", import.meta.url).href)};
+			import { storeResult } from ${JSON.stringify(new URL("../storage.ts", import.meta.url).href)};
+			const page = (i) => ({ url: "https://example.com/page-" + i + "-" + "p".repeat(40), title: "Page " + i, content: "pad ".repeat(30) + "needle" + " pad".repeat(30), error: null });
+			storeResult("many", { id: "many", type: "fetch", timestamp: Date.now(), urls: Array.from({ length: 60 }, (_, i) => page(i)) });
+			storeResult("matches", { id: "matches", type: "fetch", timestamp: Date.now(), urls: [
+				...Array.from({ length: 4 }, (_, i) => page(i)),
+				{ url: "https://example.com/broken", title: "", content: "", error: "HTTP 500 " + "e".repeat(200) },
+			] });
+			const tools = [];
+			initializeExtension({ registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {}, on() {}, appendEntry() {} });
+			const tool = tools.find(t => t.name === "get_search_content");
+			const list = await tool.execute("call", { responseId: "many" });
+			const find = await tool.execute("call", { responseId: "matches", findText: "needle" });
+			console.log(JSON.stringify({ list: list.content[0].text, find: find.content[0].text, findDetails: find.details }));
+		`,
+		encoding: "utf8",
+		env: { ...process.env, PI_CODING_AGENT_DIR: agentDir },
+	});
+	assert.equal(child.status, 0, child.stderr);
+	const { list, find, findDetails } = JSON.parse(child.stdout);
+
+	assert.ok(list.length <= 1000, `list is ${list.length} chars`);
+	assert.match(list, /^responseId "many" holds 60 stored URLs\./);
+	const shown = list.split("\n").filter(line => /^\d+: Page /.test(line)).length;
+	assert.ok(shown > 0 && shown < 60);
+	assert.ok(list.endsWith(`\n${60 - shown} more not listed (urlIndex ${shown}-59).`));
+
+	assert.ok(find.length <= 1000, `findText result is ${find.length} chars`);
+	assert.match(find, /## urlIndex 0: Page 0/);
+	assert.match(find, /Not searched \(failed\): urlIndex 4 \(HTTP 500 e+\)\./);
+	assert.match(find, /Matches in urlIndex (\d, )*3 omitted to stay under 1000 chars; repeat with urlIndex to read them\.$/);
+	assert.equal(findDetails.matchCount, 4);
+	assert.ok(findDetails.returnedMatches > 0 && findDetails.returnedMatches < 4);
+});
+
+test("get_search_content reads a single-query search without query or queryIndex", async () => {
+	const tool = getContentTool();
+	storeSearchContent();
+
+	const result = await tool.execute("call", { responseId: "search-result" });
+	assert.equal(result.isError, undefined);
+	assert.equal(result.details.query, "CotEditor scripts");
+	assert.match(result.content[0].text, /ScriptManager\.swift/);
 });
 
 test("get_search_content normalizes bridge defaults for search matches", async () => {
