@@ -275,3 +275,18 @@ test("a custom provider's key never appears in its error", async () => {
 	assert.match(output.error, /mysearch API error 401: invalid key \[redacted\]/);
 	assert.ok(!output.error.includes(KEY));
 });
+
+test("an invalid header value is reported without the key", async () => {
+	const home = await createHome({ customSearchProviders: { mysearch: { ...recipe("searchapi"), apiKeyPrefix: "Bearer \n" } } });
+	const output = runChild(`
+		globalThis.fetch = async () => { throw new Error("fetch should not run"); };
+		const { search } = await import(${JSON.stringify(searchModuleUrl)});
+		try {
+			await search("q", { provider: "mysearch" });
+		} catch (err) {
+			console.log(JSON.stringify({ error: err.message }));
+		}
+	`, { PI_CODING_AGENT_DIR: home, SEARCHAPI_API_KEY: KEY });
+	assert.ok(output.error);
+	assert.ok(!output.error.includes(KEY), output.error);
+});

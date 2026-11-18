@@ -159,16 +159,17 @@ export async function searchWithCustomProvider(
 	const url = new URL(config.url);
 	for (const [key, value] of Object.entries(config.query)) url.searchParams.set(key, fill(value, query, count));
 	if (apiKey && config.apiKeyQuery) url.searchParams.set(config.apiKeyQuery, apiKey);
-	// Headers matches names case-insensitively, so a configured "content-type" isn't sent twice.
-	const headers = new Headers({ Accept: "application/json", ...config.headers });
-	if (config.body !== undefined) headers.set("Content-Type", "application/json");
-	if (apiKey && config.apiKeyHeader) headers.set(config.apiKeyHeader, (config.apiKeyPrefix ?? "") + apiKey);
 	const redact = (text: string) => redactCredential(text, apiKey);
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	const timeoutSignal = AbortSignal.timeout(SEARCH_TIMEOUT_MS);
 	let response: Response;
 	let data: unknown;
 	try {
+		// Built inside the try: an invalid header value is quoted, key included, in the error, so it must be redacted.
+		// Headers matches names case-insensitively, so a configured "content-type" isn't sent twice.
+		const headers = new Headers({ Accept: "application/json", ...config.headers });
+		if (config.body !== undefined) headers.set("Content-Type", "application/json");
+		if (apiKey && config.apiKeyHeader) headers.set(config.apiKeyHeader, (config.apiKeyPrefix ?? "") + apiKey);
 		response = await fetchWithCredentialRedirects(url.toString(), {
 			method: config.method,
 			headers,
