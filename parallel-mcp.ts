@@ -8,6 +8,9 @@ import { getWebSearchConfigPath } from "./utils.ts";
 const PARALLEL_MCP_URL = "https://search.parallel.ai/mcp";
 const CONFIG_PATH = getWebSearchConfigPath();
 const REQUEST_TIMEOUT_MS = 60_000;
+// Keyless Parallel returns ~3K chars of excerpts per result and ignores excerpt settings,
+// so the answer keeps as much per result as keyless Exa and Keenable do.
+const MAX_ANSWER_CHARS_PER_RESULT = 500;
 
 interface ParallelMcpResult {
 	content?: Array<{ type?: string; text?: string }>;
@@ -195,7 +198,7 @@ export async function searchWithParallelMcp(query: string, options: ParallelMcpS
 		activityMonitor.logComplete(activityId, 200);
 		const response: SearchResponse = {
 			answer: results.flatMap((result, index) => {
-				const content = excerpts(result).join(" ").trim();
+				const content = excerpts(result).join(" ").replace(/\s+/g, " ").trim().slice(0, MAX_ANSWER_CHARS_PER_RESULT);
 				return content ? [`${content}\nSource: ${result.title || `Source ${index + 1}`} (${result.url})`] : [];
 			}).join("\n\n"),
 			results: results.map((result, index) => ({
