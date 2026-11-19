@@ -1673,7 +1673,7 @@ function standaloneError(error: string): WebToolResult {
 	return { content: [{ type: "text", text: `Error: ${error}` }], details: { error }, isError: true };
 }
 
-// The sum of two usages, keeping an optional split when either reports it (as Pi's own core/usage-totals.ts does).
+// A copy of Pi's core/usage-totals.ts combineUsage, which Pi doesn't export, so the totals match Pi's.
 function combineUsage(first: Usage, second: Usage): Usage {
 	return {
 		input: first.input + second.input,
