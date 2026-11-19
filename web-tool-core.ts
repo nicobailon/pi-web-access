@@ -5,6 +5,7 @@
 // WebToolCoreHost hook. This module must stay free of runtime imports from
 // index.ts, curator/summary/activation modules, and @earendil-works/* packages.
 import { existsSync, readFileSync } from "node:fs";
+import type { Usage } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { KeyId } from "@earendil-works/pi-tui";
 import pLimit from "p-limit";
@@ -645,7 +646,7 @@ export interface WebToolCoreHost {
 	 * their responseId. When omitted, web_search awaits the same fetch before returning. */
 	startBackgroundFetch?(urls: string[], proxy?: string, provided?: ExtractedContent[]): string | null;
 	/** Answers fetch_content mode "answer"; requires the host's model access. */
-	answerFromPage?(request: PageAnswerRequest, extensionContext: ExtensionContext | undefined, signal?: AbortSignal): Promise<{ text: string }>;
+	answerFromPage?(request: PageAnswerRequest, extensionContext: ExtensionContext | undefined, signal?: AbortSignal): Promise<{ text: string; usage?: Usage }>;
 	/** Extraction options every fetch in this host adds (for example direct-image policy). */
 	extractOptions?: Pick<ExtractOptions, "rejectDirectImages">;
 }
@@ -1063,7 +1064,14 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 		});
 	}
 
+	// Answer mode's model calls are reported as the result's usage, so Pi counts them in the session's totals.
 	async function fetchContent(params: FetchContentToolParams, signal?: AbortSignal, call: WebToolCallOptions = {}): Promise<WebToolResult> {
+		const answerUsages: Usage[] = [];
+		const result = await fetchPages(params, signal, call, answerUsages);
+		return answerUsages.length > 0 ? { ...result, usage: answerUsages.reduce(combineUsage) } : result;
+	}
+
+	async function fetchPages(params: FetchContentToolParams, signal: AbortSignal | undefined, call: WebToolCallOptions, answerUsages: Usage[]): Promise<WebToolResult> {
 		const { extensionContext: ctx, onUpdate } = call;
 		let normalized: ReturnType<typeof normalizeFetchContentParams>;
 		try {
@@ -1162,6 +1170,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 							...(options.answerModel ? { model: options.answerModel } : {}),
 							...(images ? { images } : {}),
 						}, ctx, signal);
+						if (answer.usage) answerUsages.push(answer.usage);
 						if (!images) return { ...result, content: answer.text };
 						// The answer replaces the images; the agent does not also receive them.
 						const { frames: _frames, thumbnail: _thumbnail, ...rest } = result;
@@ -1643,6 +1652,30 @@ export interface StandaloneWebToolCore extends WebToolCore {
 
 function standaloneError(error: string): WebToolResult {
 	return { content: [{ type: "text", text: `Error: ${error}` }], details: { error }, isError: true };
+}
+
+// A copy of Pi's core/usage-totals.ts combineUsage, which Pi doesn't export, so the totals match Pi's.
+function combineUsage(first: Usage, second: Usage): Usage {
+	return {
+		input: first.input + second.input,
+		output: first.output + second.output,
+		cacheRead: first.cacheRead + second.cacheRead,
+		cacheWrite: first.cacheWrite + second.cacheWrite,
+		...(first.cacheWrite1h !== undefined || second.cacheWrite1h !== undefined
+			? { cacheWrite1h: (first.cacheWrite1h ?? 0) + (second.cacheWrite1h ?? 0) }
+			: {}),
+		...(first.reasoning !== undefined || second.reasoning !== undefined
+			? { reasoning: (first.reasoning ?? 0) + (second.reasoning ?? 0) }
+			: {}),
+		totalTokens: first.totalTokens + second.totalTokens,
+		cost: {
+			input: first.cost.input + second.cost.input,
+			output: first.cost.output + second.cost.output,
+			cacheRead: first.cost.cacheRead + second.cost.cacheRead,
+			cacheWrite: first.cost.cacheWrite + second.cost.cacheWrite,
+			total: first.cost.total + second.cost.total,
+		},
+	};
 }
 
 // Marks a final tool result as failed (`isError: true`) for both the Pi tools

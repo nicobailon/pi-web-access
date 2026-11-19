@@ -2,6 +2,7 @@
 // MCP server (mcp-server.ts) both drive tools through WebToolCore so tool
 // behavior lives in one place; each host keeps its own schemas and transport.
 
+import type { Usage } from "@earendil-works/pi-ai/compat";
 import type { FindMode } from "./content-find.ts";
 import type { PageExtraction } from "./field-extract.ts";
 import type { RecencyFilter } from "./source-check.ts";
@@ -16,6 +17,8 @@ export interface WebToolResult {
 	isError?: boolean;
 	/** Data for programmatic callers such as Pi codemode scripts; never sent to the model or over MCP. */
 	structuredContent?: WebSearchStructuredContent | FetchContentStructuredContent;
+	/** Combined usage of the model calls the tool made, which Pi adds to the session's totals; absent when it made none. */
+	usage?: Usage;
 }
 
 export type WebSearchStructuredContent = {

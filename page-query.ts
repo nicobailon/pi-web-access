@@ -1,4 +1,4 @@
-import type { complete, Api, Message, Model } from "@earendil-works/pi-ai/compat";
+import type { complete, Api, Message, Model, Usage } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { existsSync, readFileSync } from "node:fs";
 import { findModelWithProviderRouting, isModelInScope } from "./summary-model-scope.ts";
@@ -18,6 +18,8 @@ export interface PageAnswer {
 	inputChars: number;
 	originalInputChars: number;
 	truncated: boolean;
+	/** The answer call's usage, for the tool result's `usage` (Pi's usage accounting). */
+	usage: Usage;
 }
 
 interface AnswerModelSelector {
@@ -178,5 +180,6 @@ export async function answerFromPage(
 		inputChars: pageText.length,
 		originalInputChars: input.pageText.length,
 		truncated,
+		usage: response.usage,
 	};
 }
