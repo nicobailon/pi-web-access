@@ -67,6 +67,22 @@ test("Parallel MCP maps text-block search results", async () => {
 	assert.deepEqual(output.results, [{ title: "Text result", url: "https://example.com/text", snippet: "Result from a text block" }]);
 });
 
+test("Parallel MCP keeps 500 characters per result in the answer and the full excerpts in inline content", async () => {
+	const home = await createHome({});
+	const child = runChild(`
+		const long = ["a".repeat(400), "b".repeat(400)];
+		globalThis.fetch = async () => new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: { structuredContent: { results: [
+			{ title: "Long", url: "https://example.com/long", excerpts: long }
+		] } } }), { status: 200 });
+		const { searchWithParallelMcp } = await import(${JSON.stringify(moduleUrl)});
+		console.log(JSON.stringify(await searchWithParallelMcp("long", { includeContent: true })));
+	`, { PI_CODING_AGENT_DIR: home });
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.equal(output.answer, `${"a".repeat(400)} ${"b".repeat(99)}\nSource: Long (https://example.com/long)`);
+	assert.equal(output.inlineContent[0].content, `${"a".repeat(400)}\n\n${"b".repeat(400)}`);
+});
+
 test("Parallel MCP sends optional Bearer auth and redacts it from errors", async () => {
 	const secret = "parallel-mcp-secret";
 	const home = await createHome({ parallelApiKey: secret });
