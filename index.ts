@@ -1424,7 +1424,7 @@ export default function (pi: ExtensionAPI) {
 		parameters: Type.Object({
 			query: Type.Optional(Type.String()),
 			queries: Type.Optional(Type.Array(Type.String(), { description: "Run concurrently (up to three at a time); vary the angle" })),
-			objective: Type.Optional(Type.String({ description: "Search goal; Exa API only" })),
+			objective: Type.Optional(Type.String({ description: "Goal; Exa API, Parallel" })),
 			numResults: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "Default 5" })),
 			includeContent: Type.Optional(Type.Boolean({ description: "Also fetch full page content" })),
 			recencyFilter: Type.Optional(StringEnum(["day", "week", "month", "year"])),

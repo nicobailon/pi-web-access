@@ -86,7 +86,7 @@ test("explicit Parallel search routes through Parallel API and maps results", as
 			}), { status: 200, headers: { "content-type": "application/json" } });
 		};
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
-		const result = await search("parallel search docs", { provider: "parallel", includeContent: true, numResults: 3, domainFilter: ["docs.parallel.ai", "-example.com"] });
+		const result = await search("parallel search docs", { provider: "parallel", includeContent: true, numResults: 3, domainFilter: ["docs.parallel.ai", "-example.com"], objective: "Parallel's reference for its Search API" });
 		console.log(JSON.stringify({ captured, result }));
 	`,
 		{
@@ -103,6 +103,8 @@ test("explicit Parallel search routes through Parallel API and maps results", as
 		output.captured.headers["x-api-key"],
 		"pk_live_parallel_test_key",
 	);
+	assert.equal(output.captured.body.objective, "Parallel's reference for its Search API");
+	assert.deepEqual(output.captured.body.search_queries, ["parallel search docs"]);
 	assert.deepEqual(output.captured.body.advanced_settings, {
 		max_results: 3,
 		source_policy: {

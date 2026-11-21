@@ -224,7 +224,7 @@ web_search({ queries: ["query 1", "query 2"], workflow: "auto-summary" })
 | Parameter | Description |
 | ----------- | ------------- |
 | `query` / `queries` | Single query or batch of queries |
-| `objective` | The goal this search serves, sent to Exa's API to rank results (max 4096 characters); keyless Exa and other providers ignore it |
+| `objective` | The goal this search serves, in a sentence with enough context to tell what you're after (max 4096 characters). Exa's API uses it to rank results; Parallel (`parallel`, `parallel-mcp`) searches for it with the query as keywords. Keyless Exa and other providers ignore it |
 | `numResults` | Results per query (default: 5, max: 20) |
 | `recencyFilter` | `day`, `week`, `month`, or `year` |
 | `domainFilter` | Limit to domains (prefix with `-` to exclude) |

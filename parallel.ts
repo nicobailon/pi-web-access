@@ -49,6 +49,7 @@ interface V1ExtractResult {
 
 interface ParallelSearchOptions extends SearchOptions {
 	includeContent?: boolean;
+	objective?: string;
 }
 
 let cachedConfig: WebSearchConfig | null = null;
@@ -197,7 +198,7 @@ function buildSearchRequestBody(query: string, options: ParallelSearchOptions = 
 		...(options.recencyFilter ? { after_date: recencyToAfterDate(options.recencyFilter) } : {}),
 	};
 	return {
-		objective: query,
+		objective: options.objective?.trim() || query,
 		search_queries: [query],
 		advanced_settings: {
 			max_results: numResults,

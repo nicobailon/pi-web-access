@@ -35,6 +35,7 @@ interface ParallelMcpExtractResult extends ParallelMcpSearchResult {
 
 interface ParallelMcpSearchOptions extends SearchOptions {
 	includeContent?: boolean;
+	objective?: string;
 }
 
 function requestSignal(signal?: AbortSignal): AbortSignal {
@@ -192,7 +193,7 @@ export async function searchWithParallelMcp(query: string, options: ParallelMcpS
 	const activityId = activityMonitor.logStart({ type: "api", query });
 	try {
 		const searchQuery = buildSearchQuery(query, options);
-		const payload = await callParallelMcp("web_search", { objective: query, search_queries: [searchQuery] }, options.signal);
+		const payload = await callParallelMcp("web_search", { objective: options.objective?.trim() || query, search_queries: [searchQuery] }, options.signal);
 		const maxResults = Math.max(1, Math.min(Math.floor(options.numResults ?? 5), 20));
 		const results = filterResults(getResults(payload), options.domainFilter).slice(0, maxResults);
 		activityMonitor.logComplete(activityId, 200);

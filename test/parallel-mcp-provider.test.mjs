@@ -38,7 +38,7 @@ test("Parallel MCP searches anonymously, maps filters, and supports explicit rou
 		const { searchWithParallelMcp } = await import(${JSON.stringify(moduleUrl)});
 		const direct = await searchWithParallelMcp("docs", { numResults: 2, domainFilter: ["example.com", "-private.docs.example.com"], recencyFilter: "week", includeContent: true });
 		const { search } = await import(${JSON.stringify(searchModuleUrl)});
-		const routed = await search("route", { provider: "auto" });
+		const routed = await search("route", { provider: "auto", objective: " Official docs for the route API " });
 		console.log(JSON.stringify({ calls, direct, routedProvider: routed.provider }));
 	`, { PI_CODING_AGENT_DIR: home });
 	assert.equal(child.status, 0, child.stderr);
@@ -50,6 +50,9 @@ test("Parallel MCP searches anonymously, maps filters, and supports explicit rou
 	assert.match(output.calls[0].body.params.arguments.search_queries[0], /site:example\.com/);
 	assert.match(output.calls[0].body.params.arguments.search_queries[0], /-site:private\.docs\.example\.com/);
 	assert.match(output.calls[0].body.params.arguments.search_queries[0], /past week/);
+	assert.equal(output.calls[0].body.params.arguments.objective, "docs");
+	assert.equal(output.calls[1].body.params.arguments.objective, "Official docs for the route API");
+	assert.deepEqual(output.calls[1].body.params.arguments.search_queries, ["route"]);
 	assert.deepEqual(output.direct.results.map(result => result.url), ["https://docs.example.com/a"]);
 	assert.equal(output.direct.inlineContent[0].content, "Allowed excerpt");
 	assert.equal(output.routedProvider, "parallel-mcp");
