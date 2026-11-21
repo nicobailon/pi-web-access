@@ -378,7 +378,7 @@ export interface FullSearchOptions extends SearchOptions {
 	providerFromConfig?: boolean;
 	includeContent?: boolean;
 	extensionContext?: ExtensionContext;
-	/** Forwarded to providers that understand it (currently Exa); ignored elsewhere. */
+	/** Forwarded to providers that understand them (category: Exa; objective: Exa, Parallel); ignored elsewhere. */
 	category?: string;
 	objective?: string;
 }
