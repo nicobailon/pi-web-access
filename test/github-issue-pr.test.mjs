@@ -396,7 +396,9 @@ test("extractContent returns an actionable GitHub rate-limit result instead of H
 	const result = JSON.parse(child.stdout.split("\n").at(-2));
 	assert.equal(result.status, 403);
 	assert.match(result.error, /rate limit/i);
-	assert.match(result.content, /gh auth login/);
+	assert.match(result.content, /anonymous GitHub API/);
+	assert.match(result.content, /PATH/);
+	assert.doesNotMatch(result.content, /gh auth login/);
 });
 
 test("REST fallback fetches an anchored issue comment outside the first page", async () => {
