@@ -196,6 +196,11 @@ test("browser cookie config validates presets and rejects arbitrary profile path
 	assert.equal(child.status, 0, child.stderr);
 	assert.deepEqual(JSON.parse(child.stdout), { browser: "helium", profile: "Profile 1" });
 
+	await writeFile(configPath, JSON.stringify({ browserCookies: { browser: "Ardia", profile: "Default" } }) + "\n", "utf8");
+	child = runBrowserCookieConfig(home);
+	assert.equal(child.status, 0, child.stderr);
+	assert.deepEqual(JSON.parse(child.stdout), { browser: "ardia", profile: "Default" });
+
 	await writeFile(configPath, JSON.stringify({ chromeProfile: "Profile 1", allowBrowserCookies: true }) + "\n", "utf8");
 	child = runBrowserCookieConfig(home);
 	assert.notEqual(child.status, 0);

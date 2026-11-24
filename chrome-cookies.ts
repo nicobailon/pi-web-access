@@ -69,6 +69,7 @@ const ALL_COOKIE_NAMES = new Set([
 
 const MACOS_BROWSER_CONFIGS: BrowserConfig[] = [
 	{ id: "helium", name: "Helium", baseDir: "Library/Application Support/net.imput.helium", keychainService: "Helium Storage Key", keychainAccount: "Helium" },
+	{ id: "ardia", name: "Ardia", baseDir: "Library/Application Support/com.ardia.browser/Chromium", keychainService: "Ardia Safe Storage", keychainAccount: "Ardia" },
 	{ id: "chrome", name: "Chrome", baseDir: "Library/Application Support/Google/Chrome", keychainService: "Chrome Safe Storage", keychainAccount: "Chrome" },
 	{ id: "brave", name: "Brave", baseDir: "Library/Application Support/BraveSoftware/Brave-Browser", keychainService: "Brave Safe Storage", keychainAccount: "Brave" },
 	{ id: "arc", name: "Arc", baseDir: "Library/Application Support/Arc/User Data", keychainService: "Arc Safe Storage", keychainAccount: "Arc" },
