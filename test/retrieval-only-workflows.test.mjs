@@ -56,12 +56,37 @@ test("summary workflows requested on the call are refused before any search or m
 	const out = run({}, `
 		const review = await webSearch.execute("r", { query: "q", provider: "brave", workflow: "summary-review" }, undefined, undefined, ctx);
 		const auto = await webSearch.execute("a", { query: "q", provider: "brave", workflow: "auto-summary" }, undefined, undefined, ctx);
-		console.log(JSON.stringify({ review: review.content[0].text, auto: auto.content[0].text, searchRequests, modelCalls }));
+		const noUi = await webSearch.execute("n", { query: "q", provider: "brave", workflow: "summary-review" }, undefined, undefined, { ...ctx, hasUI: false });
+		console.log(JSON.stringify({ review: review.content[0].text, auto: auto.content[0].text, noUi: noUi.content[0].text, searchRequests, modelCalls }));
 	`);
 	assert.match(out.review, /Workflow "summary-review" is blocked by the retrieval-only policy/);
 	assert.match(out.auto, /Workflow "auto-summary" is blocked by the retrieval-only policy/);
+	assert.match(out.noUi, /Workflow "summary-review" is blocked by the retrieval-only policy/);
 	assert.deepEqual(out.searchRequests, []);
 	assert.deepEqual(out.modelCalls, []);
+});
+
+test("the policy read at load holds for the whole process, for every route", () => {
+	// Edits web-search.json after the extension loaded, then asks for a model search provider and a summary.
+	const afterEdit = (retrievalOnly) => `
+		const { writeFileSync } = await import("node:fs");
+		writeFileSync(process.env.PI_CODING_AGENT_DIR + "/web-search.json", JSON.stringify({ retrievalOnly: ${retrievalOnly} }));
+		// Pi turns a thrown error into a tool error, so both outcomes are read as text.
+		const text = (params) => webSearch.execute("c", params, undefined, undefined, ctx).then(result => result.content[0].text, err => err.message);
+		const gemini = await text({ query: "q", provider: "gemini" });
+		const auto = await text({ query: "q", provider: "brave", workflow: "auto-summary" });
+		console.log(JSON.stringify({ gemini, auto, modelCalls }));
+	`;
+	const loadedOn = run({ retrievalOnly: true }, afterEdit(false), { PI_WEB_ACCESS_RETRIEVAL_ONLY: "" });
+	assert.match(loadedOn.gemini, /Search provider "gemini" is blocked by the retrieval-only policy \(retrievalOnly: true in /);
+	assert.match(loadedOn.auto, /Workflow "auto-summary" is blocked by the retrieval-only policy/);
+	assert.deepEqual(loadedOn.modelCalls, []);
+
+	// Gemini has no credentials here, so it fails for that reason rather than for the policy.
+	const loadedOff = run({}, afterEdit(true), { PI_WEB_ACCESS_RETRIEVAL_ONLY: "" });
+	assert.doesNotMatch(loadedOff.gemini, /retrieval-only policy/);
+	assert.doesNotMatch(loadedOff.auto, /retrieval-only policy/);
+	assert.ok(loadedOff.modelCalls.length > 0, "the summary the loaded policy allows should run");
 });
 
 test("a saved auto-summary default is dropped: plain results, no model call", () => {

@@ -9,7 +9,7 @@ import { clearCloneCache, releaseClonesUnusedSince, touchClones } from "./github
 import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getAvailableCustomSearchProviders, getConfiguredSearchRouting, parseProviderArgument, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type BuiltinSearchProvider, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
 import { formatSeconds, getWebSearchConfigDir, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
-import { RETRIEVAL_ONLY_DESCRIPTION_SUFFIX, resolveRetrievalOnlyPolicy, retrievalOnlyError } from "./retrieval-only.ts";
+import { getRetrievalOnlyPolicy, RETRIEVAL_ONLY_DESCRIPTION_SUFFIX, retrievalOnlyError } from "./retrieval-only.ts";
 import {
 	deleteHeldResult,
 	generateId,
@@ -742,9 +742,11 @@ function refreshUi(ctx: ExtensionContext): void {
 
 export default function (pi: ExtensionAPI) {
 	const initConfig = loadConfigForExtensionInit();
-	// Outside loadConfigForExtensionInit, which logs config errors instead of throwing: a bad
-	// policy value must stop the extension rather than leave model routes open.
-	const retrievalOnly = resolveRetrievalOnlyPolicy(initConfig);
+	// Fixes the process-wide policy, so definitions and every later check agree. Outside
+	// loadConfigForExtensionInit, which logs config errors instead of throwing: a bad policy value
+	// must stop the extension. An unparseable config leaves {} here (env only); every model route
+	// re-reads that config and fails while it stays broken, and a fixed config applies on restart.
+	const retrievalOnly = getRetrievalOnlyPolicy(initConfig);
 	const retrievalOnlySuffix = retrievalOnly.enabled ? RETRIEVAL_ONLY_DESCRIPTION_SUFFIX : "";
 	const fetchModeConfig = resolveFetchModeConfig(initConfig);
 	const toolActivation = initConfig.toolActivation ?? "auto";
@@ -1460,15 +1462,17 @@ export default function (pi: ExtensionAPI) {
 					? params.queries
 					: (params.query !== undefined ? expandQueryString(params.query) : []);
 				const queryList = normalizeQueryList(rawQueryList);
-				// A saved default only adds a summary on top of the search, so the policy drops it; an explicit request is refused below.
+				// A saved default only adds a summary on top of the search, so the policy drops it; an explicit request is refused.
 				const configWorkflow = retrievalOnly.enabled ? undefined : loadConfigForExtensionInit().workflow;
+				// Checked before resolving, which turns summary-review into none when there is no UI.
+				const requestedWorkflow = typeof params.workflow === "string" ? params.workflow.trim().toLowerCase() : "";
+				if (retrievalOnly.enabled && (requestedWorkflow === "summary-review" || requestedWorkflow === "auto-summary")) {
+					const error = retrievalOnlyError(`Workflow "${requestedWorkflow}"`, retrievalOnly).message;
+					return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
+				}
 				const workflow = nested && params.workflow === undefined
 					? "none"
 					: curatorRunState.resolve(params.workflow, configWorkflow, ctx?.hasUI !== false);
-				if (retrievalOnly.enabled && workflow !== "none") {
-					const error = retrievalOnlyError(`Workflow "${workflow}"`, retrievalOnly).message;
-					return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
-				}
 				const shouldCurate = workflow === "summary-review";
 				const recencyFilter = normalizeRecencyFilter(params.recencyFilter);
 

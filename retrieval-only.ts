@@ -57,7 +57,7 @@ function environmentEnabled(): boolean {
 }
 
 /** Either the environment or the config turns the policy on; neither can turn the other off. */
-export function resolveRetrievalOnlyPolicy(config: { retrievalOnly?: unknown }): RetrievalOnlyPolicy {
+function resolveRetrievalOnlyPolicy(config: { retrievalOnly?: unknown }): RetrievalOnlyPolicy {
 	const path = getWebSearchConfigPath();
 	const fromEnvironment = environmentEnabled();
 	const configured = config.retrievalOnly;
@@ -73,19 +73,24 @@ export function resolveRetrievalOnlyPolicy(config: { retrievalOnly?: unknown }):
 
 let cachedPolicy: RetrievalOnlyPolicy | undefined;
 
-/** Reads the config itself, so an unparseable config fails the call instead of dropping a config-set policy. */
-export function getRetrievalOnlyPolicy(): RetrievalOnlyPolicy {
+/**
+ * One policy per process: the first successful read fixes it, as tool definitions are fixed at load.
+ * Pi init and the MCP core pass the config they already parsed; other first readers parse the file and
+ * throw on an unparseable one without caching. A config edited after load takes effect on restart.
+ */
+export function getRetrievalOnlyPolicy(config?: { retrievalOnly?: unknown }): RetrievalOnlyPolicy {
 	if (cachedPolicy) return cachedPolicy;
+	if (config) return cachedPolicy = resolveRetrievalOnlyPolicy(config);
 	const path = getWebSearchConfigPath();
-	let config: unknown = {};
+	let parsed: unknown = {};
 	if (existsSync(path)) {
 		try {
-			config = JSON.parse(readFileSync(path, "utf-8"));
+			parsed = JSON.parse(readFileSync(path, "utf-8"));
 		} catch (err) {
 			throw new Error(`Failed to parse ${path}: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
-	return cachedPolicy = resolveRetrievalOnlyPolicy(isRecord(config) ? config : {});
+	return cachedPolicy = resolveRetrievalOnlyPolicy(isRecord(parsed) ? parsed : {});
 }
 
 export function retrievalOnlyError(route: string, policy = getRetrievalOnlyPolicy()): Error {

@@ -26,7 +26,7 @@ import {
 import { isOpenAISearchAvailable } from "./openai-search.ts";
 import type { SearchResult } from "./perplexity.ts";
 import { getWebSearchConfigPath, runWithProxy } from "./utils.ts";
-import { getRetrievalOnlyPolicy, resolveRetrievalOnlyPolicy, retrievalOnlyError, retrievalOnlyExhaustedError } from "./retrieval-only.ts";
+import { getRetrievalOnlyPolicy, retrievalOnlyError, retrievalOnlyExhaustedError } from "./retrieval-only.ts";
 import { deleteResult, generateId, getResult, storeResult, type QueryResultData, type StoredSearchData } from "./storage.ts";
 import {
 	buildResearchArtifact,
@@ -169,7 +169,7 @@ export function resolveFetchModeConfig(config: WebSearchConfig): FetchModeConfig
 		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must not contain duplicates: "${duplicateMode}"`);
 	}
 	let defaultMode = config.fetch?.defaultMode ?? "readable";
-	const policy = resolveRetrievalOnlyPolicy(config);
+	const policy = getRetrievalOnlyPolicy(config);
 	if (policy.enabled) {
 		const retrievalModes = allowedModes.filter(mode => !MODEL_FETCH_MODES.includes(mode));
 		if (retrievalModes.length === 0) throw retrievalOnlyExhaustedError("fetch mode", allowedModes, policy);
@@ -1751,7 +1751,7 @@ function standaloneFetchRejection(params: FetchContentCallParams, fetchModes: Fe
  * live in a bounded in-memory store; includeContent waits for the page fetch. */
 export function createStandaloneWebToolCore(): StandaloneWebToolCore {
 	const config = loadConfig();
-	getRetrievalOnlyPolicy(); // Fails at load, not on the first call, when the policy is misconfigured.
+	getRetrievalOnlyPolicy(config); // Fixes the policy at load, and fails here when it is misconfigured.
 	const settings: WebToolCoreSettings = {
 		toolNames: { ...DEFAULT_TOOL_NAMES },
 		enabledTools: {
