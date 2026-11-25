@@ -2648,7 +2648,7 @@ export default function (pi: ExtensionAPI) {
 				const attempted = formatCookieAttempts(diagnosticDetails?.attempts ?? []);
 				const text = diagnostic
 					? `Gemini Web is unavailable: ${diagnostic}${attempted ? ` Attempted browser profiles: ${attempted}.` : ""}`
-					: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser.";
+					: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true.";
 				pi.sendMessage({
 					customType: "google-account",
 					content: [{ type: "text", text }],

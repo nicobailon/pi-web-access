@@ -754,7 +754,7 @@ export async function extractContent(
 		try {
 			const result = await extractVideo(localVideo.info, signal, options);
 			if (signal?.aborted) return abortedResult(url);
-			return result ?? { url, title: "", content: "", error: `Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in Chrome (free, uses cookies)\n  2. Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}` };
+			return result ?? { url, title: "", content: "", error: `Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH} (free, uses cookies)\n  2. Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}` };
 		} catch (err) {
 			if (isAbortError(err)) return abortedResult(url);
 			return { url, title: "", content: "", error: errorMessage(err) };
@@ -1164,7 +1164,7 @@ export async function extractContent(
 		`  • Set exaApiKey in ${WEB_SEARCH_CONFIG_PATH} or EXA_API_KEY and add "exa" to fetchRouting.providers`,
 		`  • Set tabstackApiKey in ${WEB_SEARCH_CONFIG_PATH} or TABSTACK_API_KEY and add "tabstack" to fetchRouting.providers`,
 		// Gemini page fetching is a model route, so it is no way forward under the retrieval-only policy.
-		...(getRetrievalOnlyPolicy().enabled ? [] : [`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`, "  • Sign into gemini.google.com in Chrome"]),
+		...(getRetrievalOnlyPolicy().enabled ? [] : [`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`, `  • Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH}`]),
 		...(searchToolName ? [`  • Use ${searchToolName} to find content about this topic`] : []),
 	].join("\n");
 	return { ...(finalHttpResult ?? { url, title: "", content: "", error: null }), error: guidance };

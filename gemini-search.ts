@@ -604,7 +604,7 @@ async function searchWithResolvedProvider(
 			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
 			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 			"  3. Set geminiAuth to \"adc\" in web-search.json with a Google Cloud ADC + project/location\n" +
-			"  4. Sign into gemini.google.com in a supported Chromium-based browser",
+			"  4. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true",
 		);
 	}
 	return { ...(await searchWithExa(query, options)), provider };
@@ -965,7 +965,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		`  2. Set openaiApiKey, braveApiKey, parallelApiKey, tinyfishApiKey, searchinfinityApiKey, queritApiKey, tavilyApiKey, firecrawlBaseUrl, jinaApiKey, kagiApiKey, ollamaApiKey, searxngBaseUrl, perplexityApiKey, exaApiKey, geminiApiKey, bochaApiKey, or cloudflareApiKey in ${CONFIG_PATH}\n` +
 		"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TINYFISH_API_KEY, SEARCHINFINITY_API_KEY, QUERIT_API_KEY, TAVILY_API_KEY, FIRECRAWL_BASE_URL, JINA_API_KEY, KAGI_API_KEY, BOCHA_API_KEY, OLLAMA_API_KEY, SEARXNG_BASE_URL, EXA_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, or CLOUDFLARE_API_KEY env vars\n" +
 		"  4. Set GOOGLE_GEMINI_BASE_URL with CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
-		"  5. Sign into gemini.google.com in a supported Chromium-based browser\n" +
+		"  5. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true\n" +
 		"  6. Explicitly select provider: \"anysearch\" for anonymous AnySearch, \"xai\" for Grok, \"mistral\" for Mistral Conversations web search, \"you\" for You.com, \"zai\" for Z.ai GLM Coding Plan search, \"valyu\" for research search, \"keenable\" for keyless Keenable search, \"ceramic\" for Ceramic search, \"deepseek\" for DeepSeek search, \"linkup\" for Linkup search, \"ninerouter\" for a 9router gateway, \"cloudflare\" for the Cloudflare Web Search API, \"tabstack\" for Tabstack Research, or a custom provider from customSearchProviders"
 	);
 }
