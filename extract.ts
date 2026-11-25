@@ -1337,7 +1337,8 @@ async function extractViaHttp(
 		const domainPolicy = loadFetchContentDomainPolicy();
 		const redirects = options?.redirects ?? loadFetchContentRedirectPolicy();
 		const authProfile = options?.authFetchProfile;
-		// Auth fetches keep Node's fetch, so browser cookies never appear in a command line.
+		// Auth fetches never run the configured curl command. With a proxy they still go through the
+		// proxy's curl transport, which passes headers (the cookie too) in a private file, not argv.
 		const curl = authProfile ? null : loadFetchContentCurl();
 		// Through curl only a configured User-Agent is sent, so curl-impersonate keeps its browser User-Agent.
 		const userAgent = curl ? loadConfiguredFetchContentUserAgent() : loadFetchContentUserAgent();

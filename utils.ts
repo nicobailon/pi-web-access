@@ -550,6 +550,7 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 	const headerFile = join(dir, "headers");
 	const bodyFile = join(dir, "body");
 	const requestBodyFile = join(dir, "request-body");
+	const requestHeaderFile = join(dir, "request-headers");
 
 	const args: string[] = [
 		"--silent",
@@ -573,9 +574,11 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 	else if (method !== "GET") args.push("-X", method);
 	if (maxBytes !== undefined) args.push("--max-filesize", String(maxBytes));
 
+	// Header values (cookies, API keys) go through a file in the private dir, never argv, which other processes can read.
+	const headerLines: string[] = [];
 	for (const [name, value] of headers.entries()) {
 		if (value === "") continue;
-		args.push("-H", `${name}: ${value}`);
+		headerLines.push(`${name}: ${value}`);
 	}
 
 	const body = init.body;
@@ -591,7 +594,11 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 		if (method === "GET") args.unshift("-X", "GET");
 	} else if ((method === "POST" || method === "PUT") && !headers.has("content-length")) {
 		// Native fetch sends a zero length for a bodyless POST/PUT; some origins answer 411 without it.
-		args.push("-H", "Content-Length: 0");
+		headerLines.push("Content-Length: 0");
+	}
+	if (headerLines.length > 0) {
+		await writeFile(requestHeaderFile, `${headerLines.join("\n")}\n`, { mode: 0o600 });
+		args.push("-H", `@${requestHeaderFile}`);
 	}
 
 	args.push(url.toString());
