@@ -50,6 +50,7 @@ import { isKimiSearchAvailable, searchWithKimi } from "./kimi-search.ts";
 import { isMistralAvailable, searchWithMistral } from "./mistral-search.ts";
 import { isCustomSearchProviderAvailable, parseCustomSearchProviders, searchWithCustomProvider, type CustomSearchProviderConfig } from "./custom-search.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
+import { getRetrievalOnlyPolicy, isModelSearchProvider, retrievalOnlyError, retrievalOnlyExhaustedError } from "./retrieval-only.ts";
 
 export const RESOLVED_SEARCH_PROVIDERS = ["openai", "brave", "parallel", "parallel-mcp", "tinyfish", "searchinfinity", "querit", "tavily", "you", "firecrawl", "jina", "searxng", "degoog", "duckduckgo", "perplexity", "gemini", "kimi", "exa", "kagi", "ollama", "anysearch", "xai", "mistral", "valyu", "bocha", "baizhi", "zai", "keenable", "ceramic", "deepseek", "linkup", "ninerouter", "cloudflare", "tabstack"] as const;
 // Former built-in providers. Naming one fails with a pointer to its custom-provider recipe
@@ -169,12 +170,20 @@ function getSearchConfig(): SearchConfig {
 	if (webSearch !== undefined && (!webSearch || typeof webSearch !== "object" || Array.isArray(webSearch))) {
 		throw new Error(`webSearch in ${CONFIG_PATH} must be an object`);
 	}
-	const allowedProviders = webSearch && Object.hasOwn(webSearch, "allowedProviders")
+	let allowedProviders = webSearch && Object.hasOwn(webSearch, "allowedProviders")
 		? normalizeResolvedProviderList((webSearch as Record<string, unknown>).allowedProviders, `webSearch.allowedProviders in ${CONFIG_PATH}`, customProviders)
 		: undefined;
 	const searchProviderConfigured = Object.hasOwn(raw, "searchProvider") || Object.hasOwn(raw, "provider");
 	const searchProvider = normalizeSearchProviderSelection(raw.searchProvider ?? raw.provider, `provider in ${CONFIG_PATH}`, customProviders);
-	const searchRouting = Object.hasOwn(raw, "searchRouting") ? normalizeSearchRouting(raw.searchRouting, customProviders) : undefined;
+	let searchRouting = Object.hasOwn(raw, "searchRouting") ? normalizeSearchRouting(raw.searchRouting, customProviders) : undefined;
+	if (getRetrievalOnlyPolicy().enabled) {
+		// A configured provider chooses where queries go, so naming a model is refused; lists are narrowed.
+		for (const key of ["searchProvider", "provider"] as const) {
+			if (Object.hasOwn(raw, key)) assertNoModelSearchProviders(normalizeSearchProviderSelection(raw[key], "provider", customProviders), `${key} in ${CONFIG_PATH}`);
+		}
+		if (allowedProviders) allowedProviders = withoutModelProviders(allowedProviders);
+		if (searchRouting) searchRouting = { ...searchRouting, providers: withoutModelProviders(searchRouting.providers) };
+	}
 	if (allowedProviders) {
 		if (Object.hasOwn(raw, "searchProvider")) {
 			assertSearchProviderSelectionAllowed(normalizeSearchProviderSelection(raw.searchProvider, "provider", customProviders), `searchProvider in ${CONFIG_PATH}`, allowedProviders);
@@ -287,6 +296,7 @@ export function assertSearchProviderSelectionAllowed(
 	label = "provider",
 	allowedProviders = getSearchConfig().allowedProviders,
 ): void {
+	assertNoModelSearchProviders(selection);
 	if (!allowedProviders) return;
 	const requested = Array.isArray(selection)
 		? selection
@@ -299,7 +309,23 @@ export function assertSearchProviderSelectionAllowed(
 
 export function getAllowedSearchProviders(): readonly ResolvedSearchProvider[] {
 	const config = getSearchConfig();
-	return config.allowedProviders ?? [...RESOLVED_SEARCH_PROVIDERS, ...config.customProviders.keys() as Iterable<CustomSearchProvider>];
+	const providers = config.allowedProviders ?? [...RESOLVED_SEARCH_PROVIDERS, ...config.customProviders.keys() as Iterable<CustomSearchProvider>];
+	return getRetrievalOnlyPolicy().enabled ? providers.filter(provider => !isModelSearchProvider(provider)) : providers;
+}
+
+function assertNoModelSearchProviders(selection: SearchProviderSelection, origin?: string): void {
+	const policy = getRetrievalOnlyPolicy();
+	if (!policy.enabled) return;
+	const blocked = (Array.isArray(selection) ? selection : [selection]).filter(isModelSearchProvider);
+	if (blocked.length === 0) return;
+	const names = blocked.map(provider => JSON.stringify(provider)).join(", ");
+	throw retrievalOnlyError(`Search provider${blocked.length > 1 ? "s" : ""} ${names}${origin ? ` set by ${origin}` : ""}`, policy);
+}
+
+function withoutModelProviders(providers: ResolvedSearchProvider[]): ResolvedSearchProvider[] {
+	const kept = providers.filter(provider => !isModelSearchProvider(provider));
+	if (kept.length === 0) throw retrievalOnlyExhaustedError("search", providers);
+	return kept;
 }
 
 export function getCustomSearchProviderNames(): string[] {
@@ -680,6 +706,9 @@ async function searchWithProviders(
 			: await isResolvedProviderAvailable(provider, options),
 	})))).filter((entry) => entry.available).map((entry) => entry.provider);
 	if (providers.length === 0) {
+		if (!selectedProviders && getRetrievalOnlyPolicy().enabled) {
+			throw retrievalOnlyExhaustedError("search", ALL_SEARCH_PROVIDERS.filter(isModelSearchProvider));
+		}
 		throw new Error("No configured search provider available for provider \"all\". Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, xAI, Mistral, You.com, Valyu, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, Linkup, 9router, Cloudflare, Tabstack, and custom providers are excluded.");
 	}
 
@@ -862,7 +891,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		firstEmpty ??= response;
 		return null;
 	};
-	const allowed = new Set(config.allowedProviders ?? RESOLVED_SEARCH_PROVIDERS);
+	const allowed = new Set(getAllowedSearchProviders());
 	const attempt = async (provider: ResolvedSearchProvider): Promise<AttributedSearchResponse | null> => {
 		if (!allowed.has(provider) || !(await isResolvedProviderAvailable(provider, options))) return null;
 		try {
@@ -916,6 +945,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (fallbackErrors.length > 0) {
 		throw new Error(`Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`);
 	}
+	if (getRetrievalOnlyPolicy().enabled) throw retrievalOnlyExhaustedError("search", ["openai", "gemini"]);
 
 	throw new Error(
 		"No search provider available. Either:\n" +

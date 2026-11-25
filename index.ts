@@ -9,6 +9,7 @@ import { clearCloneCache, releaseClonesUnusedSince, touchClones } from "./github
 import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getAvailableCustomSearchProviders, getConfiguredSearchRouting, parseProviderArgument, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type BuiltinSearchProvider, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
 import { formatSeconds, getWebSearchConfigDir, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
+import { resolveRetrievalOnlyPolicy } from "./retrieval-only.ts";
 import {
 	deleteHeldResult,
 	generateId,
@@ -741,6 +742,9 @@ function refreshUi(ctx: ExtensionContext): void {
 
 export default function (pi: ExtensionAPI) {
 	const initConfig = loadConfigForExtensionInit();
+	// Outside loadConfigForExtensionInit, which logs config errors instead of throwing: a bad
+	// policy value must stop the extension rather than leave model routes open.
+	const retrievalOnly = resolveRetrievalOnlyPolicy(initConfig);
 	const fetchModeConfig = resolveFetchModeConfig(initConfig);
 	const toolActivation = initConfig.toolActivation ?? "auto";
 	if (toolActivation !== "auto" && toolActivation !== "dynamic" && toolActivation !== "eager" && toolActivation !== "none") {
@@ -757,7 +761,7 @@ export default function (pi: ExtensionAPI) {
 		throw new Error(`toolActivation "none" in ${WEB_SEARCH_CONFIG_PATH} requires toolExposure "deferred"`);
 	}
 	const allowedSearchProviders = initConfig.webSearch?.allowedProviders === undefined ? RESOLVED_SEARCH_PROVIDERS : getAllowedSearchProviders();
-	const modelProviders = allowedSearchProviders.filter(provider => provider === "openai" || provider === "xai" || provider === "mistral" || provider === "gemini");
+	const modelProviders = retrievalOnly.enabled ? [] : allowedSearchProviders.filter(provider => provider === "openai" || provider === "xai" || provider === "mistral" || provider === "gemini");
 	// Depends on config only, never on credentials, so definitions stay byte-stable across environments.
 	const providerDescription = `auto, all, a name, or comma-separated names; omit for the configured default.${initConfig.webSearch?.allowedProviders === undefined ? "" : ` Allowed: ${allowedSearchProviders.join(", ")}.`}`;
 	const curatorRunState = registerCuratorRunLifecycle(pi);

@@ -26,6 +26,7 @@ import {
 import { isOpenAISearchAvailable } from "./openai-search.ts";
 import type { SearchResult } from "./perplexity.ts";
 import { getWebSearchConfigPath, runWithProxy } from "./utils.ts";
+import { getRetrievalOnlyPolicy } from "./retrieval-only.ts";
 import { deleteResult, generateId, getResult, storeResult, type QueryResultData, type StoredSearchData } from "./storage.ts";
 import {
 	buildResearchArtifact,
@@ -90,6 +91,7 @@ export interface WebSearchConfig {
 	summaryGenerationDeadlineMs?: unknown;
 	summaryInstructions?: unknown;
 	maxInlineContentChars?: unknown;
+	retrievalOnly?: unknown;
 	fetch?: {
 		defaultMode?: unknown;
 		allowedModes?: unknown;
@@ -1733,6 +1735,7 @@ function standaloneFetchRejection(params: FetchContentCallParams, fetchModes: Fe
  * live in a bounded in-memory store; includeContent waits for the page fetch. */
 export function createStandaloneWebToolCore(): StandaloneWebToolCore {
 	const config = loadConfig();
+	getRetrievalOnlyPolicy(); // Fails at load, not on the first call, when the policy is misconfigured.
 	const settings: WebToolCoreSettings = {
 		toolNames: { ...DEFAULT_TOOL_NAMES },
 		enabledTools: {
