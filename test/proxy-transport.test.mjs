@@ -896,7 +896,9 @@ test("GCE metadata server hosts always bypass proxy transport", (t) => {
 	assert.equal(isProxyBypassedUrl(new URL("https://example.com/page")), false);
 });
 
-test("real curl reads an env proxy with quotes, backslashes and line breaks as one proxy value", async (t) => {
+test("real curl reads an env proxy with quotes, backslashes and line breaks as one proxy value", {
+	skip: spawnSync("curl", ["--version"], { stdio: "ignore" }).status === 0 ? false : "requires curl on PATH",
+}, async (t) => {
 	const requests = [];
 	const proxyServer = createServer((req, res) => {
 		requests.push({ url: req.url, auth: req.headers["proxy-authorization"] ?? null });
