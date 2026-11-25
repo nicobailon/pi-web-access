@@ -532,7 +532,7 @@ export function loadSessionResults(ctx: ExtensionContext): StoredSearchData[] {
 			const data = entry.data;
 			if (isValidStoredData(data) && now - data.timestamp < CACHE_TTL_MS) {
 				// Another live session may hold this result with its fetched content in memory after a
-				// failed cache write; the journal copy only points at the disk cache.
+				// failed cache write; the journal copy holds only metadata.
 				const live = storedResults.get(data.id);
 				if (live) {
 					loaded.push(live);
