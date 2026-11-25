@@ -862,9 +862,10 @@ export default function (pi: ExtensionAPI) {
 				} satisfies FetchedContentData;
 				publish(storeFetchedContentResult(fetchId, data));
 				const ok = fetched.filter(f => !f.error).length;
-				const availability = ok === fetched.length
+				const availabilityStatus = ok === fetched.length ? "full" : ok > 0 ? "partial" : "none";
+				const availability = availabilityStatus === "full"
 					? "Full page content now available."
-					: ok > 0
+					: availabilityStatus === "partial"
 						? "Partial page content now available."
 						: "No page content was fetched. Stored fetch diagnostics are available.";
 				pi.sendMessage(
@@ -872,6 +873,12 @@ export default function (pi: ExtensionAPI) {
 						customType: "web-search-content-ready",
 						content: `Content fetched for ${ok}/${fetched.length} URLs [${fetchId}]. ${availability}`,
 						display: true,
+						details: {
+							fetchId,
+							successfulUrls: ok,
+							totalUrls: fetched.length,
+							availability: availabilityStatus,
+						},
 					},
 					{ triggerTurn: true },
 				);

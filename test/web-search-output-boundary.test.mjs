@@ -225,7 +225,7 @@ test("background includeContent keeps provider page content and fetches only unc
 			const pi = {
 				registerTool(tool) { tools.push(tool); }, registerCommand() {}, registerShortcut() {},
 				on(event, handler) { handlers.set(event, handler); }, appendEntry() {},
-				sendMessage(message) { if (message.customType === "web-search-content-ready") notify(message.content); },
+				sendMessage(message) { if (message.customType === "web-search-content-ready") notify(message); },
 			};
 			const initializeExtension = (await import(${JSON.stringify(indexUrl)})).default;
 			initializeExtension(pi);
@@ -243,7 +243,13 @@ test("background includeContent keeps provider page content and fetches only unc
 		});
 		assert.equal(child.status, 0, child.stderr);
 		const out = JSON.parse(child.stdout.trim().split("\n").at(-1));
-		assert.equal(out.message, `Content fetched for 1/2 URLs [${out.fetchId}]. Partial page content now available.`);
+		assert.equal(out.message.content, `Content fetched for 1/2 URLs [${out.fetchId}]. Partial page content now available.`);
+		assert.deepEqual(out.message.details, {
+			fetchId: out.fetchId,
+			successfulUrls: 1,
+			totalUrls: 2,
+			availability: "partial",
+		});
 		assert.deepEqual(out.requests.filter(url => url !== "https://api.anysearch.com/v1/search"), ["http://93.184.216.34/uncovered"]);
 		assert.match(out.pages[0], /^Error retrieving URL "http:\/\/93\.184\.216\.34\/uncovered"/);
 		assert.match(out.pages[1], /^# Provided\n\nprovider page body/);
