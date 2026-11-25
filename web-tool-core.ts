@@ -26,6 +26,7 @@ import {
 import { isOpenAISearchAvailable } from "./openai-search.ts";
 import type { SearchResult } from "./perplexity.ts";
 import { getWebSearchConfigPath, runWithProxy } from "./utils.ts";
+import { getRetrievalOnlyPolicy, retrievalOnlyError, retrievalOnlyExhaustedError } from "./retrieval-only.ts";
 import { deleteResult, generateId, getResult, storeResult, type QueryResultData, type StoredSearchData } from "./storage.ts";
 import {
 	buildResearchArtifact,
@@ -90,6 +91,7 @@ export interface WebSearchConfig {
 	summaryGenerationDeadlineMs?: unknown;
 	summaryInstructions?: unknown;
 	maxInlineContentChars?: unknown;
+	retrievalOnly?: unknown;
 	fetch?: {
 		defaultMode?: unknown;
 		allowedModes?: unknown;
@@ -153,18 +155,28 @@ export type FetchMode = typeof FETCH_MODES[number];
 export type FetchModeConfig = { defaultMode: FetchMode; allowedModes: FetchMode[] };
 // Extract sends page text to Cloudflare, so it is offered only when fetch.allowedModes lists it.
 const DEFAULT_FETCH_MODES: FetchMode[] = ["readable", "raw", "answer"];
+// Answer and extract send page content to a model.
+const MODEL_FETCH_MODES: readonly FetchMode[] = ["answer", "extract"];
 
 export function resolveFetchModeConfig(config: WebSearchConfig): FetchModeConfig {
 	const configuredModes = config.fetch?.allowedModes ?? DEFAULT_FETCH_MODES;
 	if (!Array.isArray(configuredModes) || configuredModes.length === 0 || configuredModes.some(mode => !FETCH_MODES.includes(mode as FetchMode))) {
 		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must be a non-empty array containing only "readable", "raw", "answer", or "extract"`);
 	}
-	const allowedModes = configuredModes as FetchMode[];
+	let allowedModes = configuredModes as FetchMode[];
 	const duplicateMode = allowedModes.find((mode, index) => allowedModes.indexOf(mode) !== index);
 	if (duplicateMode) {
 		throw new Error(`fetch.allowedModes in ${WEB_SEARCH_CONFIG_PATH} must not contain duplicates: "${duplicateMode}"`);
 	}
-	const defaultMode = config.fetch?.defaultMode ?? "readable";
+	let defaultMode = config.fetch?.defaultMode ?? "readable";
+	const policy = getRetrievalOnlyPolicy(config);
+	if (policy.enabled) {
+		const retrievalModes = allowedModes.filter(mode => !MODEL_FETCH_MODES.includes(mode));
+		if (retrievalModes.length === 0) throw retrievalOnlyExhaustedError("fetch mode", allowedModes, policy);
+		// A model default only adds processing on top of the fetch, so it falls back instead of failing.
+		if (MODEL_FETCH_MODES.includes(defaultMode as FetchMode)) defaultMode = retrievalModes.includes("readable") ? "readable" : retrievalModes[0];
+		allowedModes = retrievalModes;
+	}
 	if (defaultMode === "extract") {
 		throw new Error(`fetch.defaultMode in ${WEB_SEARCH_CONFIG_PATH} cannot be "extract", because extract needs fields on each call`);
 	}
@@ -1083,7 +1095,9 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 		const { urlList, options } = normalized;
 		const mode = options.mode ?? fetchModeConfig.defaultMode;
 		if (!fetchModeConfig.allowedModes.includes(mode)) {
-			const error = `Fetch mode "${mode}" is disabled by fetch.allowedModes.`;
+			const error = MODEL_FETCH_MODES.includes(mode) && getRetrievalOnlyPolicy().enabled
+				? retrievalOnlyError(`Fetch mode "${mode}"`).message
+				: `Fetch mode "${mode}" is disabled by fetch.allowedModes.`;
 			return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
 		}
 		// Aggregate all validation problems instead of failing on the first
@@ -1720,6 +1734,10 @@ async function standaloneProviderRejection(requested: unknown): Promise<string |
 }
 
 function standaloneFetchRejection(params: FetchContentCallParams, fetchModes: FetchModeConfig): string | undefined {
+	// The policy names the real reason; the MCP limits below would only say "not supported here".
+	if (MODEL_FETCH_MODES.includes(params.mode as FetchMode) && getRetrievalOnlyPolicy().enabled) {
+		return retrievalOnlyError(`Fetch mode "${params.mode}"`).message;
+	}
 	if (params.mode === "answer") {
 		return "fetch_content mode \"answer\" is not supported over MCP: page answers use Pi's models. Use mode \"readable\" or \"raw\".";
 	}
@@ -1733,6 +1751,7 @@ function standaloneFetchRejection(params: FetchContentCallParams, fetchModes: Fe
  * live in a bounded in-memory store; includeContent waits for the page fetch. */
 export function createStandaloneWebToolCore(): StandaloneWebToolCore {
 	const config = loadConfig();
+	getRetrievalOnlyPolicy(config); // Fixes the policy at load, and fails here when it is misconfigured.
 	const settings: WebToolCoreSettings = {
 		toolNames: { ...DEFAULT_TOOL_NAMES },
 		enabledTools: {

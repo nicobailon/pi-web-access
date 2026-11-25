@@ -2,6 +2,7 @@ import type { complete, Api, Model, ProviderHeaders } from "@earendil-works/pi-a
 import { resolveThinkingLevel, type SummaryGenerationContext } from "./summary-review.ts";
 import { awaitWithAbort } from "./abortable.ts";
 import { findModelWithProviderRouting, isModelInScope, resolveHelperModelSelector, type SummaryThinkingLevel } from "./summary-model-scope.ts";
+import { getRetrievalOnlyPolicy, retrievalOnlyError } from "./retrieval-only.ts";
 
 async function resolveFirstAvailableModel(
 	ctx: SummaryGenerationContext,
@@ -37,6 +38,7 @@ export async function rewriteSearchQuery(
 	signal: AbortSignal,
 	modelSelector?: string,
 ): Promise<string> {
+	if (getRetrievalOnlyPolicy().enabled) throw retrievalOnlyError("Query rewrite");
 	const { model, apiKey, headers, thinkingLevel }: Awaited<ReturnType<typeof resolveConfiguredModel>> = modelSelector === undefined
 		? await resolveFirstAvailableModel(ctx, [
 			{ provider: "anthropic", id: "claude-haiku-4-5" },
