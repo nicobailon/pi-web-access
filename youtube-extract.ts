@@ -7,6 +7,7 @@ import { isGeminiApiAvailableWithVideo, queryGeminiApiWithVideo } from "./gemini
 import { askPerplexity, isPerplexityAvailable } from "./perplexity.ts";
 import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.ts";
 import { formatSeconds, readExecError, isTimeoutError, trimErrorText, mapFfmpegError, getWebSearchConfigPath, FRAME_SCALE_FILTER } from "./utils.ts";
+import { getRetrievalOnlyPolicy, retrievalOnlyError } from "./retrieval-only.ts";
 
 const CONFIG_PATH = getWebSearchConfigPath();
 
@@ -100,6 +101,8 @@ export async function extractYouTube(
 	prompt?: string,
 	model?: string,
 ): Promise<ExtractedContent | null> {
+	// Every route below (Gemini Web, Gemini API, Perplexity Sonar) has a model watch the video.
+	if (getRetrievalOnlyPolicy().enabled) throw retrievalOnlyError("YouTube video analysis");
 	const config = loadYouTubeConfig();
 	const { videoId } = isYouTubeURL(url);
 	const canonicalUrl = videoId

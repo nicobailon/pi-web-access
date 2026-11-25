@@ -6,6 +6,7 @@ import type { SearchOptions, SearchResponse } from "./perplexity.ts";
 import { normalizeSearchResultCount } from "./search-result-count-normalization.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { fetchWithCredentialRedirects, getWebSearchConfigPath, resolveApiBaseUrl } from "./utils.ts";
+import { getRetrievalOnlyPolicy } from "./retrieval-only.ts";
 
 const TAVILY_API_BASE_URL = "https://api.tavily.com";
 const CONFIG_PATH = getWebSearchConfigPath();
@@ -164,7 +165,8 @@ export async function searchWithTavily(query: string, options: TavilySearchOptio
 		query,
 		search_depth: "basic",
 		max_results: numResults,
-		include_answer: "basic",
+		// Tavily writes this answer with a model, which the retrieval-only policy rules out.
+		include_answer: getRetrievalOnlyPolicy().enabled ? false : "basic",
 		include_raw_content: options.includeContent ? "markdown" : false,
 		...(options.recencyFilter ? { time_range: options.recencyFilter } : {}),
 		...mapDomainFilter(options.domainFilter),

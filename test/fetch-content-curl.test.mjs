@@ -15,7 +15,9 @@ const fakeCurl = join(fakeCurlDir, "fake-curl.cjs");
 await writeFile(fakeCurl, `
 const fs = require("node:fs");
 const args = process.argv.slice(2);
-fs.appendFileSync(process.env.FAKE_CURL_LOG, JSON.stringify(args) + "\\n");
+// Header files are deleted after curl exits, so record what they held.
+const sent = args.flatMap((arg, index) => args[index - 1] !== "-H" ? [] : arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8").split("\\n").filter(Boolean) : [arg]);
+fs.appendFileSync(process.env.FAKE_CURL_LOG, JSON.stringify({ args, headers: sent }) + "\\n");
 const valueAfter = (flag) => args[args.indexOf(flag) + 1];
 const url = args[args.length - 1];
 const route = JSON.parse(process.env.FAKE_CURL_ROUTES)[url];
@@ -57,7 +59,10 @@ async function runExtract(config, { url = "https://example.com/article", options
 		assert.equal(child.status, 0, child.stderr);
 		const output = JSON.parse(child.stdout.trim().split("\n").at(-1));
 		const calls = await readFile(log, "utf8").then(
-			(text) => text.trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)),
+			(text) => text.trim().split("\n").filter(Boolean).map((line) => {
+				const { args, headers } = JSON.parse(line);
+				return Object.assign(args, { headers });
+			}),
 			() => [],
 		);
 		return { ...output, calls };
@@ -67,7 +72,7 @@ async function runExtract(config, { url = "https://example.com/article", options
 }
 
 function headerValues(args) {
-	return args.flatMap((arg, index) => (arg === "-H" ? [args[index + 1]] : []));
+	return args.headers;
 }
 
 test("fetchContent.curl sends the page fetch through the command without the default User-Agent", async () => {
