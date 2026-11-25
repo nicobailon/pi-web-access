@@ -173,7 +173,19 @@ test("missing cache files return an actionable fetched-content error", async () 
 	assert.match(missing.content[0].text, /Cached fetched content is missing or expired/);
 });
 
-test("cache pruning reclaims expired in-memory fetch payloads without changing the retrieval window or history", async () => {
+test("a fetched page the cache evicted reads as missing in the same session", async () => {
+	await useTempAgentDir();
+	const sessionEntry = storeFetchedContentResult("evicted", fetchedData("evicted", "evicted payload"));
+	assert.equal(getResult("evicted").urls[0].content, "evicted payload");
+	rmSync(join(getFetchCacheDir(), sessionEntry.fetchCache.key), { force: true });
+
+	const missing = getResult("evicted");
+	assert.equal(missing.urls[0].content, "");
+	assert.equal(missing.urls[0].error, "Cached fetched content is missing or expired");
+	assert.equal(missing.urls[0].url, "https://example.com/evicted");
+});
+
+test("cache pruning expires fetched results without changing the retrieval window or history", async () => {
 	await useTempAgentDir();
 	const startedAt = originalDateNow();
 	const ttl = 60 * 60 * 1000;
@@ -189,7 +201,6 @@ test("cache pruning reclaims expired in-memory fetch payloads without changing t
 
 	Date.now = () => startedAt + ttl - 1;
 	pruneExpiredFetchCache();
-	assert.equal(getAllResults().find((data) => data.id === "expired").urls[0].content, "expired payload");
 	assert.equal(getResult("expired").urls[0].content, "expired payload");
 	assert.ok(readdirSync(getFetchCacheDir()).includes(sessionEntry.fetchCache.key));
 	storeFetchedContentResult("fresh", fetchedData("fresh", "fresh payload"));
@@ -197,14 +208,14 @@ test("cache pruning reclaims expired in-memory fetch payloads without changing t
 	Date.now = () => startedAt + ttl;
 	pruneExpiredFetchCache();
 	assert.equal(readdirSync(getFetchCacheDir()).includes(sessionEntry.fetchCache.key), false);
-	// Inspect the map before getResult can lazily expire the payload itself.
+	// Inspect the map: pruning itself marks the result expired, before any getResult call.
 	const results = getAllResults();
 	assert.equal(results.length, 4);
 	const expired = results.find((data) => data.id === "expired");
 	assert.equal(expired.urls[0].content, "");
 	assert.equal(expired.urls[0].error, "Cached fetched content is missing or expired");
 	assert.deepEqual(expired.urlMetadata, sessionEntry.urlMetadata);
-	assert.equal(results.find((data) => data.id === "fresh").urls[0].content, "fresh payload");
+	assert.equal(getResult("fresh").urls[0].content, "fresh payload");
 	assert.equal(results.find((data) => data.id === "search"), search);
 	assert.equal(results.find((data) => data.id === "research"), research);
 	assert.equal(JSON.stringify(sessionEntry), sessionSnapshot);
@@ -216,13 +227,13 @@ test("storing a later fetch reclaims expired in-memory payloads before retrieval
 	const startedAt = originalDateNow();
 	const ttl = 60 * 60 * 1000;
 	Date.now = () => startedAt;
-	storeFetchedContentResult("earlier", fetchedData("earlier", "earlier payload"));
+	// An invalid cache id fails the cache write, so the payload stays in memory.
+	assert.ok(storeFetchedContentResult("earlier/id", fetchedData("earlier/id", "earlier payload")).fetchCacheError);
 
 	Date.now = () => startedAt + ttl;
 	storeFetchedContentResult("later", fetchedData("later", "later payload"));
-	const results = getAllResults();
-	assert.equal(results.find((data) => data.id === "earlier").urls[0].content, "");
-	assert.equal(results.find((data) => data.id === "later").urls[0].content, "later payload");
+	assert.equal(getAllResults().find((data) => data.id === "earlier/id").urls[0].content, "");
+	assert.equal(getResult("later").urls[0].content, "later payload");
 });
 
 test("cache pruning reclaims expired inline payloads even without a disk cache", async () => {
