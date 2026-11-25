@@ -17,7 +17,8 @@ const fs = require("node:fs");
 const args = process.argv.slice(2);
 // Header files are deleted after curl exits, so record what they held.
 const sent = args.flatMap((arg, index) => args[index - 1] !== "-H" ? [] : arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8").split("\\n").filter(Boolean) : [arg]);
-fs.appendFileSync(process.env.FAKE_CURL_LOG, JSON.stringify({ args, headers: sent }) + "\\n");
+const proxy = args.includes("-K") ? JSON.parse(fs.readFileSync(args[args.indexOf("-K") + 1], "utf8").match(/^proxy = (".*")$/m)[1]) : null;
+fs.appendFileSync(process.env.FAKE_CURL_LOG, JSON.stringify({ args, headers: sent, proxy }) + "\\n");
 const valueAfter = (flag) => args[args.indexOf(flag) + 1];
 const url = args[args.length - 1];
 const route = JSON.parse(process.env.FAKE_CURL_ROUTES)[url];
@@ -60,8 +61,8 @@ async function runExtract(config, { url = "https://example.com/article", options
 		const output = JSON.parse(child.stdout.trim().split("\n").at(-1));
 		const calls = await readFile(log, "utf8").then(
 			(text) => text.trim().split("\n").filter(Boolean).map((line) => {
-				const { args, headers } = JSON.parse(line);
-				return Object.assign(args, { headers });
+				const { args, headers, proxy } = JSON.parse(line);
+				return Object.assign(args, { headers, proxy });
 			}),
 			() => [],
 		);
@@ -81,8 +82,8 @@ test("fetchContent.curl sends the page fetch through the command without the def
 	assert.equal(output.calls.length, 1);
 	const args = output.calls[0];
 	assert.equal(args.at(-1), "https://example.com/article");
-	// An empty -x keeps curl off proxy environment variables, as Node's fetch is.
-	assert.equal(args[args.indexOf("-x") + 1], "", JSON.stringify(args));
+	// An empty proxy keeps curl off proxy environment variables, as Node's fetch is.
+	assert.equal(args.proxy, "", JSON.stringify(args));
 	const headers = headerValues(args);
 	assert.ok(!headers.some((header) => /^user-agent:/i.test(header)), JSON.stringify(headers));
 	assert.ok(headers.some((header) => /^accept: text\/html/i.test(header)), JSON.stringify(headers));
@@ -103,7 +104,7 @@ for (const [proxy, expected] of [
 		assert.deepEqual(output.nodeFetches, []);
 		assert.equal(output.calls.length, 1);
 		const args = output.calls[0];
-		assert.equal(args[args.indexOf("-x") + 1], expected);
+		assert.equal(args.proxy, expected);
 	});
 }
 
@@ -148,11 +149,11 @@ test("fetchContent.curl uses the configured proxy, and an empty per-call proxy c
 	const config = { proxy: "http://proxy.test:8080", fetchContent: { curl: curlCommand } };
 	const proxied = await runExtract(config, { options: { mode: "raw" }, configuredProxyScope: true });
 	const args = proxied.calls[0];
-	assert.equal(args[args.indexOf("-x") + 1], "http://proxy.test:8080/");
+	assert.equal(args.proxy, "http://proxy.test:8080/");
 	assert.deepEqual(proxied.nodeFetches, []);
 
 	const direct = await runExtract(config, { options: { mode: "raw", proxy: "" }, configuredProxyScope: true });
-	assert.equal(direct.calls[0][direct.calls[0].indexOf("-x") + 1], "", JSON.stringify(direct.calls[0]));
+	assert.equal(direct.calls[0].proxy, "", JSON.stringify(direct.calls[0]));
 });
 
 test("a curl download that fails partway is an error, not a short page", async () => {
@@ -179,7 +180,7 @@ test("with ssrf.trustEnvProxy, fetchContent.curl goes through the env proxy that
 		env: { HTTP_PROXY: "http://proxy.corp:3128", NO_PROXY: "" },
 	});
 	const args = output.calls[0];
-	assert.equal(args[args.indexOf("-x") + 1], "http://proxy.corp:3128", JSON.stringify(args));
+	assert.equal(args.proxy, "http://proxy.corp:3128", JSON.stringify(args));
 	assert.equal(args[args.indexOf("--noproxy") + 1], "", JSON.stringify(args));
 	assert.equal(output.result.content, "curl body");
 
@@ -189,7 +190,7 @@ test("with ssrf.trustEnvProxy, fetchContent.curl goes through the env proxy that
 		options: { mode: "raw" },
 		env: { HTTP_PROXY: "http://proxy.corp:3128", NO_PROXY: "" },
 	});
-	assert.equal(literal.calls[0][literal.calls[0].indexOf("-x") + 1], "", JSON.stringify(literal.calls[0]));
+	assert.equal(literal.calls[0].proxy, "", JSON.stringify(literal.calls[0]));
 });
 
 test("curl stops a download over the size limit and the fetch fails as too large", async () => {

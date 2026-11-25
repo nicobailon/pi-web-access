@@ -41,7 +41,8 @@ const routes = JSON.parse(process.env.PI_PROXY_TEST_ROUTES);
 const args = process.argv.slice(2);
 // Header files are deleted after curl exits, so record what they held.
 const headers = args.flatMap((arg, index) => args[index - 1] !== "-H" ? [] : arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8").split("\\n").filter(Boolean) : [arg]);
-fs.appendFileSync(process.env.PI_PROXY_TEST_LOG, JSON.stringify({ args, headers }) + "\\n");
+const proxy = args.includes("-K") ? JSON.parse(fs.readFileSync(args[args.indexOf("-K") + 1], "utf8").match(/^proxy = (".*")$/m)[1]) : null;
+fs.appendFileSync(process.env.PI_PROXY_TEST_LOG, JSON.stringify({ args, headers, proxy }) + "\\n");
 function valueAfter(flag) {
   const index = args.indexOf(flag);
   return index === -1 ? null : args[index + 1];
@@ -83,8 +84,8 @@ async function readCurlCalls(logPath) {
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => {
-			const { args, headers } = JSON.parse(line);
-			return Object.assign(args, { headers });
+			const { args, headers, proxy } = JSON.parse(line);
+			return Object.assign(args, { headers, proxy });
 		});
 }
 
@@ -117,8 +118,7 @@ function registerFetchContent() {
 }
 
 function proxyArg(args) {
-	const index = args.indexOf("-x");
-	return index === -1 ? undefined : args[index + 1];
+	return args.proxy;
 }
 
 test("proxy normalization preserves default HTTP(S) ports for curl", () => {
@@ -312,17 +312,18 @@ test("extension initialization preserves fetch identity and installs proxy trans
 	});
 });
 
-test("proxy curl gets request headers from a file, never its command line", async (t) => {
+test("proxy curl gets request headers and the proxy URL from files, never its command line", async (t) => {
 	await withFakeCurl(t, {
 		"https://origin.example/private": { status: 200, statusText: "OK", body: "ok" },
 	}, async (logPath) => {
-		const response = await runWithProxy("http://proxy.example:8080", () => fetch("https://origin.example/private", {
+		const response = await runWithProxy("http://user:proxy-secret@proxy.example:8080", () => fetch("https://origin.example/private", {
 			headers: { Cookie: "session=cookie-secret", Authorization: "Bearer token-secret" },
 		}));
 
 		assert.equal(await response.text(), "ok");
 		const [args] = await readCurlCalls(logPath);
-		assert.ok(args.every((arg) => !/cookie-secret|token-secret/.test(arg)), JSON.stringify(args));
+		assert.ok(args.every((arg) => !/cookie-secret|token-secret|proxy-secret/.test(arg)), JSON.stringify(args));
+		assert.equal(args.proxy, "http://user:proxy-secret@proxy.example:8080/");
 		assert.ok(args.headers.includes("cookie: session=cookie-secret"), JSON.stringify(args.headers));
 		assert.ok(args.headers.includes("authorization: Bearer token-secret"), JSON.stringify(args.headers));
 	});
