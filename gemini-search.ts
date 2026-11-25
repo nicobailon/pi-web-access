@@ -202,7 +202,7 @@ function getSearchConfig(): SearchConfig {
 		...(searchRouting ? { searchRouting } : {}),
 		...(searchModel ? { searchModel } : {}),
 		...(allowedProviders ? { allowedProviders } : {}),
-		...(allowedBeforePolicy && allowedBeforePolicy !== allowedProviders ? { allowedBeforePolicy } : {}),
+		...(allowedBeforePolicy ? { allowedBeforePolicy } : {}),
 		customProviders,
 	};
 	return cachedSearchConfig;
@@ -329,7 +329,7 @@ function assertNoModelSearchProviders(selection: SearchProviderSelection, origin
 function modelProvidersSkippedByPolicy(candidates: readonly ResolvedSearchProvider[]): ResolvedSearchProvider[] {
 	if (!getRetrievalOnlyPolicy().enabled) return [];
 	const config = getSearchConfig();
-	const configured: readonly ResolvedSearchProvider[] = config.allowedBeforePolicy ?? config.allowedProviders ?? RESOLVED_SEARCH_PROVIDERS;
+	const configured: readonly ResolvedSearchProvider[] = config.allowedBeforePolicy ?? RESOLVED_SEARCH_PROVIDERS;
 	return candidates.filter(provider => isModelSearchProvider(provider) && configured.includes(provider));
 }
 

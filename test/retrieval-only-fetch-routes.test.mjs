@@ -69,6 +69,7 @@ test("the Gemini fetch provider is dropped from routing, and a Gemini-only route
 	assertNoModelCall(mixed);
 	assert.ok(mixed.calls.includes("https://example.com/page"));
 	assert.match(mixed.error, /403/);
+	assert.doesNotMatch(mixed.error, /GEMINI_API_KEY|gemini\.google\.com/);
 });
 
 test("YouTube and local video analysis are refused, while local frames still take the frame path", () => {

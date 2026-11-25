@@ -1,6 +1,6 @@
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, type KeyId } from "@earendil-works/pi-tui";
-import { Type, type TOptional, type TString } from "typebox";
+import { Type, type TOptional, type TString, type TUnsafe } from "typebox";
 import type { ExtractedContent } from "./extract.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
 import { answerFromPage } from "./page-query.ts";
@@ -1438,11 +1438,14 @@ export default function (pi: ExtensionAPI) {
 			category: Type.Optional(Type.String({ description: "Exa only, e.g. news" })),
 			...(modelProviders.length > 0 ? { model: Type.Optional(Type.String({ description: `Model ID; needs provider ${modelProviders.join(", ")}` })) } : {}) as { model: TOptional<TString> },
 			provider: Type.Optional(Type.String({ description: providerDescription })),
-			workflow: Type.Optional(
-				StringEnum(["none", "summary-review", "auto-summary"], {
-					description: "Default none; summary-review opens the curator",
-				}),
-			),
+			// Both non-default workflows write a summary with a model, so the policy leaves nothing to choose.
+			...(retrievalOnly.enabled ? {} : {
+				workflow: Type.Optional(
+					StringEnum(["none", "summary-review", "auto-summary"], {
+						description: "Default none; summary-review opens the curator",
+					}),
+				),
+			}) as { workflow: TOptional<TUnsafe<"none" | "summary-review" | "auto-summary">> },
 			proxy: Type.Optional(Type.String({ description: "Proxy URL; omit by default; \"\" forces direct" })),
 		}),
 		outputSchema: webSearchOutputSchema,
@@ -2013,11 +2016,14 @@ export default function (pi: ExtensionAPI) {
 			url: Type.Optional(Type.String()),
 			urls: Type.Optional(Type.Array(Type.String())),
 			forceClone: Type.Optional(Type.Boolean({ description: "Clone GitHub repos over the size limit" })),
-			prompt: Type.Optional(Type.String({
-				description: fetchModeConfig.allowedModes.includes("answer")
-					? "Question for video analysis or answer mode"
-					: "Question for video analysis",
-			})),
+			// prompt and model only steer model routes (answer mode, video analysis), which the policy closes.
+			...(retrievalOnly.enabled ? {} : {
+				prompt: Type.Optional(Type.String({
+					description: fetchModeConfig.allowedModes.includes("answer")
+						? "Question for video analysis or answer mode"
+						: "Question for video analysis",
+				})),
+			}) as { prompt: TOptional<TString> },
 			mode: Type.Optional(StringEnum(fetchModeConfig.allowedModes, {
 				description: `${fetchModeDescription}.`,
 			})),
@@ -2039,7 +2045,7 @@ export default function (pi: ExtensionAPI) {
 				maximum: 12,
 				description: "Frames over a range, 5s apart from one time, or over the video",
 			})),
-			model: Type.Optional(Type.String({ description: "Gemini model for video analysis" })),
+			...(retrievalOnly.enabled ? {} : { model: Type.Optional(Type.String({ description: "Gemini model for video analysis" })) }) as { model: TOptional<TString> },
 			auth: Type.Optional(Type.Union([Type.String(), Type.Boolean()], {
 				description: "authFetch profile name, or true for the only one",
 			})),

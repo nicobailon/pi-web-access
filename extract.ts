@@ -1163,8 +1163,8 @@ export async function extractContent(
 		`  • Set deepseekApiKey in ${WEB_SEARCH_CONFIG_PATH} or DEEPSEEK_API_KEY and add "deepseek" to fetchRouting.providers`,
 		`  • Set exaApiKey in ${WEB_SEARCH_CONFIG_PATH} or EXA_API_KEY and add "exa" to fetchRouting.providers`,
 		`  • Set tabstackApiKey in ${WEB_SEARCH_CONFIG_PATH} or TABSTACK_API_KEY and add "tabstack" to fetchRouting.providers`,
-		`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`,
-		"  • Sign into gemini.google.com in Chrome",
+		// Gemini page fetching is a model route, so it is no way forward under the retrieval-only policy.
+		...(getRetrievalOnlyPolicy().enabled ? [] : [`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`, "  • Sign into gemini.google.com in Chrome"]),
 		...(searchToolName ? [`  • Use ${searchToolName} to find content about this topic`] : []),
 	].join("\n");
 	return { ...(finalHttpResult ?? { url, title: "", content: "", error: null }), error: guidance };

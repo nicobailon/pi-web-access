@@ -50,8 +50,8 @@ test("Pi fetch_content offers only readable and raw, refuses model modes, and de
 		const properties = tool.parameters.properties;
 		console.log(JSON.stringify({
 			enum: properties.mode.enum,
-			modelParams: ["answerModel", "fields"].filter(key => Object.hasOwn(properties, key)),
-			advertised: JSON.stringify([tool.promptSnippet, properties.mode.description, properties.prompt.description]),
+			modelParams: ["answerModel", "fields", "prompt"].filter(key => Object.hasOwn(properties, key)),
+			advertised: JSON.stringify([tool.promptSnippet, properties.mode.description]),
 			answer: answer.content[0].text,
 			extract: extract.content[0].text,
 			refusedFetchCalls,
