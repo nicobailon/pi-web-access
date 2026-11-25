@@ -384,3 +384,36 @@ test("Firecrawl extraction errors remain visible in fetch_content guidance", asy
 	const output = JSON.parse(child.stdout.trim());
 	assert.match(output.error, /Firecrawl fallback failed: Firecrawl scrape error 502/);
 });
+
+test("an origin 404 scraped by Firecrawl ends in the not-found result, not page content", async () => {
+	const child = runChild(`
+		let calls = [];
+		globalThis.fetch = async (url) => {
+			calls.push(String(url));
+			if (calls.length === 1) return new Response("missing", { status: 404 });
+			return new Response(JSON.stringify({ success: true, data: { markdown: "# Page not found", metadata: { title: "Page Not Found", statusCode: 404 } } }), { status: 200 });
+		};
+		const { extractContent } = await import(${JSON.stringify(extractModuleUrl)});
+		const result = await extractContent("https://example.com/blog/how-to-abort-a-rebase", undefined, { lookup: ${PUBLIC_LOOKUP} });
+		console.log(JSON.stringify({ calls, result }));
+	`, { FIRECRAWL_BASE_URL: "https://crawl.example.com" });
+	assert.equal(child.status, 0, child.stderr);
+	const output = JSON.parse(child.stdout.trim());
+	assert.deepEqual(output.calls, ["https://example.com/blog/how-to-abort-a-rebase", "https://crawl.example.com/v2/scrape"]);
+	assert.equal(output.result.status, 404);
+	assert.doesNotMatch(output.result.content, /Page not found/);
+	assert.match(output.result.error, /The origin server says this page does not exist \(HTTP 404\)/);
+});
+
+test("Firecrawl extraction says where a redirected page was read from", async () => {
+	const child = runChild(`
+		globalThis.fetch = async () => new Response(JSON.stringify({ success: true, data: { markdown: "Sign in", metadata: { title: "Sign in", statusCode: 200, url: "https://example.com/users/sign_in" } } }), { status: 200 });
+		const { extractWithFirecrawl } = await import(${JSON.stringify(firecrawlModuleUrl)});
+		const result = await extractWithFirecrawl("https://example.com/pricing", undefined, { lookup: ${PUBLIC_LOOKUP} });
+		console.log(JSON.stringify(result));
+	`, { FIRECRAWL_BASE_URL: "https://crawl.example.com" });
+	assert.equal(child.status, 0, child.stderr);
+	const result = JSON.parse(child.stdout.trim());
+	assert.equal(result.url, "https://example.com/pricing");
+	assert.equal(result.content, "*[Redirected: Firecrawl read this page from https://example.com/users/sign_in]*\n\nSign in");
+});

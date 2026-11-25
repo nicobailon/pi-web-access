@@ -48,7 +48,7 @@ interface FirecrawlPageMetadata {
 interface FirecrawlScrapeData {
 	title?: unknown;
 	markdown?: unknown;
-	metadata?: { title?: unknown } & FirecrawlPageMetadata;
+	metadata?: { title?: unknown; statusCode?: unknown; url?: unknown } & FirecrawlPageMetadata;
 }
 
 interface FirecrawlSearchItem {
@@ -444,11 +444,33 @@ export async function extractWithFirecrawl(
 	if (typeof scrape.markdown !== "string") {
 		throw new Error("Firecrawl scrape returned markdown in an unexpected shape");
 	}
+	// Firecrawl scrapes the origin's own error page with success: true, so its status decides whether this is a read.
+	const originStatus = scrape.metadata?.statusCode;
+	if (typeof originStatus === "number" && originStatus >= 400) {
+		// No URL in the message: extract.ts treats any error mentioning "abort" as a cancel.
+		throw new Error(`Firecrawl got HTTP ${originStatus} from the site`);
+	}
 	const content = scrape.markdown.trim();
 	if (!content) return null;
 	const metadataTitle = scrape.metadata?.title;
 	const title = typeof metadataTitle === "string" && metadataTitle.trim()
 		? metadataTitle.trim()
 		: typeof scrape.title === "string" ? scrape.title.trim() : "";
-	return { url, title, content: withPdfTruncationNotice(content, scrape.metadata), error: null };
+	const finalUrl = redirectedUrl(url, scrape.metadata?.url);
+	const page = withPdfTruncationNotice(content, scrape.metadata);
+	return { url, title, content: finalUrl ? `*[Redirected: Firecrawl read this page from ${finalUrl}]*\n\n${page}` : page, error: null };
+}
+
+function redirectedUrl(requested: string, final: unknown): string | null {
+	if (typeof final !== "string") return null;
+	try {
+		const requestedUrl = new URL(requested);
+		const finalUrl = new URL(final);
+		// Firecrawl drops the fragment and may normalize the URL; only a different page counts as a redirect.
+		requestedUrl.hash = "";
+		finalUrl.hash = "";
+		return requestedUrl.href === finalUrl.href ? null : finalUrl.href;
+	} catch {
+		return null;
+	}
 }

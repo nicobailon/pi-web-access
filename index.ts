@@ -210,10 +210,10 @@ const DEFAULT_REMOTE_CURATOR_TIMEOUT_SECONDS = 60;
 const MAX_CURATOR_TIMEOUT_SECONDS = 600;
 const MAX_SUMMARY_GENERATION_DEADLINE_MS = 600_000;
 const FETCH_MODE_DESCRIPTIONS: Record<FetchMode, string> = {
-	readable: "extract readable content as markdown",
-	raw: "return the exact textual body using direct HTTP only",
-	answer: "answer a prompt using only fetched content",
-	extract: "read typed values named in fields",
+	readable: "main text as markdown",
+	raw: "exact text body, direct HTTP only; no video or clone options",
+	answer: "answer a prompt from fetched content only; no auth",
+	extract: "read typed values named in fields; no auth",
 };
 
 // Keep primary query indexes stable for curator slots, then interleave additional
@@ -862,9 +862,10 @@ export default function (pi: ExtensionAPI) {
 				} satisfies FetchedContentData;
 				publish(storeFetchedContentResult(fetchId, data));
 				const ok = fetched.filter(f => !f.error).length;
-				const availability = ok === fetched.length
+				const availabilityStatus = ok === fetched.length ? "full" : ok > 0 ? "partial" : "none";
+				const availability = availabilityStatus === "full"
 					? "Full page content now available."
-					: ok > 0
+					: availabilityStatus === "partial"
 						? "Partial page content now available."
 						: "No page content was fetched. Stored fetch diagnostics are available.";
 				pi.sendMessage(
@@ -872,6 +873,12 @@ export default function (pi: ExtensionAPI) {
 						customType: "web-search-content-ready",
 						content: `Content fetched for ${ok}/${fetched.length} URLs [${fetchId}]. ${availability}`,
 						display: true,
+						details: {
+							fetchId,
+							successfulUrls: ok,
+							totalUrls: fetched.length,
+							availability: availabilityStatus,
+						},
 					},
 					{ triggerTurn: true },
 				);

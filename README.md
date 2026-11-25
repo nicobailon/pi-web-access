@@ -262,14 +262,14 @@ fetch_content({ url: "https://example.com/diagram.png" })
 | ----------- | ------------- |
 | `url` / `urls` | Single URL/path or multiple URLs |
 | `prompt` | Question for video analysis, or the page-local question required by `mode: "answer"` |
-| `mode` | `readable` (default), `raw` for exact textual HTTP bodies, `answer` for a grounded answer from fetched content, or `extract` for typed values (off unless `fetch.allowedModes` lists it) |
+| `mode` | `readable` (default), `raw` for exact textual HTTP bodies, `answer` for a grounded answer from fetched content, or `extract` for typed values (off unless `fetch.allowedModes` lists it). `raw` can't be combined with `forceClone`, `prompt`, `model`, `answerModel`, `timestamp`, or `frames` |
 | `fields` | For `mode: "extract"`: field name → `"type"` or `"type: what to find"`, such as `"date: release date of the latest stable version"` |
 | `answerModel` | Optional `provider/model-id` override for answer mode; defaults to the configured `fetch.answerProvider` + `fetch.answerModel` pair, or the current enabled Pi model when no pair is configured |
 | `timestamp` | Extract frame(s): single (`"1:23:45"`, `"23:41"`, or seconds `"85"`) or range (`"23:41-25:00"`, 6 evenly spaced frames by default; useful when you only know roughly where something happens). Needs `ffmpeg`, plus `yt-dlp` for YouTube |
 | `frames` | Number of frames (1-12): spread across a `timestamp` range, 5 seconds apart from a single `timestamp`, or across the whole video when used alone |
 | `model` | Gemini model for video and YouTube analysis (default: config, else `gemini-3.6-flash`) |
 | `forceClone` | Clone GitHub repos that exceed the 350MB size threshold |
-| `auth` | `authFetch` profile name for local browser-cookie fetching, or `true` when exactly one profile exists. See [Blocked pages](#blocked-pages) |
+| `auth` | `authFetch` profile name for local browser-cookie fetching, or `true` when exactly one profile exists. Works with `readable` and `raw`; `answer` and `extract` refuse it, so logged-in page text never goes to a hosted model. See [Blocked pages](#blocked-pages) |
 | `proxy` | Proxy URL for this fetch; `""` forces a direct connection. Rejected when `lockProxy` is set, unless it matches the configured proxy. See [Proxy](#proxy-proxy) |
 | `redirects` | `"same-origin"` refuses redirects that change the scheme, hostname, or port. See `fetchContent.redirects` |
 

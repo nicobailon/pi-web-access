@@ -80,7 +80,7 @@ export const MCP_TOOL_DEFINITIONS: readonly McpToolDefinition[] = [
 		inputSchema: Type.Object({
 			url: Type.Optional(Type.String()),
 			urls: Type.Optional(Type.Array(Type.String())),
-			mode: Type.Optional(stringEnum(["readable", "raw"], "readable (default): extract readable content as markdown; raw: return the exact textual body using direct HTTP only")),
+			mode: Type.Optional(stringEnum(["readable", "raw"], "readable (default): main text as markdown; raw: exact text body, direct HTTP only; no forceClone")),
 			forceClone: Type.Optional(Type.Boolean({ description: "Clone GitHub repos over the size limit" })),
 			proxy: Type.Optional(proxySchema),
 		}, { additionalProperties: false }),
