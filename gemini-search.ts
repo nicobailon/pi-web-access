@@ -139,6 +139,8 @@ type SearchConfig = {
 	searchRouting?: SearchRoutingConfig;
 	searchModel?: string;
 	allowedProviders?: ResolvedSearchProvider[];
+	/** webSearch.allowedProviders as configured, before the retrieval-only policy narrowed it. */
+	allowedBeforePolicy?: ResolvedSearchProvider[];
 	customProviders: Map<string, CustomSearchProviderConfig>;
 };
 
@@ -176,6 +178,7 @@ function getSearchConfig(): SearchConfig {
 	const searchProviderConfigured = Object.hasOwn(raw, "searchProvider") || Object.hasOwn(raw, "provider");
 	const searchProvider = normalizeSearchProviderSelection(raw.searchProvider ?? raw.provider, `provider in ${CONFIG_PATH}`, customProviders);
 	let searchRouting = Object.hasOwn(raw, "searchRouting") ? normalizeSearchRouting(raw.searchRouting, customProviders) : undefined;
+	const allowedBeforePolicy = allowedProviders;
 	if (getRetrievalOnlyPolicy().enabled) {
 		// A configured provider chooses where queries go, so naming a model is refused; lists are narrowed.
 		for (const key of ["searchProvider", "provider"] as const) {
@@ -199,6 +202,7 @@ function getSearchConfig(): SearchConfig {
 		...(searchRouting ? { searchRouting } : {}),
 		...(searchModel ? { searchModel } : {}),
 		...(allowedProviders ? { allowedProviders } : {}),
+		...(allowedBeforePolicy && allowedBeforePolicy !== allowedProviders ? { allowedBeforePolicy } : {}),
 		customProviders,
 	};
 	return cachedSearchConfig;
@@ -318,8 +322,15 @@ function assertNoModelSearchProviders(selection: SearchProviderSelection, origin
 	if (!policy.enabled) return;
 	const blocked = (Array.isArray(selection) ? selection : [selection]).filter(isModelSearchProvider);
 	if (blocked.length === 0) return;
-	const names = blocked.map(provider => JSON.stringify(provider)).join(", ");
-	throw retrievalOnlyError(`Search provider${blocked.length > 1 ? "s" : ""} ${names}${origin ? ` set by ${origin}` : ""}`, policy);
+	throw retrievalOnlyError(`Search provider ${JSON.stringify(blocked[0])}${origin ? ` set by ${origin}` : ""}`, policy);
+}
+
+/** The candidates that config allows but the retrieval-only policy keeps out. */
+function modelProvidersSkippedByPolicy(candidates: readonly ResolvedSearchProvider[]): ResolvedSearchProvider[] {
+	if (!getRetrievalOnlyPolicy().enabled) return [];
+	const config = getSearchConfig();
+	const configured: readonly ResolvedSearchProvider[] = config.allowedBeforePolicy ?? config.allowedProviders ?? RESOLVED_SEARCH_PROVIDERS;
+	return candidates.filter(provider => isModelSearchProvider(provider) && configured.includes(provider));
 }
 
 function withoutModelProviders(providers: ResolvedSearchProvider[]): ResolvedSearchProvider[] {
@@ -706,9 +717,8 @@ async function searchWithProviders(
 			: await isResolvedProviderAvailable(provider, options),
 	})))).filter((entry) => entry.available).map((entry) => entry.provider);
 	if (providers.length === 0) {
-		if (!selectedProviders && getRetrievalOnlyPolicy().enabled) {
-			throw retrievalOnlyExhaustedError("search", ALL_SEARCH_PROVIDERS.filter(isModelSearchProvider));
-		}
+		const skipped = selectedProviders ? [] : modelProvidersSkippedByPolicy(ALL_SEARCH_PROVIDERS);
+		if (skipped.length > 0) throw retrievalOnlyExhaustedError("search", skipped);
 		throw new Error("No configured search provider available for provider \"all\". Parallel MCP, degoog, DuckDuckGo, Kimi, AnySearch, xAI, Mistral, You.com, Valyu, Baizhi, Z.ai, Keenable, Ceramic, DeepSeek, Linkup, 9router, Cloudflare, Tabstack, and custom providers are excluded.");
 	}
 
@@ -833,7 +843,8 @@ async function searchWithConfiguredRouting(
 			let kind = weak.empty && routing.fallbackOn.includes("empty") ? "empty" : weak.domainMiss && routing.fallbackOn.includes("domain-miss") ? "domain-miss" : undefined;
 			// Over MCP there is no Pi model registry, so the off-topic check is inactive there.
 			const registry = options.extensionContext?.modelRegistry;
-			if (!kind && !weak.empty && routing.offTopicModel && routing.fallbackOn.includes("off-topic") && registry) {
+			// The judge is a model call, so the retrieval-only policy keeps the response as is.
+			if (!kind && !weak.empty && routing.offTopicModel && routing.fallbackOn.includes("off-topic") && registry && !getRetrievalOnlyPolicy().enabled) {
 				// A deadline during the check keeps the response: it is still a success.
 				const judgment = await untilDeadline(judgeOffTopic(routing.offTopicModel, query, response, registry, options.signal))
 					.catch((err) => { if (timedOut()) return { error: `routing timeout after ${routing.timeoutMs}ms` }; throw err; });
@@ -945,7 +956,8 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 	if (fallbackErrors.length > 0) {
 		throw new Error(`Auto provider search failed:\n  - ${fallbackErrors.join("\n  - ")}`);
 	}
-	if (getRetrievalOnlyPolicy().enabled) throw retrievalOnlyExhaustedError("search", ["openai", "gemini"]);
+	const skipped = modelProvidersSkippedByPolicy(["openai", "gemini"]);
+	if (skipped.length > 0) throw retrievalOnlyExhaustedError("search", skipped);
 
 	throw new Error(
 		"No search provider available. Either:\n" +

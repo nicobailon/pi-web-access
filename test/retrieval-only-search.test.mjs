@@ -64,7 +64,7 @@ test("auto skips OpenAI for Exa only while the policy is on", () => {
 });
 
 test("auto and all fail with the policy error when only model providers are usable", () => {
-	const out = output(child({ webSearch: { allowedProviders: ["openai", "gemini", "brave"] } }, `
+	const script = `
 		${attempt}
 		const { search } = await import(${JSON.stringify(searchUrl)});
 		console.log(JSON.stringify({
@@ -72,10 +72,15 @@ test("auto and all fail with the policy error when only model providers are usab
 			all: await attempt(() => search("q", { provider: "all" })),
 			requests,
 		}));
-	`, { ...ON, OPENAI_API_KEY: "sk-test", GEMINI_API_KEY: "g-test" }));
-	assert.match(out.auto.error, POLICY);
-	assert.match(out.all.error, POLICY);
+	`;
+	const out = output(child({ webSearch: { allowedProviders: ["openai", "gemini", "brave"] } }, script, { ...ON, OPENAI_API_KEY: "sk-test", GEMINI_API_KEY: "g-test" }));
+	assert.match(out.auto.error, new RegExp(POLICY.source + ".*skipped: openai, gemini\\."));
+	assert.match(out.all.error, new RegExp(POLICY.source + ".*skipped: openai, gemini\\."));
 	assert.deepEqual(out.requests, []);
+	// Nothing was removed by the policy, so the usual setup guidance stays.
+	const noModels = output(child({ webSearch: { allowedProviders: ["brave"] } }, script, ON));
+	assert.match(noModels.auto.error, /^No search provider available\. Either:/);
+	assert.doesNotMatch(noModels.all.error, /retrieval-only/);
 });
 
 test("explicit model providers and config that selects or only allows them are refused", () => {
@@ -84,13 +89,13 @@ test("explicit model providers and config that selects or only allows them are r
 		const { search, validateSearchModelOverride } = await import(${JSON.stringify(searchUrl)});
 		console.log(JSON.stringify({
 			tabstack: await attempt(() => search("q", { provider: "tabstack" })),
-			list: await attempt(() => search("q", { provider: ["brave", "openai"] })),
+			list: await attempt(() => search("q", { provider: ["brave", "openai", "gemini"] })),
 			model: await attempt(async () => validateSearchModelOverride("xai", "grok-5")),
 			requests,
 		}));
 	`, { ...ON, TABSTACK_API_KEY: "t", BRAVE_API_KEY: "b", XAI_API_KEY: "x" }));
 	assert.match(explicit.tabstack.error, /Search provider "tabstack" is blocked by the retrieval-only policy/);
-	assert.match(explicit.list.error, /Search provider "openai" is blocked/);
+	assert.match(explicit.list.error, /^Search provider "openai" is blocked/);
 	assert.match(explicit.model.error, /Search provider "xai" is blocked/);
 	assert.deepEqual(explicit.requests, []);
 
@@ -127,6 +132,9 @@ test("the policy turns on from env or config, and config false cannot turn env o
 	const badConfig = init({ retrievalOnly: "yes" }, {});
 	assert.notEqual(badConfig.status, 0);
 	assert.match(badConfig.stderr, /retrievalOnly in .* must be a boolean/);
+	const badMcpEnv = child(undefined, `(await import(${JSON.stringify(coreUrl)})).createStandaloneWebToolCore();`, { PI_WEB_ACCESS_RETRIEVAL_ONLY: "2" });
+	assert.notEqual(badMcpEnv.status, 0);
+	assert.match(badMcpEnv.stderr, /PI_WEB_ACCESS_RETRIEVAL_ONLY must be 1, true, 0, or false/);
 });
 
 test("over MCP a blocked provider reports the policy, not a missing key", () => {
