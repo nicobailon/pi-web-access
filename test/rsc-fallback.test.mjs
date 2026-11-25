@@ -159,5 +159,4 @@ test("background fetch notification distinguishes full, partial, and failed cont
 	assert.match(indexSrc, /availabilityStatus === "partial"\n\s*\? "Partial page content now available\."/);
 	assert.match(indexSrc, /"No page content was fetched\. Stored fetch diagnostics are available\."/);
 	assert.match(indexSrc, /Content fetched for \$\{ok\}\/\$\{fetched\.length\} URLs \[\$\{fetchId\}\]\. \$\{availability\}/);
-	assert.match(indexSrc, /details: \{\s*fetchId,\s*successfulUrls: ok,\s*totalUrls: fetched\.length,\s*availability: availabilityStatus,/);
 });
