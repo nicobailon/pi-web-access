@@ -77,7 +77,7 @@ test("default public execution tool definitions retain their compatibility hashe
 	const expected = {
 		web_search: "7abdcc5697f60daaab03a3a3070d22f8cffe46eb9f9347d22c823f97881494ca",
 		source_check: "9e1c44321d9a277dc31ce6df4ca309b77126ec5dd3c6967b0a03d5cb82be856f",
-		fetch_content: "9891bb53013ef935a9515902c998c1660c580ce0dcdfa7f25404f75b19929547",
+		fetch_content: "e4ab51be6a41dfa665ef794f7faa6d811f43c9f022d1bd525ca74989f2712137",
 		get_search_content: "0671f28d0815f76acaa0afc5267aac8686ea4eaa46978f35bcd674ee6446f30a",
 	};
 	const tools = registered({}).tools.filter(tool => tool.name !== "web_enable");

@@ -210,10 +210,10 @@ const DEFAULT_REMOTE_CURATOR_TIMEOUT_SECONDS = 60;
 const MAX_CURATOR_TIMEOUT_SECONDS = 600;
 const MAX_SUMMARY_GENERATION_DEADLINE_MS = 600_000;
 const FETCH_MODE_DESCRIPTIONS: Record<FetchMode, string> = {
-	readable: "extract readable content as markdown",
-	raw: "return the exact textual body using direct HTTP only",
-	answer: "answer a prompt using only fetched content",
-	extract: "read typed values named in fields",
+	readable: "main text as markdown",
+	raw: "exact text body, direct HTTP only; no video or clone options",
+	answer: "answer a prompt from fetched content only; no auth",
+	extract: "read typed values named in fields; no auth",
 };
 
 // Keep primary query indexes stable for curator slots, then interleave additional
