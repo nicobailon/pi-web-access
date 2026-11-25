@@ -39,7 +39,9 @@ async function withFakeCurl(t, routes, fn) {
 const fs = require("node:fs");
 const routes = JSON.parse(process.env.PI_PROXY_TEST_ROUTES);
 const args = process.argv.slice(2);
-fs.appendFileSync(process.env.PI_PROXY_TEST_LOG, JSON.stringify(args) + "\\n");
+// Header files are deleted after curl exits, so record what they held.
+const headers = args.flatMap((arg, index) => args[index - 1] !== "-H" ? [] : arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8").split("\\n").filter(Boolean) : [arg]);
+fs.appendFileSync(process.env.PI_PROXY_TEST_LOG, JSON.stringify({ args, headers }) + "\\n");
 function valueAfter(flag) {
   const index = args.indexOf(flag);
   return index === -1 ? null : args[index + 1];
@@ -80,15 +82,14 @@ async function readCurlCalls(logPath) {
 		.trim()
 		.split("\n")
 		.filter(Boolean)
-		.map((line) => JSON.parse(line));
+		.map((line) => {
+			const { args, headers } = JSON.parse(line);
+			return Object.assign(args, { headers });
+		});
 }
 
 function headerValues(args) {
-	const values = [];
-	for (let index = 0; index < args.length; index++) {
-		if (args[index] === "-H") values.push(args[index + 1]);
-	}
-	return values;
+	return args.headers;
 }
 
 function registerSourceCheck() {
@@ -308,6 +309,22 @@ test("extension initialization preserves fetch identity and installs proxy trans
 		assert.equal(calls.length, 1);
 		assert.equal(calls[0].at(-1), "https://example.com/page");
 		assert.ok(["http://call-proxy.example:8080", "http://call-proxy.example:8080/"].includes(proxyArg(calls[0])));
+	});
+});
+
+test("proxy curl gets request headers from a file, never its command line", async (t) => {
+	await withFakeCurl(t, {
+		"https://origin.example/private": { status: 200, statusText: "OK", body: "ok" },
+	}, async (logPath) => {
+		const response = await runWithProxy("http://proxy.example:8080", () => fetch("https://origin.example/private", {
+			headers: { Cookie: "session=cookie-secret", Authorization: "Bearer token-secret" },
+		}));
+
+		assert.equal(await response.text(), "ok");
+		const [args] = await readCurlCalls(logPath);
+		assert.ok(args.every((arg) => !/cookie-secret|token-secret/.test(arg)), JSON.stringify(args));
+		assert.ok(args.headers.includes("cookie: session=cookie-secret"), JSON.stringify(args.headers));
+		assert.ok(args.headers.includes("authorization: Bearer token-secret"), JSON.stringify(args.headers));
 	});
 });
 

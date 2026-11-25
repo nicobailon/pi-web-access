@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { parseBrowserCookiePreset, type BrowserCookiePreset } from "./gemini-web-config.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
 
 const WEB_SEARCH_CONFIG_PATH = getWebSearchConfigPath();
@@ -10,6 +11,7 @@ export type AuthFetchCache = "session" | "off";
 export interface AuthFetchProfile {
 	name: string;
 	hosts: string[];
+	browser?: BrowserCookiePreset;
 	chromeProfile?: string;
 	redirects: "same-origin";
 	cache: AuthFetchCache;
@@ -100,9 +102,11 @@ function parseProfile(name: string, value: unknown): AuthFetchProfile {
 		throw new Error(`authFetch.${name}.cache in ${WEB_SEARCH_CONFIG_PATH} must be "session" or "off"`);
 	}
 	const chromeProfile = parseChromeProfile(config.chromeProfile, `authFetch.${name}.chromeProfile`);
+	const browser = config.browser === undefined || config.browser === null ? undefined : parseBrowserCookiePreset(config.browser, `authFetch.${name}.browser`);
 	return {
 		name,
 		hosts: parseHosts(config.hosts, `authFetch.${name}.hosts`),
+		...(browser ? { browser } : {}),
 		...(chromeProfile ? { chromeProfile } : {}),
 		redirects,
 		cache,
