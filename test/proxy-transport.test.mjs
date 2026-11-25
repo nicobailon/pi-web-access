@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile, chmod } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import initializeExtension from "../index.ts";
 import { createStandaloneWebToolCore } from "../web-tool-core.ts";
-import { getActiveProxy, installGlobalProxyFetch, isProxyBypassedUrl, normalizeProxyUrl, runWithProxy } from "../utils.ts";
+import { createCurlFetch, getActiveProxy, installGlobalProxyFetch, isProxyBypassedUrl, normalizeProxyUrl, runWithProxy } from "../utils.ts";
 
 const originalFetch = globalThis.fetch;
 const originalPath = process.env.PATH;
@@ -893,4 +894,25 @@ test("GCE metadata server hosts always bypass proxy transport", (t) => {
 	process.env.GCE_METADATA_HOST = "http://metadata.test:8080";
 	assert.equal(isProxyBypassedUrl(new URL("http://metadata.test:8080/computeMetadata/v1/instance/service-accounts/default/token")), true);
 	assert.equal(isProxyBypassedUrl(new URL("https://example.com/page")), false);
+});
+
+test("real curl reads an env proxy with quotes, backslashes and line breaks as one proxy value", async (t) => {
+	const requests = [];
+	const proxyServer = createServer((req, res) => {
+		requests.push({ url: req.url, auth: req.headers["proxy-authorization"] ?? null });
+		res.end("via proxy");
+	});
+	await new Promise((resolve) => proxyServer.listen(0, "127.0.0.1", resolve));
+	t.after(() => proxyServer.close());
+	const { port } = proxyServer.address();
+	const fetchWith = (proxy) => createCurlFetch(["curl"], { maxBytes: 1024 * 1024, envProxy: () => proxy })("http://origin.test/page");
+
+	const response = await fetchWith(`http://us"er:p\\ss@127.0.0.1:${port}/`);
+	assert.equal(await response.text(), "via proxy");
+	assert.deepEqual(requests, [{ url: "http://origin.test/page", auth: `Basic ${Buffer.from('us"er:p\\ss').toString("base64")}` }]);
+
+	// A line break must not start another curl option in the config file: here, a second proxy line
+	// that would send the request to the test proxy. Read as one value, the proxy is malformed.
+	await assert.rejects(fetchWith(`http://127.0.0.1:1/\nproxy = http://127.0.0.1:${port}/`));
+	assert.equal(requests.length, 1);
 });
