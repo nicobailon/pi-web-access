@@ -34,15 +34,7 @@ function parseBrowserCookies(value: unknown): BrowserCookieSelection | undefined
 		throw new Error(`browserCookies.profilePath is not supported; use a browser preset and profile directory name in ${CONFIG_PATH}`);
 	}
 	let browser: BrowserCookiePreset | undefined;
-	if (raw.browser !== undefined) {
-		if (typeof raw.browser !== "string") throw new Error(`browserCookies.browser in ${CONFIG_PATH} must be a supported browser name`);
-		const normalized = raw.browser.trim().toLowerCase();
-		const preset = BROWSER_COOKIE_PRESETS.find((candidate) => candidate === normalized);
-		if (!preset) {
-			throw new Error(`Unsupported browserCookies.browser ${JSON.stringify(raw.browser)} in ${CONFIG_PATH}`);
-		}
-		browser = preset;
-	}
+	if (raw.browser !== undefined) browser = parseBrowserCookiePreset(raw.browser, "browserCookies.browser");
 	if (raw.profile !== undefined && typeof raw.profile !== "string") {
 		throw new Error(`browserCookies.profile in ${CONFIG_PATH} must be a profile directory name`);
 	}
@@ -51,6 +43,14 @@ function parseBrowserCookies(value: unknown): BrowserCookieSelection | undefined
 		throw new Error(`browserCookies.profile in ${CONFIG_PATH} must be a profile directory name, not a path`);
 	}
 	return { ...(browser ? { browser } : {}), ...(profile ? { profile } : {}) };
+}
+
+export function parseBrowserCookiePreset(value: unknown, label: string): BrowserCookiePreset {
+	if (typeof value !== "string") throw new Error(`${label} in ${CONFIG_PATH} must be a supported browser name`);
+	const normalized = value.trim().toLowerCase();
+	const preset = BROWSER_COOKIE_PRESETS.find((candidate) => candidate === normalized);
+	if (!preset) throw new Error(`Unsupported ${label} ${JSON.stringify(value)} in ${CONFIG_PATH}`);
+	return preset;
 }
 
 function loadConfig(): GeminiWebConfig {

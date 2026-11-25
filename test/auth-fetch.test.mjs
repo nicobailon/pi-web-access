@@ -9,11 +9,11 @@ const authFetchUrl = new URL("../auth-fetch.ts", import.meta.url).href;
 const extractUrl = new URL("../extract.ts", import.meta.url).href;
 const python = process.platform === "win32" ? null : "python3";
 
-function createCookieFixture(home, rows) {
+const chromeDir = process.platform === "darwin" ? ["Library", "Application Support", "Google", "Chrome"] : [".config", "google-chrome"];
+
+function createCookieFixture(home, rows, browserDir = chromeDir) {
 	if (!python) return;
-	const profileDir = process.platform === "darwin"
-		? join(home, "Library", "Application Support", "Google", "Chrome", "Default")
-		: join(home, ".config", "google-chrome", "Default");
+	const profileDir = join(home, ...browserDir, "Default");
 	const dbPath = join(profileDir, "Cookies");
 	mkdirSync(profileDir, { recursive: true });
 	execFileSync(python, ["-c", `
@@ -143,6 +143,49 @@ test("authenticated fetch sends only browser-scoped cookies with raw values", (t
 		assert.doesNotMatch(output.calls[0].cookie, /partitioned=partitioned/);
 		assert.equal(output.result.content, "private body");
 		assert.equal(output.result.error, null);
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+		rmSync(bin, { recursive: true, force: true });
+	}
+});
+
+test("authFetch browser reads cookies from that browser only", (t) => {
+	if (!python) t.skip("fixture creation requires Python on macOS/Linux");
+	const root = mkdtempSync(join(tmpdir(), "pi-auth-fetch-browser-"));
+	const bin = mkdtempSync(join(tmpdir(), "pi-auth-fetch-bin-"));
+	// The other browser comes first in discovery order, so without browser its cookie would be sent.
+	const [otherDir, chosenDir, chosenBrowser] = process.platform === "darwin"
+		? [chromeDir, ["Library", "Application Support", "BraveSoftware", "Brave-Browser"], "brave"]
+		: [[".config", "chromium"], chromeDir, "chrome"];
+	try {
+		writePasswordCommand(bin);
+		createCookieFixture(root, [["sid", "other", ".example.com", "/", null, "20000000000000000", ""]], otherDir);
+		createCookieFixture(root, [["sid", "chosen", ".example.com", "/", null, "20000000000000000", ""]], chosenDir);
+		writeFileSync(join(root, "web-search.json"), JSON.stringify({ authFetch: { work: { hosts: ["example.com"], browser: chosenBrowser } } }) + "\n");
+		const script = `
+			const calls = [];
+			globalThis.fetch = async (url, init = {}) => {
+				calls.push(init.headers?.cookie ?? null);
+				return new Response("private body", { status: 200, headers: { "content-type": "text/plain" } });
+			};
+			const { resolveAuthFetchProfile } = await import(${JSON.stringify(authFetchUrl)});
+			const { extractContent } = await import(${JSON.stringify(extractUrl)});
+			let error = "";
+			let result = null;
+			try {
+				result = await extractContent("https://app.example.com/private", undefined, { mode: "raw", authFetchProfile: resolveAuthFetchProfile("work"), lookup: async () => [{ address: "93.184.216.34", family: 4 }] });
+			} catch (err) { error = err instanceof Error ? err.message : String(err); }
+			console.log(JSON.stringify({ calls, result, error }));
+		`;
+		const env = { PATH: `${bin}:${process.env.PATH ?? ""}` };
+		const output = runModule(root, script, env);
+		assert.deepEqual(output.calls, ["sid=chosen"]);
+		assert.equal(output.result.content, "private body");
+
+		writeFileSync(join(root, "web-search.json"), JSON.stringify({ authFetch: { work: { hosts: ["example.com"], browser: "firefox" } } }) + "\n");
+		const invalid = runModule(root, script, env);
+		assert.deepEqual(invalid.calls, []);
+		assert.match(invalid.error, /Unsupported authFetch\.work\.browser "firefox"/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 		rmSync(bin, { recursive: true, force: true });

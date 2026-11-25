@@ -174,7 +174,7 @@ function redirectPolicyRouteRefusal(url: string, path: string): ExtractedContent
 
 async function resolveAuthCookieHeader(url: string | URL, profile: AuthFetchProfile): Promise<string> {
 	const parsed = assertAuthFetchUrl(profile, url.toString());
-	const result = await getBrowserCookiesForHosts({ hosts: [parsed.hostname], profile: profile.chromeProfile, requestUrl: parsed });
+	const result = await getBrowserCookiesForHosts({ hosts: [parsed.hostname], browser: profile.browser, profile: profile.chromeProfile, requestUrl: parsed });
 	if (result?.cookieHeader) return result.cookieHeader;
 	if (!result) {
 		const diagnostic = getLastBrowserCookieDiagnostic();
