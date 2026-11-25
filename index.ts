@@ -9,7 +9,7 @@ import { clearCloneCache, releaseClonesUnusedSince, touchClones } from "./github
 import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getAvailableCustomSearchProviders, getConfiguredSearchRouting, parseProviderArgument, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type BuiltinSearchProvider, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
 import { formatSeconds, getWebSearchConfigDir, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
-import { resolveRetrievalOnlyPolicy } from "./retrieval-only.ts";
+import { resolveRetrievalOnlyPolicy, retrievalOnlyError } from "./retrieval-only.ts";
 import {
 	deleteHeldResult,
 	generateId,
@@ -976,6 +976,7 @@ export default function (pi: ExtensionAPI) {
 		modelOverride?: string,
 		feedback?: string,
 	): Promise<{ summary: string; meta: SummaryMeta }> {
+		if (retrievalOnly.enabled) throw retrievalOnlyError("Summary generation", retrievalOnly);
 		const selectedResults: QueryResultData[] = [];
 		for (const qi of selectedQueryIndices) {
 			const result = resultsByIndex.get(qi);
@@ -1014,6 +1015,7 @@ export default function (pi: ExtensionAPI) {
 	async function loadSummaryModelChoices(
 		summaryContext: SummaryGenerationContext,
 	): Promise<{ summaryModels: Array<{ value: string; label: string }>; defaultSummaryModel: string | null; preferredFallback: boolean }> {
+		if (retrievalOnly.enabled) return { summaryModels: [], defaultSummaryModel: null, preferredFallback: false };
 		const summaryModels: Array<{ value: string; label: string }> = [];
 		const seen = new Set<string>();
 		const availableValues = new Set<string>();
@@ -1454,10 +1456,15 @@ export default function (pi: ExtensionAPI) {
 					? params.queries
 					: (params.query !== undefined ? expandQueryString(params.query) : []);
 				const queryList = normalizeQueryList(rawQueryList);
-				const configWorkflow = loadConfigForExtensionInit().workflow;
+				// A saved default only adds a summary on top of the search, so the policy drops it; an explicit request is refused below.
+				const configWorkflow = retrievalOnly.enabled ? undefined : loadConfigForExtensionInit().workflow;
 				const workflow = nested && params.workflow === undefined
 					? "none"
 					: curatorRunState.resolve(params.workflow, configWorkflow, ctx?.hasUI !== false);
+				if (retrievalOnly.enabled && workflow !== "none") {
+					const error = retrievalOnlyError(`Workflow "${workflow}"`, retrievalOnly).message;
+					return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
+				}
 				const shouldCurate = workflow === "summary-review";
 				const recencyFilter = normalizeRecencyFilter(params.recencyFilter);
 
