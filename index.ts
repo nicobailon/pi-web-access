@@ -1,6 +1,6 @@
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Box, Text, truncateToWidth, type KeyId } from "@earendil-works/pi-tui";
-import { Type, type TOptional, type TString } from "typebox";
+import { Type, type TOptional, type TString, type TUnsafe } from "typebox";
 import type { ExtractedContent } from "./extract.ts";
 import { normalizeFetchContentParams } from "./fetch-params.ts";
 import { answerFromPage } from "./page-query.ts";
@@ -9,6 +9,7 @@ import { clearCloneCache, releaseClonesUnusedSince, touchClones } from "./github
 import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getAvailableCustomSearchProviders, getConfiguredSearchRouting, parseProviderArgument, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type BuiltinSearchProvider, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
 import { formatSeconds, getWebSearchConfigDir, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
+import { getRetrievalOnlyPolicy, RETRIEVAL_ONLY_DESCRIPTION_SUFFIX, retrievalOnlyError } from "./retrieval-only.ts";
 import {
 	deleteHeldResult,
 	generateId,
@@ -741,6 +742,12 @@ function refreshUi(ctx: ExtensionContext): void {
 
 export default function (pi: ExtensionAPI) {
 	const initConfig = loadConfigForExtensionInit();
+	// Fixes the process-wide policy, so definitions and every later check agree. Outside
+	// loadConfigForExtensionInit, which logs config errors instead of throwing: a bad policy value
+	// must stop the extension. An unparseable config leaves {} here (env only); every model route
+	// re-reads that config and fails while it stays broken, and a fixed config applies on restart.
+	const retrievalOnly = getRetrievalOnlyPolicy(initConfig);
+	const retrievalOnlySuffix = retrievalOnly.enabled ? RETRIEVAL_ONLY_DESCRIPTION_SUFFIX : "";
 	const fetchModeConfig = resolveFetchModeConfig(initConfig);
 	const toolActivation = initConfig.toolActivation ?? "auto";
 	if (toolActivation !== "auto" && toolActivation !== "dynamic" && toolActivation !== "eager" && toolActivation !== "none") {
@@ -757,7 +764,7 @@ export default function (pi: ExtensionAPI) {
 		throw new Error(`toolActivation "none" in ${WEB_SEARCH_CONFIG_PATH} requires toolExposure "deferred"`);
 	}
 	const allowedSearchProviders = initConfig.webSearch?.allowedProviders === undefined ? RESOLVED_SEARCH_PROVIDERS : getAllowedSearchProviders();
-	const modelProviders = allowedSearchProviders.filter(provider => provider === "openai" || provider === "xai" || provider === "mistral" || provider === "gemini");
+	const modelProviders = retrievalOnly.enabled ? [] : allowedSearchProviders.filter(provider => provider === "openai" || provider === "xai" || provider === "mistral" || provider === "gemini");
 	// Depends on config only, never on credentials, so definitions stay byte-stable across environments.
 	const providerDescription = `auto, all, a name, or comma-separated names; omit for the configured default.${initConfig.webSearch?.allowedProviders === undefined ? "" : ` Allowed: ${allowedSearchProviders.join(", ")}.`}`;
 	const curatorRunState = registerCuratorRunLifecycle(pi);
@@ -972,6 +979,7 @@ export default function (pi: ExtensionAPI) {
 		modelOverride?: string,
 		feedback?: string,
 	): Promise<{ summary: string; meta: SummaryMeta }> {
+		if (retrievalOnly.enabled) throw retrievalOnlyError("Summary generation", retrievalOnly);
 		const selectedResults: QueryResultData[] = [];
 		for (const qi of selectedQueryIndices) {
 			const result = resultsByIndex.get(qi);
@@ -1010,6 +1018,7 @@ export default function (pi: ExtensionAPI) {
 	async function loadSummaryModelChoices(
 		summaryContext: SummaryGenerationContext,
 	): Promise<{ summaryModels: Array<{ value: string; label: string }>; defaultSummaryModel: string | null; preferredFallback: boolean }> {
+		if (retrievalOnly.enabled) return { summaryModels: [], defaultSummaryModel: null, preferredFallback: false };
 		const summaryModels: Array<{ value: string; label: string }> = [];
 		const seen = new Set<string>();
 		const availableValues = new Set<string>();
@@ -1418,7 +1427,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Search",
 		prepareArguments: (args) => parseStringifiedArrays(args, ["queries", "domainFilter"]) as never,
 		description:
-			`Search the web for sources or answers.${getSearchContentEnabled ? ` Full results are stored for ${toolNames.getSearchContent} by responseId.` : ""} Prefer 2-4 varied queries.`,
+			`Search the web for sources or answers.${getSearchContentEnabled ? ` Full results are stored for ${toolNames.getSearchContent} by responseId.` : ""} Prefer 2-4 varied queries.${retrievalOnlySuffix}`,
 		promptSnippet:
 			"Web research. Prefer {queries:[...]} with 2-4 varied angles; omit provider unless overriding the default.",
 		parameters: Type.Object({
@@ -1432,11 +1441,14 @@ export default function (pi: ExtensionAPI) {
 			category: Type.Optional(Type.String({ description: "Exa only, e.g. news" })),
 			...(modelProviders.length > 0 ? { model: Type.Optional(Type.String({ description: `Model ID; needs provider ${modelProviders.join(", ")}` })) } : {}) as { model: TOptional<TString> },
 			provider: Type.Optional(Type.String({ description: providerDescription })),
-			workflow: Type.Optional(
-				StringEnum(["none", "summary-review", "auto-summary"], {
-					description: "Default none; summary-review opens the curator",
-				}),
-			),
+			// Both non-default workflows write a summary with a model, so the policy leaves nothing to choose.
+			...(retrievalOnly.enabled ? {} : {
+				workflow: Type.Optional(
+					StringEnum(["none", "summary-review", "auto-summary"], {
+						description: "Default none; summary-review opens the curator",
+					}),
+				),
+			}) as { workflow: TOptional<TUnsafe<"none" | "summary-review" | "auto-summary">> },
 			proxy: Type.Optional(Type.String({ description: "Proxy URL; omit by default; \"\" forces direct" })),
 		}),
 		outputSchema: webSearchOutputSchema,
@@ -1450,7 +1462,14 @@ export default function (pi: ExtensionAPI) {
 					? params.queries
 					: (params.query !== undefined ? expandQueryString(params.query) : []);
 				const queryList = normalizeQueryList(rawQueryList);
-				const configWorkflow = loadConfigForExtensionInit().workflow;
+				// A saved default only adds a summary on top of the search, so the policy drops it; an explicit request is refused.
+				const configWorkflow = retrievalOnly.enabled ? undefined : loadConfigForExtensionInit().workflow;
+				// Checked before resolving, which turns summary-review into none when there is no UI.
+				const requestedWorkflow = typeof params.workflow === "string" ? params.workflow.trim().toLowerCase() : "";
+				if (retrievalOnly.enabled && (requestedWorkflow === "summary-review" || requestedWorkflow === "auto-summary")) {
+					const error = retrievalOnlyError(`Workflow "${requestedWorkflow}"`, retrievalOnly).message;
+					return { content: [{ type: "text", text: `Error: ${error}` }], details: { error } };
+				}
 				const workflow = nested && params.workflow === undefined
 					? "none"
 					: curatorRunState.resolve(params.workflow, configWorkflow, ctx?.hasUI !== false);
@@ -1995,18 +2014,21 @@ export default function (pi: ExtensionAPI) {
 	if (fetchContentEnabled) pi.registerTool({
 		name: toolNames.fetchContent,
 		label: "Fetch Content",
-		description: `Fetch web pages, PDFs, GitHub repos, images, YouTube and local video, as the mode allows. ${fetchContentStorageNote}`,
+		description: `Fetch web pages, PDFs, GitHub repos, images, YouTube and local video, as the mode allows. ${fetchContentStorageNote}${retrievalOnlySuffix}`,
 		promptSnippet:
 			`Use to fetch URL content, direct images, GitHub repos, and videos.${fetchModeConfig.allowedModes.includes("extract") ? ' For specific values (a price, version, date or limit), use mode "extract" with fields instead of reading the whole page.' : ""}`,
 		parameters: Type.Object({
 			url: Type.Optional(Type.String()),
 			urls: Type.Optional(Type.Array(Type.String())),
 			forceClone: Type.Optional(Type.Boolean({ description: "Clone GitHub repos over the size limit" })),
-			prompt: Type.Optional(Type.String({
-				description: fetchModeConfig.allowedModes.includes("answer")
-					? "Question for video analysis or answer mode"
-					: "Question for video analysis",
-			})),
+			// prompt and model only steer model routes (answer mode, video analysis), which the policy closes.
+			...(retrievalOnly.enabled ? {} : {
+				prompt: Type.Optional(Type.String({
+					description: fetchModeConfig.allowedModes.includes("answer")
+						? "Question for video analysis or answer mode"
+						: "Question for video analysis",
+				})),
+			}) as { prompt: TOptional<TString> },
 			mode: Type.Optional(StringEnum(fetchModeConfig.allowedModes, {
 				description: `${fetchModeDescription}.`,
 			})),
@@ -2028,7 +2050,7 @@ export default function (pi: ExtensionAPI) {
 				maximum: 12,
 				description: "Frames over a range, 5s apart from one time, or over the video",
 			})),
-			model: Type.Optional(Type.String({ description: "Gemini model for video analysis" })),
+			...(retrievalOnly.enabled ? {} : { model: Type.Optional(Type.String({ description: "Gemini model for video analysis" })) }) as { model: TOptional<TString> },
 			auth: Type.Optional(Type.Union([Type.String(), Type.Boolean()], {
 				description: "authFetch profile name, or true for the only one",
 			})),
@@ -2626,7 +2648,7 @@ export default function (pi: ExtensionAPI) {
 				const attempted = formatCookieAttempts(diagnosticDetails?.attempts ?? []);
 				const text = diagnostic
 					? `Gemini Web is unavailable: ${diagnostic}${attempted ? ` Attempted browser profiles: ${attempted}.` : ""}`
-					: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser.";
+					: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true.";
 				pi.sendMessage({
 					customType: "google-account",
 					content: [{ type: "text", text }],

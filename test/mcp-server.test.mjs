@@ -106,6 +106,38 @@ test("tools/list stays within the per-request size budget", async (t) => {
 	assert.ok(total <= 4400, `tools/list total ${total} chars, budget 4400`);
 });
 
+test("tools/list says when the retrieval-only policy is on, and config cannot turn it off", async (t) => {
+	const home = await mkdtemp(join(tmpdir(), "pi-web-access-mcp-retrieval-only-"));
+	t.after(() => rm(home, { recursive: true, force: true }));
+	await writeFile(join(home, "web-search.json"), JSON.stringify({ retrievalOnly: false }));
+	const list = (env) => {
+		const child = spawnSync(process.execPath, ["--input-type=module"], {
+			cwd: repoRoot,
+			input: `
+				const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+				const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+				const { createMcpServer } = await import(${JSON.stringify(new URL("../mcp-server.ts", import.meta.url).href)});
+				const server = createMcpServer({}, { name: "t", version: "0" });
+				const client = new Client({ name: "c", version: "0" });
+				const [a, b] = InMemoryTransport.createLinkedPair();
+				await Promise.all([server.connect(b), client.connect(a)]);
+				const { tools } = await client.listTools();
+				console.log(JSON.stringify(tools));
+				await client.close();
+			`,
+			encoding: "utf8",
+			env: { ...process.env, PI_CODING_AGENT_DIR: home, ...env },
+		});
+		assert.equal(child.status, 0, child.stderr);
+		return JSON.parse(child.stdout.trim().split("\n").at(-1));
+	};
+	const on = list({ PI_WEB_ACCESS_RETRIEVAL_ONLY: "1" });
+	assert.deepEqual(on.filter((tool) => tool.description.endsWith(" Retrieval-only: no model calls.")).map((tool) => tool.name).sort(), ["fetch_content", "web_search"]);
+	const total = on.reduce((sum, tool) => sum + JSON.stringify(tool).length, 0);
+	assert.ok(total <= 4400, `retrieval-only tools/list total ${total} chars, budget 4400`);
+	assert.ok(list({}).every((tool) => !tool.description.includes("Retrieval-only")));
+});
+
 test("invalid arguments return a tool error naming the problem without calling the core", async (t) => {
 	const { core, calls } = fakeCore();
 	const client = await connect(t, core);

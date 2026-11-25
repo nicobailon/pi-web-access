@@ -11,6 +11,7 @@ import {
 	McpError,
 } from "@modelcontextprotocol/sdk/types.js";
 import { MCP_TOOL_DEFINITIONS, validateMcpToolArguments } from "./mcp-tool-definitions.ts";
+import { getRetrievalOnlyPolicy, RETRIEVAL_ONLY_DESCRIPTION_SUFFIX } from "./retrieval-only.ts";
 import type {
 	FetchContentCallParams,
 	GetSearchContentCallParams,
@@ -54,7 +55,9 @@ export function createMcpServer(core: WebToolCore, info: McpServerInfo, enabledT
 	server.setRequestHandler(ListToolsRequestSchema, async () => ({
 		tools: tools.map((tool) => ({
 			name: tool.name,
-			description: tool.description,
+			description: getRetrievalOnlyPolicy().enabled && (tool.name === "web_search" || tool.name === "fetch_content")
+				? tool.description + RETRIEVAL_ONLY_DESCRIPTION_SUFFIX
+				: tool.description,
 			inputSchema: tool.inputSchema as ToolInputSchema,
 			annotations: tool.annotations,
 		})),

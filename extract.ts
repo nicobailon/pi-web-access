@@ -25,6 +25,7 @@ import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } f
 import { appendDeclaredWebLinks, discoverDeclaredWebLinks, type DeclaredWebLink } from "./declared-web-links.ts";
 import { fetchRemoteUrl, loadConfiguredFetchContentUserAgent, loadFetchContentCurl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadFetchContentUserAgent, loadSsrfConfig, trustedEnvProxyFor, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
 import { createCurlFetch, formatSeconds, getWebSearchConfigPath, type ProxiedRequestInit } from "./utils.ts";
+import { FETCH_PROVIDER_KINDS, getRetrievalOnlyPolicy, retrievalOnlyExhaustedError } from "./retrieval-only.ts";
 import { isImageEnabled } from "./feature-config.ts";
 import { assertAuthFetchUrl, authFetchRedirectGuard, type AuthFetchProfile } from "./auth-fetch.ts";
 import { getBrowserCookiesForHosts, getLastBrowserCookieDiagnostic } from "./chrome-cookies.ts";
@@ -70,9 +71,9 @@ function loadFetchTimeoutMs(): number {
 const NON_RECOVERABLE_ERRORS = ["Unsupported content type", "Response too large", "PDF extraction is disabled", "Image fetching is disabled", "fetchContent.curl command not found"];
 const MIN_USEFUL_CONTENT = 500;
 const SUPPORTED_IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
-const FETCH_PROVIDERS = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack"] as const;
+export const FETCH_PROVIDERS = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack"] as const;
 const REMOVED_FETCH_PROVIDERS = ["search1api", "specstream"];
-type FetchProvider = typeof FETCH_PROVIDERS[number];
+export type FetchProvider = typeof FETCH_PROVIDERS[number];
 type FetchRouting = { providers: FetchProvider[]; allowRemoteHostedProviders: boolean };
 const DEFAULT_FETCH_PROVIDER_ORDER: FetchProvider[] = ["http", "firecrawl", "crawl4ai", "jina", "tinyfish", "querit", "kagi", "ollama", "parallel", "brightdata", "gemini"];
 const REMOTE_HOSTED_FETCH_PROVIDERS = new Set<FetchProvider>(["jina", "tinyfish", "querit", "kagi", "ollama", "parallel", "parallel-mcp", "brightdata", "gemini", "deepseek", "exa", "tabstack"]);
@@ -173,7 +174,7 @@ function redirectPolicyRouteRefusal(url: string, path: string): ExtractedContent
 
 async function resolveAuthCookieHeader(url: string | URL, profile: AuthFetchProfile): Promise<string> {
 	const parsed = assertAuthFetchUrl(profile, url.toString());
-	const result = await getBrowserCookiesForHosts({ hosts: [parsed.hostname], profile: profile.chromeProfile, requestUrl: parsed });
+	const result = await getBrowserCookiesForHosts({ hosts: [parsed.hostname], browser: profile.browser, profile: profile.chromeProfile, requestUrl: parsed });
 	if (result?.cookieHeader) return result.cookieHeader;
 	if (!result) {
 		const diagnostic = getLastBrowserCookieDiagnostic();
@@ -753,7 +754,7 @@ export async function extractContent(
 		try {
 			const result = await extractVideo(localVideo.info, signal, options);
 			if (signal?.aborted) return abortedResult(url);
-			return result ?? { url, title: "", content: "", error: `Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in Chrome (free, uses cookies)\n  2. Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}` };
+			return result ?? { url, title: "", content: "", error: `Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH} (free, uses cookies)\n  2. Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}` };
 		} catch (err) {
 			if (isAbortError(err)) return abortedResult(url);
 			return { url, title: "", content: "", error: errorMessage(err) };
@@ -827,6 +828,12 @@ export async function extractContent(
 	let fetchRouting: FetchRouting;
 	try {
 		fetchRouting = loadFetchRouting();
+		if (getRetrievalOnlyPolicy().enabled) {
+			// Model providers leave the order even when listed or forced; a list of only those chose the source and is refused.
+			const providers = fetchRouting.providers.filter(provider => FETCH_PROVIDER_KINDS[provider] !== "model");
+			if (providers.length === 0) throw retrievalOnlyExhaustedError("fetch provider", fetchRouting.providers);
+			fetchRouting = { ...fetchRouting, providers };
+		}
 	} catch (err) {
 		return { url, title: "", content: "", error: errorMessage(err) };
 	}
@@ -1156,8 +1163,8 @@ export async function extractContent(
 		`  • Set deepseekApiKey in ${WEB_SEARCH_CONFIG_PATH} or DEEPSEEK_API_KEY and add "deepseek" to fetchRouting.providers`,
 		`  • Set exaApiKey in ${WEB_SEARCH_CONFIG_PATH} or EXA_API_KEY and add "exa" to fetchRouting.providers`,
 		`  • Set tabstackApiKey in ${WEB_SEARCH_CONFIG_PATH} or TABSTACK_API_KEY and add "tabstack" to fetchRouting.providers`,
-		`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`,
-		"  • Sign into gemini.google.com in Chrome",
+		// Gemini page fetching is a model route, so it is no way forward under the retrieval-only policy.
+		...(getRetrievalOnlyPolicy().enabled ? [] : [`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`, `  • Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH}`]),
 		...(searchToolName ? [`  • Use ${searchToolName} to find content about this topic`] : []),
 	].join("\n");
 	return { ...(finalHttpResult ?? { url, title: "", content: "", error: null }), error: guidance };
@@ -1330,7 +1337,8 @@ async function extractViaHttp(
 		const domainPolicy = loadFetchContentDomainPolicy();
 		const redirects = options?.redirects ?? loadFetchContentRedirectPolicy();
 		const authProfile = options?.authFetchProfile;
-		// Auth fetches keep Node's fetch, so browser cookies never appear in a command line.
+		// Auth fetches never run the configured curl command. With a proxy they still go through the
+		// proxy's curl transport, which passes headers (the cookie too) in a private file, not argv.
 		const curl = authProfile ? null : loadFetchContentCurl();
 		// Through curl only a configured User-Agent is sent, so curl-impersonate keeps its browser User-Agent.
 		const userAgent = curl ? loadConfiguredFetchContentUserAgent() : loadFetchContentUserAgent();

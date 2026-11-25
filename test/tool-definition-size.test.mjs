@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,8 +8,9 @@ import { test } from "node:test";
 const indexUrl = new URL("../index.ts", import.meta.url).href;
 const CREDENTIALS = ["BRAVE_API_KEY", "EXA_API_KEY", "TAVILY_API_KEY"];
 
-function registrations(extraEnv = {}) {
+function registrations(extraEnv = {}, config) {
 	const home = mkdtempSync(join(tmpdir(), "pi-web-access-tool-size-"));
+	if (config) writeFileSync(join(home, "web-search.json"), JSON.stringify(config));
 	const env = { ...process.env, PI_CODING_AGENT_DIR: home, XDG_CONFIG_HOME: "", HOME: join(home, "home"), USERPROFILE: join(home, "home") };
 	for (const key of CREDENTIALS) delete env[key];
 	const result = spawnSync(process.execPath, ["--input-type=module"], {
@@ -54,4 +55,19 @@ test("tool definitions are byte-stable across registrations and provider credent
 	assert.equal(second, first);
 	const [withKeys] = registrations(Object.fromEntries(CREDENTIALS.map(key => [key, "test-key"])));
 	assert.equal(JSON.stringify(withKeys.map(tool => tool.definition)), first);
+});
+
+test("retrieval-only definitions drop model-only parameters, say the policy is on, and stay within the budget", () => {
+	const [tools] = registrations({ PI_WEB_ACCESS_RETRIEVAL_ONLY: "1" }, { retrievalOnly: false });
+	const byName = Object.fromEntries(tools.map(({ definition }) => [definition.name, definition]));
+	const marked = tools.filter(({ definition }) => definition.description.endsWith(" Retrieval-only: no model calls.")).map(({ definition }) => definition.name);
+	assert.deepEqual(marked, ["web_search", "fetch_content"]);
+	const [defaultTools] = registrations();
+	assert.ok(defaultTools.every(({ definition }) => !definition.description.includes("Retrieval-only")));
+	const total = tools.reduce((sum, { definition }) => sum + JSON.stringify(definition).length, 0);
+	assert.ok(total <= 4400, `retrieval-only tool definitions total ${total} chars, budget 4400`);
+	const present = (name, keys) => keys.filter(key => Object.hasOwn(byName[name].parameters.properties, key));
+	assert.deepEqual(present("web_search", ["model", "workflow"]), []);
+	assert.deepEqual(present("fetch_content", ["prompt", "model", "answerModel", "fields"]), []);
+	assert.deepEqual(present("fetch_content", ["timestamp", "frames"]), ["timestamp", "frames"]);
 });

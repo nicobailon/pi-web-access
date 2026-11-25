@@ -27,6 +27,7 @@ import {
 } from "./endpoint-pdf-extract.ts";
 import { extractPDFViaGemini } from "./gemini-pdf-extract.ts";
 import { getWebSearchConfigPath } from "./utils.ts";
+import { getRetrievalOnlyPolicy, PDF_PROVIDER_KINDS, retrievalOnlyError } from "./retrieval-only.ts";
 
 export interface PDFExtractResult {
 	title: string;
@@ -186,6 +187,10 @@ export async function extractPDFToMarkdown(
 				: DEFAULT_MAX_PAGES;
 	const urlTitle = extractTitleFromURL(url);
 	const provider = pdfConfig.provider;
+	const retrievalOnly = getRetrievalOnlyPolicy().enabled;
+	if (retrievalOnly && provider !== "auto" && PDF_PROVIDER_KINDS[provider] === "model") {
+		throw retrievalOnlyError(`PDF provider "${provider}"`);
+	}
 
 	if (provider === "auto" || provider === "endpoint") {
 		if (provider === "endpoint" && !isEndpointApiAvailable()) {
@@ -237,7 +242,7 @@ export async function extractPDFToMarkdown(
 		}
 	}
 
-	if (provider === "auto" || provider === "gemini") {
+	if ((provider === "auto" && !retrievalOnly) || provider === "gemini") {
 		try {
 			if (isGeminiApiAvailable()) {
 				const markdownBody = await extractPDFViaGemini(buffer, {
