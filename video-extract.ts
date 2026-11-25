@@ -8,6 +8,7 @@ import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
 import { queryGeminiApiWithVideo, getApiKey, fetchGeminiApi, getVersionedApiBase, getUploadBase, redactGeminiApiResponse, rewriteUploadUrlOrigin } from "./gemini-api.ts";
 import { extractHeadingTitle, type ExtractedContent, type ExtractOptions, type FrameResult } from "./extract.ts";
 import { readExecError, trimErrorText, mapFfmpegError, getWebSearchConfigPath, FRAME_SCALE_FILTER } from "./utils.ts";
+import { getRetrievalOnlyPolicy, retrievalOnlyError } from "./retrieval-only.ts";
 
 const CONFIG_PATH = getWebSearchConfigPath();
 
@@ -166,6 +167,7 @@ export async function extractVideo(
 	signal?: AbortSignal,
 	options?: ExtractOptions,
 ): Promise<ExtractedContent | null> {
+	if (getRetrievalOnlyPolicy().enabled) throw retrievalOnlyError("Local video analysis");
 	const config = loadVideoConfig();
 	const effectivePrompt = options?.prompt ?? DEFAULT_VIDEO_PROMPT;
 	const effectiveModel = options?.model ?? config.preferredModel;

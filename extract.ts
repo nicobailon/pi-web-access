@@ -25,6 +25,7 @@ import { isVideoFile, extractVideo, extractVideoFrame, getLocalVideoDuration } f
 import { appendDeclaredWebLinks, discoverDeclaredWebLinks, type DeclaredWebLink } from "./declared-web-links.ts";
 import { fetchRemoteUrl, loadConfiguredFetchContentUserAgent, loadFetchContentCurl, loadFetchContentDomainPolicy, loadFetchContentRedirectPolicy, loadFetchContentUserAgent, loadSsrfConfig, trustedEnvProxyFor, validateRemoteUrl, type DomainPolicy, type Lookup, type RedirectPolicy, type SsrfConfig } from "./ssrf-protection.ts";
 import { createCurlFetch, formatSeconds, getWebSearchConfigPath, type ProxiedRequestInit } from "./utils.ts";
+import { FETCH_PROVIDER_KINDS, getRetrievalOnlyPolicy, retrievalOnlyExhaustedError } from "./retrieval-only.ts";
 import { isImageEnabled } from "./feature-config.ts";
 import { assertAuthFetchUrl, authFetchRedirectGuard, type AuthFetchProfile } from "./auth-fetch.ts";
 import { getBrowserCookiesForHosts, getLastBrowserCookieDiagnostic } from "./chrome-cookies.ts";
@@ -827,6 +828,12 @@ export async function extractContent(
 	let fetchRouting: FetchRouting;
 	try {
 		fetchRouting = loadFetchRouting();
+		if (getRetrievalOnlyPolicy().enabled) {
+			// Model providers leave the order even when listed or forced; a list of only those chose the source and is refused.
+			const providers = fetchRouting.providers.filter(provider => FETCH_PROVIDER_KINDS[provider] !== "model");
+			if (providers.length === 0) throw retrievalOnlyExhaustedError("fetch provider", fetchRouting.providers);
+			fetchRouting = { ...fetchRouting, providers };
+		}
 	} catch (err) {
 		return { url, title: "", content: "", error: errorMessage(err) };
 	}
