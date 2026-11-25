@@ -497,7 +497,7 @@ class CurlTransportError extends Error {}
 interface CurlTransport {
 	/** Executable and any leading arguments, e.g. ["curl"] or ["curl-impersonate", "--impersonate", "chrome146"]. */
 	command: readonly string[];
-	/** Proxy passed with -x, or null to connect directly. */
+	/** Proxy written to curl's -K config file (never argv), or null to connect directly. */
 	proxy: string | null;
 	/** Error message when the executable is missing; defaults to the proxy transport's message. */
 	notFound?: string;
@@ -551,6 +551,7 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 	const bodyFile = join(dir, "body");
 	const requestBodyFile = join(dir, "request-body");
 	const requestHeaderFile = join(dir, "request-headers");
+	const proxyConfigFile = join(dir, "proxy");
 
 	const args: string[] = [
 		"--silent",
@@ -561,8 +562,10 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 		// URLs are validated as written, so curl must send [ ] { } literally instead of expanding them into other URLs.
 		"--globoff",
 		"--connect-timeout", "20",
-		// An empty proxy also stops curl from using proxy environment variables, which Node's fetch ignores.
-		"-x", proxy ?? "",
+		// The proxy URL can hold a password, so it goes through a config file in the private dir, never argv,
+		// which other processes can read. An empty proxy also stops curl from using proxy environment variables,
+		// which Node's fetch ignores.
+		"-K", proxyConfigFile,
 		// The caller already chose the proxy; curl must not send a host direct because of its own NO_PROXY reading.
 		...(proxy ? ["--noproxy", ""] : []),
 		"-D", headerFile,
@@ -604,6 +607,9 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 	try {
 		// Written inside the try so a failed or partial write still removes the dir and any secrets in it.
 		if (requestBody) await writeFile(requestBodyFile, requestBody, { mode: 0o600 });
+		// Escaping newlines keeps a malformed proxy value from adding other curl options to the file.
+		const quotedProxy = (proxy ?? "").replace(/[\\"]/g, "\\$&").replace(/\n/g, "\\n").replace(/\r/g, "\\r");
+		await writeFile(proxyConfigFile, `proxy = "${quotedProxy}"\n`, { mode: 0o600 });
 		if (headerLines.length > 0) await writeFile(requestHeaderFile, `${headerLines.join("\n")}\n`, { mode: 0o600 });
 		stdout = await new Promise<string>((resolve, reject) => {
 			if (signal?.aborted) {

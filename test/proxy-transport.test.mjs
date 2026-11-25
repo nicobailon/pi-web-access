@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile, chmod } from "node:fs/promises";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 
 import initializeExtension from "../index.ts";
 import { createStandaloneWebToolCore } from "../web-tool-core.ts";
-import { getActiveProxy, installGlobalProxyFetch, isProxyBypassedUrl, normalizeProxyUrl, runWithProxy } from "../utils.ts";
+import { createCurlFetch, getActiveProxy, installGlobalProxyFetch, isProxyBypassedUrl, normalizeProxyUrl, runWithProxy } from "../utils.ts";
 
 const originalFetch = globalThis.fetch;
 const originalPath = process.env.PATH;
@@ -41,7 +42,8 @@ const routes = JSON.parse(process.env.PI_PROXY_TEST_ROUTES);
 const args = process.argv.slice(2);
 // Header files are deleted after curl exits, so record what they held.
 const headers = args.flatMap((arg, index) => args[index - 1] !== "-H" ? [] : arg.startsWith("@") ? fs.readFileSync(arg.slice(1), "utf8").split("\\n").filter(Boolean) : [arg]);
-fs.appendFileSync(process.env.PI_PROXY_TEST_LOG, JSON.stringify({ args, headers }) + "\\n");
+const proxy = args.includes("-K") ? JSON.parse(fs.readFileSync(args[args.indexOf("-K") + 1], "utf8").match(/^proxy = (".*")$/m)[1]) : null;
+fs.appendFileSync(process.env.PI_PROXY_TEST_LOG, JSON.stringify({ args, headers, proxy }) + "\\n");
 function valueAfter(flag) {
   const index = args.indexOf(flag);
   return index === -1 ? null : args[index + 1];
@@ -83,8 +85,8 @@ async function readCurlCalls(logPath) {
 		.split("\n")
 		.filter(Boolean)
 		.map((line) => {
-			const { args, headers } = JSON.parse(line);
-			return Object.assign(args, { headers });
+			const { args, headers, proxy } = JSON.parse(line);
+			return Object.assign(args, { headers, proxy });
 		});
 }
 
@@ -117,8 +119,7 @@ function registerFetchContent() {
 }
 
 function proxyArg(args) {
-	const index = args.indexOf("-x");
-	return index === -1 ? undefined : args[index + 1];
+	return args.proxy;
 }
 
 test("proxy normalization preserves default HTTP(S) ports for curl", () => {
@@ -312,17 +313,18 @@ test("extension initialization preserves fetch identity and installs proxy trans
 	});
 });
 
-test("proxy curl gets request headers from a file, never its command line", async (t) => {
+test("proxy curl gets request headers and the proxy URL from files, never its command line", async (t) => {
 	await withFakeCurl(t, {
 		"https://origin.example/private": { status: 200, statusText: "OK", body: "ok" },
 	}, async (logPath) => {
-		const response = await runWithProxy("http://proxy.example:8080", () => fetch("https://origin.example/private", {
+		const response = await runWithProxy("http://user:proxy-secret@proxy.example:8080", () => fetch("https://origin.example/private", {
 			headers: { Cookie: "session=cookie-secret", Authorization: "Bearer token-secret" },
 		}));
 
 		assert.equal(await response.text(), "ok");
 		const [args] = await readCurlCalls(logPath);
-		assert.ok(args.every((arg) => !/cookie-secret|token-secret/.test(arg)), JSON.stringify(args));
+		assert.ok(args.every((arg) => !/cookie-secret|token-secret|proxy-secret/.test(arg)), JSON.stringify(args));
+		assert.equal(args.proxy, "http://user:proxy-secret@proxy.example:8080/");
 		assert.ok(args.headers.includes("cookie: session=cookie-secret"), JSON.stringify(args.headers));
 		assert.ok(args.headers.includes("authorization: Bearer token-secret"), JSON.stringify(args.headers));
 	});
@@ -892,4 +894,27 @@ test("GCE metadata server hosts always bypass proxy transport", (t) => {
 	process.env.GCE_METADATA_HOST = "http://metadata.test:8080";
 	assert.equal(isProxyBypassedUrl(new URL("http://metadata.test:8080/computeMetadata/v1/instance/service-accounts/default/token")), true);
 	assert.equal(isProxyBypassedUrl(new URL("https://example.com/page")), false);
+});
+
+test("real curl reads an env proxy with quotes, backslashes and line breaks as one proxy value", {
+	skip: spawnSync("curl", ["--version"], { stdio: "ignore" }).status === 0 ? false : "requires curl on PATH",
+}, async (t) => {
+	const requests = [];
+	const proxyServer = createServer((req, res) => {
+		requests.push({ url: req.url, auth: req.headers["proxy-authorization"] ?? null });
+		res.end("via proxy");
+	});
+	await new Promise((resolve) => proxyServer.listen(0, "127.0.0.1", resolve));
+	t.after(() => proxyServer.close());
+	const { port } = proxyServer.address();
+	const fetchWith = (proxy) => createCurlFetch(["curl"], { maxBytes: 1024 * 1024, envProxy: () => proxy })("http://origin.test/page");
+
+	const response = await fetchWith(`http://us"er:p\\ss@127.0.0.1:${port}/`);
+	assert.equal(await response.text(), "via proxy");
+	assert.deepEqual(requests, [{ url: "http://origin.test/page", auth: `Basic ${Buffer.from('us"er:p\\ss').toString("base64")}` }]);
+
+	// A line break must not start another curl option in the config file: here, a second proxy line
+	// that would send the request to the test proxy. Read as one value, the proxy is malformed.
+	await assert.rejects(fetchWith(`http://127.0.0.1:1/\nproxy = http://127.0.0.1:${port}/`));
+	assert.equal(requests.length, 1);
 });
