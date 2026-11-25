@@ -113,19 +113,19 @@ test("sessions forked from one history each keep the results they share", async 
 	assert.equal(getResult(shared), null);
 });
 
-test("a session forked from history keeps the live session's fetched content when the disk cache is gone", async (t) => {
+test("a session forked from history keeps the live session's fetched content when its cache write failed", async (t) => {
 	const cacheRoot = await mkdtemp(join(tmpdir(), "pi-web-access-fork-cache-"));
 	process.env.PI_WEB_ACCESS_CACHE_ROOT = cacheRoot;
 	t.after(async () => {
 		delete process.env.PI_WEB_ACCESS_CACHE_ROOT;
 		await rm(cacheRoot, { recursive: true, force: true });
 	});
+	// A file where the cache folder belongs fails the write, so the content lives only in the room's memory.
+	await writeFile(join(cacheRoot, "web-search-cache"), "");
 	servePage("Live content. ".repeat(80));
 	const room = startInstance();
 	await room.emit("session_start");
 	const shared = (await room.call("fetch_content", { url: "https://93.184.216.34/live" })).details.responseId;
-	// The cache file is pruned (or was never written) while the room still holds the content.
-	await rm(join(cacheRoot, "web-search-cache"), { recursive: true, force: true });
 
 	const thread = startInstance([...room.entries]);
 	await thread.emit("session_start");

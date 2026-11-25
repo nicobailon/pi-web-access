@@ -427,15 +427,19 @@ export function storeFetchedContentResult(id: string, data: StoredSearchData & {
 	} catch (err) {
 		cacheError = `Failed to write fetched content cache: ${err instanceof Error ? err.message : String(err)}`;
 	}
-	storedResults.set(id, ref ? { ...data, fetchCache: ref, urlMetadata: metadataForUrls(data.urls) } : { ...data, fetchCacheError: cacheError });
-	return createFetchSessionData(data, ref, cacheError);
+	const sessionData = createFetchSessionData(data, ref, cacheError);
+	// Content written to the disk cache is read back from there, so memory stays within the cache's limits.
+	// Only a failed write keeps it in memory, where it has nowhere else to live.
+	storedResults.set(id, ref ? sessionData : { ...data, fetchCacheError: cacheError });
+	return sessionData;
 }
 
 export function getResult(id: string): StoredSearchData | null {
 	const data = storedResults.get(id);
 	if (!data) return null;
 	const loaded = readCachedFetchData(data);
-	if (loaded !== data) storedResults.set(id, loaded);
+	// Content read from the disk cache is not kept, so a file the cache evicted reads as missing.
+	if (loaded !== data && !data.fetchCache) storedResults.set(id, loaded);
 	return loaded;
 }
 
@@ -527,8 +531,8 @@ export function loadSessionResults(ctx: ExtensionContext): StoredSearchData[] {
 		if (entry.type === "custom" && entry.customType === "web-search-results") {
 			const data = entry.data;
 			if (isValidStoredData(data) && now - data.timestamp < CACHE_TTL_MS) {
-				// Another live session may hold this result with its fetched content in memory;
-				// the journal copy only points at the disk cache, which can be pruned.
+				// Another live session may hold this result with its fetched content in memory after a
+				// failed cache write; the journal copy only points at the disk cache.
 				const live = storedResults.get(data.id);
 				if (live) {
 					loaded.push(live);
