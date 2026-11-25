@@ -394,12 +394,12 @@ test("an origin 404 scraped by Firecrawl ends in the not-found result, not page 
 			return new Response(JSON.stringify({ success: true, data: { markdown: "# Page not found", metadata: { title: "Page Not Found", statusCode: 404 } } }), { status: 200 });
 		};
 		const { extractContent } = await import(${JSON.stringify(extractModuleUrl)});
-		const result = await extractContent("https://example.com/gone", undefined, { lookup: ${PUBLIC_LOOKUP} });
+		const result = await extractContent("https://example.com/blog/how-to-abort-a-rebase", undefined, { lookup: ${PUBLIC_LOOKUP} });
 		console.log(JSON.stringify({ calls, result }));
 	`, { FIRECRAWL_BASE_URL: "https://crawl.example.com" });
 	assert.equal(child.status, 0, child.stderr);
 	const output = JSON.parse(child.stdout.trim());
-	assert.deepEqual(output.calls, ["https://example.com/gone", "https://crawl.example.com/v2/scrape"]);
+	assert.deepEqual(output.calls, ["https://example.com/blog/how-to-abort-a-rebase", "https://crawl.example.com/v2/scrape"]);
 	assert.equal(output.result.status, 404);
 	assert.doesNotMatch(output.result.content, /Page not found/);
 	assert.match(output.result.error, /The origin server says this page does not exist \(HTTP 404\)/);

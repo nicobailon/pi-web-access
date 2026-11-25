@@ -447,7 +447,8 @@ export async function extractWithFirecrawl(
 	// Firecrawl scrapes the origin's own error page with success: true, so its status decides whether this is a read.
 	const originStatus = scrape.metadata?.statusCode;
 	if (typeof originStatus === "number" && originStatus >= 400) {
-		throw new Error(`Firecrawl could not read ${url}: the site answered HTTP ${originStatus}`);
+		// No URL in the message: extract.ts treats any error mentioning "abort" as a cancel.
+		throw new Error(`Firecrawl got HTTP ${originStatus} from the site`);
 	}
 	const content = scrape.markdown.trim();
 	if (!content) return null;
