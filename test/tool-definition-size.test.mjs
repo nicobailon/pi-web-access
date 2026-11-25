@@ -57,9 +57,13 @@ test("tool definitions are byte-stable across registrations and provider credent
 	assert.equal(JSON.stringify(withKeys.map(tool => tool.definition)), first);
 });
 
-test("retrieval-only definitions drop model-only parameters and stay within the budget", () => {
+test("retrieval-only definitions drop model-only parameters, say the policy is on, and stay within the budget", () => {
 	const [tools] = registrations({ PI_WEB_ACCESS_RETRIEVAL_ONLY: "1" }, { retrievalOnly: false });
 	const byName = Object.fromEntries(tools.map(({ definition }) => [definition.name, definition]));
+	const marked = tools.filter(({ definition }) => definition.description.endsWith(" Retrieval-only: no model calls.")).map(({ definition }) => definition.name);
+	assert.deepEqual(marked, ["web_search", "fetch_content"]);
+	const [defaultTools] = registrations();
+	assert.ok(defaultTools.every(({ definition }) => !definition.description.includes("Retrieval-only")));
 	const total = tools.reduce((sum, { definition }) => sum + JSON.stringify(definition).length, 0);
 	assert.ok(total <= 4400, `retrieval-only tool definitions total ${total} chars, budget 4400`);
 	const present = (name, keys) => keys.filter(key => Object.hasOwn(byName[name].parameters.properties, key));

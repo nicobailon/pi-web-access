@@ -9,7 +9,7 @@ import { clearCloneCache, releaseClonesUnusedSince, touchClones } from "./github
 import { ALL_SEARCH_PROVIDERS, getAllowedSearchProviders, getAvailableCustomSearchProviders, getConfiguredSearchRouting, parseProviderArgument, RESOLVED_SEARCH_PROVIDERS, search, type AttributedSearchResponse, type BuiltinSearchProvider, type ProviderAvailability, type SearchProvider, type SearchProviderSelection, type ResolvedSearchProvider } from "./gemini-search.ts";
 export type { ProviderAvailability } from "./gemini-search.ts";
 import { formatSeconds, getWebSearchConfigDir, resolveCuratorNetworkConfig, runWithProxy } from "./utils.ts";
-import { resolveRetrievalOnlyPolicy, retrievalOnlyError } from "./retrieval-only.ts";
+import { RETRIEVAL_ONLY_DESCRIPTION_SUFFIX, resolveRetrievalOnlyPolicy, retrievalOnlyError } from "./retrieval-only.ts";
 import {
 	deleteHeldResult,
 	generateId,
@@ -745,6 +745,7 @@ export default function (pi: ExtensionAPI) {
 	// Outside loadConfigForExtensionInit, which logs config errors instead of throwing: a bad
 	// policy value must stop the extension rather than leave model routes open.
 	const retrievalOnly = resolveRetrievalOnlyPolicy(initConfig);
+	const retrievalOnlySuffix = retrievalOnly.enabled ? RETRIEVAL_ONLY_DESCRIPTION_SUFFIX : "";
 	const fetchModeConfig = resolveFetchModeConfig(initConfig);
 	const toolActivation = initConfig.toolActivation ?? "auto";
 	if (toolActivation !== "auto" && toolActivation !== "dynamic" && toolActivation !== "eager" && toolActivation !== "none") {
@@ -1424,7 +1425,7 @@ export default function (pi: ExtensionAPI) {
 		label: "Web Search",
 		prepareArguments: (args) => parseStringifiedArrays(args, ["queries", "domainFilter"]) as never,
 		description:
-			`Search the web for sources or answers.${getSearchContentEnabled ? ` Full results are stored for ${toolNames.getSearchContent} by responseId.` : ""} Prefer 2-4 varied queries.`,
+			`Search the web for sources or answers.${getSearchContentEnabled ? ` Full results are stored for ${toolNames.getSearchContent} by responseId.` : ""} Prefer 2-4 varied queries.${retrievalOnlySuffix}`,
 		promptSnippet:
 			"Web research. Prefer {queries:[...]} with 2-4 varied angles; omit provider unless overriding the default.",
 		parameters: Type.Object({
@@ -2009,7 +2010,7 @@ export default function (pi: ExtensionAPI) {
 	if (fetchContentEnabled) pi.registerTool({
 		name: toolNames.fetchContent,
 		label: "Fetch Content",
-		description: `Fetch web pages, PDFs, GitHub repos, images, YouTube and local video, as the mode allows. ${fetchContentStorageNote}`,
+		description: `Fetch web pages, PDFs, GitHub repos, images, YouTube and local video, as the mode allows. ${fetchContentStorageNote}${retrievalOnlySuffix}`,
 		promptSnippet:
 			`Use to fetch URL content, direct images, GitHub repos, and videos.${fetchModeConfig.allowedModes.includes("extract") ? ' For specific values (a price, version, date or limit), use mode "extract" with fields instead of reading the whole page.' : ""}`,
 		parameters: Type.Object({

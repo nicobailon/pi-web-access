@@ -5,6 +5,8 @@ import type { PDFProvider } from "./pdf-extract.ts";
 import { getWebSearchConfigPath, isRecord } from "./utils.ts";
 
 const RETRIEVAL_ONLY_ENV = "PI_WEB_ACCESS_RETRIEVAL_ONLY";
+/** Ends the web_search and fetch_content descriptions while the policy is on, so a host can read the policy back. */
+export const RETRIEVAL_ONLY_DESCRIPTION_SUFFIX = " Retrieval-only: no model calls.";
 
 export interface RetrievalOnlyPolicy {
 	enabled: boolean;
