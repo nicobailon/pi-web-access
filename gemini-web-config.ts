@@ -8,7 +8,7 @@ interface GeminiWebConfig {
 	allowBrowserCookies?: boolean;
 }
 
-const BROWSER_COOKIE_PRESETS = ["helium", "chrome", "brave", "arc", "chromium", "edge"] as const;
+const BROWSER_COOKIE_PRESETS = ["helium", "ardia", "chrome", "brave", "arc", "chromium", "edge"] as const;
 export type BrowserCookiePreset = typeof BROWSER_COOKIE_PRESETS[number];
 
 export interface BrowserCookieSelection {

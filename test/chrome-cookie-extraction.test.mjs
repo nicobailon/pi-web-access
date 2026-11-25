@@ -17,7 +17,9 @@ function createFixture(home, profile, rows = [], options = {}) {
 			? join(home, "Library", "Application Support", "BraveSoftware", "Brave-Browser")
 			: browser === "Helium"
 				? join(home, "Library", "Application Support", "net.imput.helium")
-				: browser === "Arc"
+				: browser === "Ardia"
+					? join(home, "Library", "Application Support", "com.ardia.browser", "Chromium")
+					: browser === "Arc"
 					? join(home, "Library", "Application Support", "Arc", "User Data")
 					: join(home, "Library", "Application Support", "Google", "Chrome")
 		: targetPlatform === "win32"
@@ -369,6 +371,30 @@ test("browser selection checks only the requested preset", (t) => {
 	assert.deepEqual(result.result.cookies, { "__Secure-1PSIDTS": "helium-two", "__Secure-1PSID": "helium-one" });
 	assert.deepEqual(readFileSync(argsPath, "utf8").trim().split("\n"), [
 		"find-generic-password", "-w", "-a", "Helium", "-s", "Helium Storage Key",
+	]);
+	rmSync(home, { recursive: true, force: true });
+	rmSync(bin, { recursive: true, force: true });
+});
+
+test("macOS Ardia preset reads Chromium profile cookies with Ardia Safe Storage", (t) => {
+	skipWithoutPython(t);
+	const home = mkdtempSync(join(tmpdir(), "pi-cookie-ardia-"));
+	const bin = mkdtempSync(join(tmpdir(), "pi-cookie-bin-"));
+	createFixture(home, "Default", [
+		["__Secure-1PSID", "ardia-one", ".google.com", null, 1],
+		["__Secure-1PSIDTS", "ardia-two", ".google.com", null, 2],
+	], { browser: "Ardia", targetPlatform: "darwin" });
+	createFixture(home, "Default", [
+		["__Secure-1PSID", "chrome-one", ".google.com", null, 1],
+		["__Secure-1PSIDTS", "chrome-two", ".google.com", null, 2],
+	], { browser: "Chrome", targetPlatform: "darwin" });
+	const env = makeEnvironment(home, bin);
+	const argsPath = join(home, "password-args");
+	Object.assign(env, writePasswordCommand(bin, join(home, "password-count"), "darwin", argsPath));
+	const result = runCookies(home, env, "{ browser: 'ardia', profile: 'Default', requiredCookies: ['__Secure-1PSID', '__Secure-1PSIDTS'] }", "darwin");
+	assert.deepEqual(result.result.cookies, { "__Secure-1PSIDTS": "ardia-two", "__Secure-1PSID": "ardia-one" });
+	assert.deepEqual(readFileSync(argsPath, "utf8").trim().split("\n"), [
+		"find-generic-password", "-w", "-a", "Ardia", "-s", "Ardia Safe Storage",
 	]);
 	rmSync(home, { recursive: true, force: true });
 	rmSync(bin, { recursive: true, force: true });
