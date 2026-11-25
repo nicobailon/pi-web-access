@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
 ### Changed
 
 - A `fetch_content` call with invalid arguments now reports every problem in one error, a missing URL first, and names the parameters it received. A model that dropped `url` from its call can see that and fix it, instead of repeating the same failing call. Thanks to [@j-koester](https://github.com/j-koester) for [PR #685](https://github.com/nicobailon/pi-web-access/pull/685) and [@anibalsanchez](https://github.com/anibalsanchez) for the report in [PR #686](https://github.com/nicobailon/pi-web-access/pull/686).
+- The `fetch_content` tool description now says which options can't be used together, so an agent can pick a valid call up front instead of learning it from an error: `auth` doesn't work with `answer` or `extract` mode, and `raw` mode doesn't take the video, model or `forceClone` options. Before, nothing said so until the call failed. Thanks to [@NoGood](https://github.com/NoGood) for [issue #710](https://github.com/nicobailon/pi-web-access/issues/710).
 
 ### Fixed
 

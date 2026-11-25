@@ -62,8 +62,7 @@ test("Pi fetch_content offers only readable and raw, refuses model modes, and de
 	`));
 	assert.deepEqual(out.enum, ["readable", "raw"]);
 	assert.deepEqual(out.modelParams, []);
-	// "extract readable content" describes readable mode; only the extract mode itself must be gone.
-	assert.doesNotMatch(out.advertised, /answer|"extract"|extract:/);
+	assert.doesNotMatch(out.advertised, /answer|extract/);
 	assert.match(out.answer, POLICY);
 	assert.match(out.extract, POLICY);
 	assert.equal(out.refusedFetchCalls, 0);

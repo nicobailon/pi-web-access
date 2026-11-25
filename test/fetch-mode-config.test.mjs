@@ -62,6 +62,7 @@ test("absent config exposes all modes and defaults execution to readable", () =>
 	const result = JSON.parse(child.stdout);
 	assert.deepEqual(result.enum, ["readable", "raw", "answer"]);
 	assert.match(result.description, /readable \(default\)/);
+	assert.match(result.description, /answer: [^;]+; no auth/);
 	assert.equal(result.hasAnswerModel, true);
 	assert.deepEqual({ text: result.text, mode: result.mode, fetchCalls: result.fetchCalls }, { text: "plain readable body", mode: "readable", fetchCalls: 1 });
 });
@@ -102,7 +103,7 @@ test("configured modes align schema and execution and reject disabled modes befo
 	const result = JSON.parse(child.stdout);
 	assert.deepEqual(result.enum, ["raw"]);
 	assert.equal(result.hasAnswerModel, false);
-	assert.match(result.modeDescription, /raw \(default\): return the exact textual body using direct HTTP only/);
+	assert.match(result.modeDescription, /raw \(default\): exact text body, direct HTTP only; no video or clone options/);
 	assert.doesNotMatch(result.description, /readable|answer/);
 	assert.doesNotMatch(result.promptSnippet, /readable|answer/);
 	assert.doesNotMatch(result.modeDescription, /readable|answer/);
