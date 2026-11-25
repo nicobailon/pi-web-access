@@ -396,7 +396,37 @@ test("extractContent returns an actionable GitHub rate-limit result instead of H
 	const result = JSON.parse(child.stdout.split("\n").at(-2));
 	assert.equal(result.status, 403);
 	assert.match(result.error, /rate limit/i);
+	assert.match(result.content, /anonymous GitHub API/);
+	assert.match(result.content, /gh could not be run\. Check that gh is installed and on the PATH of the process running this extension/);
+	assert.match(result.error, /^Anonymous GitHub API rate limit reached/);
+	assert.doesNotMatch(result.content, /gh auth login/);
+});
+
+test("GitHub rate-limit result still says to log in when gh runs but its request fails", async () => {
+	const root = await mkdtemp(join(tmpdir(), "pi-web-access-gh-rate-login-"));
+	const binDir = join(root, "bin");
+	const agentDir = join(root, "agent");
+	await mkdir(binDir, { recursive: true });
+	await mkdir(agentDir, { recursive: true });
+	await writeFakeExecutable(binDir, "gh", `process.exit(process.argv[2] === "--version" ? 0 : 1);`);
+
+	const child = spawnSync(process.execPath, ["--input-type=module"], {
+		input: `
+			globalThis.fetch = async () => new Response("rate limited", { status: 403, headers: { "x-ratelimit-remaining": "0" } });
+			const { extractContent } = await import(${JSON.stringify(extractUrl)});
+			const lookup = ${publicLookup.toString()};
+			const result = await extractContent("https://github.com/owner/repo/issues/12", undefined, { lookup });
+			console.log(JSON.stringify(result));
+		`,
+		encoding: "utf8",
+		env: { ...process.env, PATH: `${binDir}${delimiter}${process.env.PATH || ""}`, PI_CODING_AGENT_DIR: agentDir },
+	});
+
+	assert.equal(child.status, 0, child.stderr);
+	const result = JSON.parse(child.stdout.split("\n").at(-2));
+	assert.equal(result.status, 403);
 	assert.match(result.content, /gh auth login/);
+	assert.doesNotMatch(result.content, /anonymous GitHub API/);
 });
 
 test("REST fallback fetches an anchored issue comment outside the first page", async () => {

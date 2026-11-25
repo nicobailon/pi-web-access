@@ -279,14 +279,19 @@ function associationMatches(value: unknown, info: GitHubIssuePrUrlInfo, route: "
 	}
 }
 
-function rateLimitResult(url: string, info: GitHubIssuePrUrlInfo, response: Response): ExtractedContent {
+function rateLimitResult(url: string, info: GitHubIssuePrUrlInfo, response: Response, ghAvailable: boolean): ExtractedContent {
 	const reset = response.headers.get("x-ratelimit-reset");
 	const resetNote = reset ? ` Rate limit resets at Unix time ${reset}.` : "";
+	const guidance = ghAvailable
+		? "Authenticate the gh CLI and retry:\n\n`gh auth login`"
+		: "This request used the anonymous GitHub API because gh could not be run. Check that gh is installed and on the PATH of the process running this extension (`gh --version`), then restart it.";
 	return {
 		url,
 		title: `${info.owner}/${info.repo}#${info.number}`,
-		content: `GitHub API rate limit reached for ${info.owner}/${info.repo} ${info.kind} #${info.number}.${resetNote}\n\nAuthenticate the gh CLI and retry:\n\n\`gh auth login\`\n\nThen fetch this URL again.`,
-		error: "GitHub API rate limit reached; authenticate gh to fetch this PR or issue.",
+		content: `GitHub API rate limit reached for ${info.owner}/${info.repo} ${info.kind} #${info.number}.${resetNote}\n\n${guidance}\n\nThen fetch this URL again.`,
+		error: ghAvailable
+			? "GitHub API rate limit reached; authenticate gh to fetch this PR or issue."
+			: "Anonymous GitHub API rate limit reached; put gh on the PATH of the process running this extension.",
 		status: response.status,
 	};
 }
@@ -304,25 +309,25 @@ async function restJson(url: string, options?: ExtractOptions, signal?: AbortSig
 	return { value: await response.json(), response };
 }
 
-async function restFallback(url: string, info: GitHubIssuePrUrlInfo, options?: ExtractOptions, signal?: AbortSignal): Promise<ExtractedContent | { data: RenderData } | null> {
+async function restFallback(url: string, info: GitHubIssuePrUrlInfo, options: ExtractOptions | undefined, signal: AbortSignal | undefined, ghAvailable: boolean): Promise<ExtractedContent | { data: RenderData } | null> {
 	try {
 		const base = `https://api.github.com/repos/${info.owner}/${info.repo}`;
 		const mainPath = info.kind === "pull" ? `${base}/pulls/${info.number}` : `${base}/issues/${info.number}`;
 		const main = await restJson(mainPath, options, signal);
 		if (!main) return null;
-		if (isRateLimited(main.response)) return rateLimitResult(url, info, main.response);
+		if (isRateLimited(main.response)) return rateLimitResult(url, info, main.response, ghAvailable);
 		if (!main.response.ok) return null;
 		const view = mapRestView(info, main.value);
 		view.linkedReferencesUnavailable = true;
 		const comments = await restJson(`${base}/issues/${info.number}/comments?per_page=50`, options, signal);
-		if (comments && isRateLimited(comments.response)) return rateLimitResult(url, info, comments.response);
+		if (comments && isRateLimited(comments.response)) return rateLimitResult(url, info, comments.response, ghAvailable);
 		const conversationComments = comments?.response.ok && Array.isArray(comments.value)
 			? comments.value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item))
 			: [];
 		const issueCommentId = anchorId(info.anchor, "issuecomment");
 		if (issueCommentId && !hasCommentId(conversationComments, issueCommentId)) {
 			const anchoredComment = await restJson(`${base}/issues/comments/${issueCommentId}`, options, signal);
-			if (anchoredComment && isRateLimited(anchoredComment.response)) return rateLimitResult(url, info, anchoredComment.response);
+			if (anchoredComment && isRateLimited(anchoredComment.response)) return rateLimitResult(url, info, anchoredComment.response, ghAvailable);
 			if (anchoredComment?.response.ok && anchoredComment.value && typeof anchoredComment.value === "object" && !Array.isArray(anchoredComment.value)) {
 				const comment = anchoredComment.value as Record<string, unknown>;
 				if (belongsToIssue(comment, issueCommentId, info)) conversationComments.push(comment);
@@ -338,17 +343,17 @@ async function restFallback(url: string, info: GitHubIssuePrUrlInfo, options?: E
 			view.reviewsUnavailable = true;
 			view.commitsUnavailable = true;
 			const files = await restJson(`${base}/pulls/${info.number}/files?per_page=50`, options, signal);
-			if (files && isRateLimited(files.response)) return rateLimitResult(url, info, files.response);
+			if (files && isRateLimited(files.response)) return rateLimitResult(url, info, files.response, ghAvailable);
 			if (files?.response.ok && Array.isArray(files.value)) view.files = files.value;
 			const threads = await restJson(`${base}/pulls/${info.number}/comments?per_page=50`, options, signal);
-			if (threads && isRateLimited(threads.response)) return rateLimitResult(url, info, threads.response);
+			if (threads && isRateLimited(threads.response)) return rateLimitResult(url, info, threads.response, ghAvailable);
 			if (threads?.response.ok && Array.isArray(threads.value)) {
 				reviewThreads.push(...threads.value.filter((item): item is Record<string, unknown> => !!item && typeof item === "object" && !Array.isArray(item)));
 			}
 			const discussionId = anchorId(info.anchor, "discussion_r");
 			if (discussionId && !hasCommentId(reviewThreads, discussionId)) {
 				const anchoredThread = await restJson(`${base}/pulls/comments/${discussionId}`, options, signal);
-				if (anchoredThread && isRateLimited(anchoredThread.response)) return rateLimitResult(url, info, anchoredThread.response);
+				if (anchoredThread && isRateLimited(anchoredThread.response)) return rateLimitResult(url, info, anchoredThread.response, ghAvailable);
 				if (anchoredThread?.response.ok && anchoredThread.value && typeof anchoredThread.value === "object" && !Array.isArray(anchoredThread.value)) {
 					const comment = anchoredThread.value as Record<string, unknown>;
 					if (belongsToPull(comment, discussionId, info)) reviewThreads.push(comment);
@@ -705,7 +710,7 @@ export async function extractGitHubIssuePr(url: string, signal?: AbortSignal, op
 		showGhHint();
 	}
 
-	const fallback = await restFallback(url, info, options, signal);
+	const fallback = await restFallback(url, info, options, signal, ghAvailable);
 	if (!fallback) return null;
 	if ("data" in fallback) return renderGitHubPrIssue({ ...fallback.data, retrievalTool });
 	return fallback;
