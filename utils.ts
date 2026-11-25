@@ -497,7 +497,7 @@ class CurlTransportError extends Error {}
 interface CurlTransport {
 	/** Executable and any leading arguments, e.g. ["curl"] or ["curl-impersonate", "--impersonate", "chrome146"]. */
 	command: readonly string[];
-	/** Proxy passed with -x, or null to connect directly. */
+	/** Proxy written to curl's -K config file (never argv), or null to connect directly. */
 	proxy: string | null;
 	/** Error message when the executable is missing; defaults to the proxy transport's message. */
 	notFound?: string;
