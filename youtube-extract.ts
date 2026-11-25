@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { activityMonitor } from "./activity.ts";
 import { canAttachImages } from "./feature-config.ts";
-import { isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
+import { browserCookieAccessHint, browserCookieAccessHintLine, isGeminiWebAvailable, queryWithCookies, requestBrowserCookieAccess } from "./gemini-web.ts";
+import { isBrowserCookieAccessAllowed, type BrowserCookieConsent } from "./gemini-web-config.ts";
 import { isGeminiApiAvailableWithVideo, queryGeminiApiWithVideo } from "./gemini-api.ts";
 import { askPerplexity, isPerplexityAvailable } from "./perplexity.ts";
 import { extractHeadingTitle, type ExtractedContent, type FrameResult, type VideoFrame } from "./extract.ts";
@@ -95,11 +96,17 @@ export function isYouTubeEnabled(): boolean {
 	return loadYouTubeConfig().enabled;
 }
 
+/** The error when no route could read a YouTube video and none said why. */
+export function youTubeAccessError(browserCookieConsent?: BrowserCookieConsent): string {
+	return `Could not extract YouTube video content. Set GEMINI_API_KEY in ${CONFIG_PATH}, or:\n${browserCookieAccessHint(browserCookieConsent)}`;
+}
+
 export async function extractYouTube(
 	url: string,
 	signal?: AbortSignal,
 	prompt?: string,
 	model?: string,
+	browserCookieConsent?: BrowserCookieConsent,
 ): Promise<ExtractedContent | null> {
 	// Every route below (Gemini Web, Gemini API, Perplexity Sonar) has a model watch the video.
 	if (getRetrievalOnlyPolicy().enabled) throw retrievalOnlyError("YouTube video analysis");
@@ -116,6 +123,8 @@ export async function extractYouTube(
 
 	const result = await tryGeminiWeb(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors)
 		?? await tryGeminiApi(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors)
+		// Perplexity only summarizes the video, so ask for the browser login before settling for it.
+		?? (!signal?.aborted && await requestBrowserCookieAccess(browserCookieConsent) ? await tryGeminiWeb(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors) : null)
 		?? await tryPerplexity(url, effectivePrompt, signal, attemptErrors);
 
 	if (result) {
@@ -134,8 +143,8 @@ export async function extractYouTube(
 	}
 
 	const error = attemptErrors.length > 0
-		? ["Could not extract YouTube video content.", "", ...attemptErrors.map(message => `- ${message}`)].join("\n")
-		: "Could not extract YouTube video content. Sign into Google in a supported Chromium browser for automatic access, or set GEMINI_API_KEY.";
+		? ["Could not extract YouTube video content.", "", ...attemptErrors.map(message => `- ${message}`), ...(isBrowserCookieAccessAllowed() ? [] : ["", browserCookieAccessHint(browserCookieConsent)])].join("\n")
+		: youTubeAccessError(browserCookieConsent);
 	activityMonitor.logError(activityId, error);
 	return { url, title: "", content: "", error };
 }
@@ -311,7 +320,7 @@ async function tryPerplexity(
 
 		const content =
 			`# Video Summary (via Perplexity)\n\n${answer}\n\n` +
-			`*Full video understanding requires Gemini access. Set GEMINI_API_KEY or sign into Google in a supported Chromium browser.*`;
+			`*Full video understanding requires Gemini access. Set GEMINI_API_KEY, or: ${browserCookieAccessHintLine()}.*`;
 
 		return {
 			url,

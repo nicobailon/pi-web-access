@@ -5,7 +5,8 @@ import { activityMonitor } from "./activity.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
 import { getApiKey, getVersionedApiBase, fetchGeminiApi, isGatewayConfigured, isGeminiApiAvailable, redactGeminiApiResponse } from "./gemini-api.ts";
 import { isGeminiAdcAvailable } from "./gemini-adc.ts";
-import { getGeminiWebAvailabilityDiagnostic, isGeminiWebAvailable, queryWithCookies } from "./gemini-web.ts";
+import { browserCookieAccessHint, browserCookieAccessHintLine, getGeminiWebAvailabilityDiagnostic, isGeminiWebAvailable, queryWithCookies, requestBrowserCookieAccess } from "./gemini-web.ts";
+import type { BrowserCookieConsent } from "./gemini-web-config.ts";
 import { isPerplexityAvailable, searchWithPerplexity, type SearchResult, type SearchResponse, type SearchOptions } from "./perplexity.ts";
 import { normalizeDomain } from "./domain-filter-normalization.ts";
 import { judgeOffTopic, OFFTOPIC_JUDGE_MODELS, type OffTopicJudgeModel } from "./offtopic-judge.ts";
@@ -415,6 +416,8 @@ export interface FullSearchOptions extends SearchOptions {
 	providerFromConfig?: boolean;
 	includeContent?: boolean;
 	extensionContext?: ExtensionContext;
+	/** Lets an explicit Gemini search ask the user to turn on browser cookie access. */
+	browserCookieConsent?: BrowserCookieConsent;
 	/** Forwarded to providers that understand them (category: Exa; objective: Exa, Parallel); ignored elsewhere. */
 	category?: string;
 	objective?: string;
@@ -556,6 +559,8 @@ async function searchWithResolvedProvider(
 	query: string,
 	options: FullSearchOptions,
 	useCurrentModel = false,
+	// Only a single requested provider asks; fallback chains and "all" must never open a dialog.
+	askBrowserCookies = false,
 ): Promise<ProviderSearchResponse> {
 	const custom = getSearchConfig().customProviders.get(provider);
 	if (custom) return { ...(await searchWithCustomProvider(provider, custom, query, options)), provider };
@@ -597,14 +602,15 @@ async function searchWithResolvedProvider(
 	if (provider === "duckduckgo") return { ...(await searchWithDuckDuckGo(query, options)), provider };
 	if (provider === "kimi") return { ...(await searchWithKimi(query, options, options.extensionContext)), provider };
 	if (provider === "gemini") {
-		const result = await searchWithGemini(query, options, true);
+		const result = await searchWithGemini(query, options, true)
+			?? (askBrowserCookies && await requestBrowserCookieAccess(options.browserCookieConsent) ? await searchWithGemini(query, options, true) : null);
 		if (result) return { ...result, provider };
 		throw new Error(
 			"Gemini search unavailable. Either:\n" +
 			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +
 			"  2. Set GOOGLE_GEMINI_BASE_URL + CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
 			"  3. Set geminiAuth to \"adc\" in web-search.json with a Google Cloud ADC + project/location\n" +
-			"  4. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true",
+			`  4. ${browserCookieAccessHint(options.browserCookieConsent, "     ")}`,
 		);
 	}
 	return { ...(await searchWithExa(query, options)), provider };
@@ -887,7 +893,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		return searchWithProviders(query, options, normalizeResolvedProviderList(provider, "provider"), routing);
 	}
 	if (provider === "all") return searchWithProviders(query, options);
-	if (provider !== "auto") return searchWithResolvedProvider(provider, query, options);
+	if (provider !== "auto") return searchWithResolvedProvider(provider, query, options, false, true);
 	if (!config.searchProviderConfigured && config.searchRouting) {
 		return searchWithConfiguredRouting(query, options, config.searchRouting);
 	}
@@ -965,7 +971,7 @@ export async function search(query: string, options: FullSearchOptions = {}): Pr
 		`  2. Set openaiApiKey, braveApiKey, parallelApiKey, tinyfishApiKey, searchinfinityApiKey, queritApiKey, tavilyApiKey, firecrawlBaseUrl, jinaApiKey, kagiApiKey, ollamaApiKey, searxngBaseUrl, perplexityApiKey, exaApiKey, geminiApiKey, bochaApiKey, or cloudflareApiKey in ${CONFIG_PATH}\n` +
 		"  3. Set OPENAI_API_KEY, BRAVE_API_KEY, PARALLEL_API_KEY, TINYFISH_API_KEY, SEARCHINFINITY_API_KEY, QUERIT_API_KEY, TAVILY_API_KEY, FIRECRAWL_BASE_URL, JINA_API_KEY, KAGI_API_KEY, BOCHA_API_KEY, OLLAMA_API_KEY, SEARXNG_BASE_URL, EXA_API_KEY, PERPLEXITY_API_KEY, GEMINI_API_KEY, or CLOUDFLARE_API_KEY env vars\n" +
 		"  4. Set GOOGLE_GEMINI_BASE_URL with CLOUDFLARE_API_KEY for Cloudflare AI Gateway routing\n" +
-		"  5. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true\n" +
+		`  5. ${browserCookieAccessHintLine()}\n` +
 		"  6. Explicitly select provider: \"anysearch\" for anonymous AnySearch, \"xai\" for Grok, \"mistral\" for Mistral Conversations web search, \"you\" for You.com, \"zai\" for Z.ai GLM Coding Plan search, \"valyu\" for research search, \"keenable\" for keyless Keenable search, \"ceramic\" for Ceramic search, \"deepseek\" for DeepSeek search, \"linkup\" for Linkup search, \"ninerouter\" for a 9router gateway, \"cloudflare\" for the Cloudflare Web Search API, \"tabstack\" for Tabstack Research, or a custom provider from customSearchProviders"
 	);
 }

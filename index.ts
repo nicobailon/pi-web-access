@@ -39,8 +39,9 @@ import { join } from "node:path";
 import { isPerplexityAvailable } from "./perplexity.ts";
 import { isExaAvailable } from "./exa.ts";
 import { isGeminiApiAvailable } from "./gemini-api.ts";
-import { getActiveGoogleEmail, getGeminiWebAvailabilityDiagnostic, getGeminiWebAvailabilityDiagnosticDetails, isGeminiWebAvailable } from "./gemini-web.ts";
-import { isBrowserCookieAccessAllowed } from "./gemini-web-config.ts";
+import { browserCookieAccessHint, getActiveGoogleEmail, getGeminiWebAvailabilityDiagnostic, getGeminiWebAvailabilityDiagnosticDetails, isGeminiWebAvailable } from "./gemini-web.ts";
+import { clearGeminiWebConfigCache, getBrowserCookieSelectionFromConfig, grantBrowserCookieAccessForSession, isBrowserCookieAccessAllowed, revokeBrowserCookieAccessForSession, type BrowserCookieConsent } from "./gemini-web-config.ts";
+import { detectBrowserProfiles } from "./chrome-cookies.ts";
 import { isBraveAvailable } from "./brave.ts";
 import { isCurrentModelHostedSearchEligible, isOpenAISearchAvailable, isOpenAISubscriptionModelSelected } from "./openai-search.ts";
 import { isParallelAvailable } from "./parallel.ts";
@@ -1739,7 +1740,7 @@ export default function (pi: ExtensionAPI) {
 					return { approvedSummary: generated.summary, summaryMeta: generated.meta };
 				};
 			}
-			return core.webSearch(params, signal, { extensionContext: ctx, onUpdate, summarize, awaitContent: nested });
+			return core.webSearch(params, signal, { extensionContext: ctx, onUpdate, summarize, awaitContent: nested, browserCookieConsent: browserCookieConsent(ctx) });
 			}));
 		},
 
@@ -2070,7 +2071,7 @@ export default function (pi: ExtensionAPI) {
 		exposure: toolExposure,
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx): Promise<AgentToolResult<Record<string, unknown>>> {
-			return markToolError(await core.fetchContent(params, signal, { extensionContext: ctx, onUpdate }));
+			return markToolError(await core.fetchContent(params, signal, { extensionContext: ctx, onUpdate, browserCookieConsent: browserCookieConsent(ctx) }));
 		},
 
 		renderCall(args, theme) {
@@ -2635,47 +2636,110 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	if (isCommandEnabled(initConfig, "google-account")) pi.registerCommand("google-account", {
-		description: "Show the active Google account for Gemini Web",
-		handler: async () => {
-			if (!isBrowserCookieAccessAllowed()) {
-				pi.sendMessage({
-					customType: "google-account",
-					content: [{ type: "text", text: `Gemini Web browser cookie access is disabled. Set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH} to enable it.` }],
-					display: true,
-					details: { available: false, cookieAccessAllowed: false },
-				}, { triggerTurn: true, deliverAs: "followUp" });
+	const googleAccountCommand = isCommandEnabled(initConfig, "google-account") ? "/google-account" : undefined;
+	let browserCookieQuestion: Promise<boolean> | null = null;
+	// After a "No", Gemini-only routes return the setup hint for the rest of the session instead of asking again.
+	let browserCookiesDeclined = false;
+
+	function browserCookieConsent(ctx: ExtensionContext | undefined): BrowserCookieConsent {
+		return {
+			...(googleAccountCommand ? { command: googleAccountCommand } : {}),
+			...(ctx?.hasUI ? { ask: () => askForBrowserCookies(ctx) } : {}),
+		};
+	}
+
+	function askForBrowserCookies(ctx: ExtensionContext): Promise<boolean> {
+		if (browserCookiesDeclined) return Promise.resolve(false);
+		// Parallel tool calls (several URLs in one fetch_content) share one question.
+		browserCookieQuestion ??= chooseBrowserCookieAccess(ctx, "Gemini needs your Google login.")
+			.then((granted) => {
+				if (!granted) browserCookiesDeclined = true;
+				return granted;
+			})
+			.finally(() => { browserCookieQuestion = null; });
+		return browserCookieQuestion;
+	}
+
+	/** Asks which browser's Google login Gemini Web may use, and for how long. True once access is on.
+	 * Detection only checks that profile folders exist; no cookie is read before the user says yes. */
+	async function chooseBrowserCookieAccess(ctx: ExtensionContext, reason: string): Promise<boolean> {
+		const found = detectBrowserProfiles();
+		if (found.length === 0) return false;
+		let chosen = found[0];
+		if (found.length > 1) {
+			const labels = found.map(({ name, profiles }) => `${name} (${profiles.join(", ")})`);
+			const index = labels.indexOf(await ctx.ui.select(`${reason} Which browser are you signed into Google in?`, [...labels, "No"]) ?? "");
+			if (index === -1) return false;
+			chosen = found[index];
+		}
+		const session = "Yes, this session";
+		const always = "Yes, always (saves to web-search.json)";
+		const answer = await ctx.ui.select(`${reason} Read ${chosen.name}'s browser cookies to use it?`, [session, always, "No"]);
+		if (answer === session) {
+			grantBrowserCookieAccessForSession({ browser: chosen.browser });
+			return true;
+		}
+		if (answer !== always) return false;
+		// Keep a configured profile when it belongs to the chosen browser.
+		const configured = getBrowserCookieSelectionFromConfig();
+		const keep = !configured.browser || configured.browser === chosen.browser ? configured : {};
+		saveConfig({ allowBrowserCookies: true, browserCookies: { ...keep, browser: chosen.browser } });
+		clearGeminiWebConfigCache();
+		revokeBrowserCookieAccessForSession();
+		return true;
+	}
+
+	function turnOffBrowserCookies(): string {
+		revokeBrowserCookieAccessForSession();
+		saveConfig({ allowBrowserCookies: false });
+		return isBrowserCookieAccessAllowed()
+			? "Browser cookie access is still on because PI_ALLOW_BROWSER_COOKIES=1 (or FEYNMAN_ALLOW_BROWSER_COOKIES=1) is set in the environment."
+			: "Browser cookie access is off. Gemini Web no longer reads browser cookies.";
+	}
+
+	if (googleAccountCommand) pi.registerCommand("google-account", {
+		description: "Show the active Google account for Gemini Web, or turn its browser cookie access on or off",
+		handler: async (_args, ctx) => {
+			const send = (text: string, details: Record<string, unknown>) => pi.sendMessage({
+				customType: "google-account",
+				content: [{ type: "text", text }],
+				display: true,
+				details,
+			}, { triggerTurn: true, deliverAs: "followUp" });
+
+			const wasAllowed = isBrowserCookieAccessAllowed();
+			if (!wasAllowed && !(ctx.hasUI && await chooseBrowserCookieAccess(ctx, "Gemini Web can use your Google login from a browser."))) {
+				send(`Gemini Web browser cookie access is off.\n${browserCookieAccessHint()}`, { available: false, cookieAccessAllowed: false });
 				return;
 			}
 
+			let text: string;
+			let details: Record<string, unknown>;
 			const cookies = await isGeminiWebAvailable();
 			if (!cookies) {
 				const diagnostic = getGeminiWebAvailabilityDiagnostic();
 				const diagnosticDetails = getGeminiWebAvailabilityDiagnosticDetails();
 				const attempted = formatCookieAttempts(diagnosticDetails?.attempts ?? []);
-				const text = diagnostic
+				text = diagnostic
 					? `Gemini Web is unavailable: ${diagnostic}${attempted ? ` Attempted browser profiles: ${attempted}.` : ""}`
-					: "Gemini Web is unavailable. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true.";
-				pi.sendMessage({
-					customType: "google-account",
-					content: [{ type: "text", text }],
-					display: true,
-					details: { available: false, cookieAccessAllowed: true, diagnostic, cookieDiagnostic: diagnosticDetails },
-				}, { triggerTurn: true, deliverAs: "followUp" });
-				return;
+					: `Gemini Web is unavailable. ${browserCookieAccessHint()}.`;
+				details = { available: false, cookieAccessAllowed: true, diagnostic, cookieDiagnostic: diagnosticDetails };
+			} else {
+				const email = await getActiveGoogleEmail(cookies);
+				text = email
+					? `Active Google account: ${email}`
+					: "Gemini Web is available, but the active Google account could not be determined.";
+				details = { available: true, email: email ?? null };
 			}
 
-			const email = await getActiveGoogleEmail(cookies);
-			const text = email
-				? `Active Google account: ${email}`
-				: "Gemini Web is available, but the active Google account could not be determined.";
-
-			pi.sendMessage({
-				customType: "google-account",
-				content: [{ type: "text", text }],
-				display: true,
-				details: { available: true, email: email ?? null },
-			}, { triggerTurn: true, deliverAs: "followUp" });
+			if (wasAllowed && ctx.hasUI) {
+				const choice = await ctx.ui.select(`${text}\nGemini Web reads your browser cookies.`, ["Keep it on", "Turn it off"]);
+				if (choice === "Turn it off") {
+					text = turnOffBrowserCookies();
+					details = { available: false, cookieAccessAllowed: isBrowserCookieAccessAllowed() };
+				}
+			}
+			send(text, details);
 		},
 	});
 

@@ -6,9 +6,11 @@ import { extractRSCContent } from "./rsc-extract.ts";
 import { extractPDFToMarkdown, isPDF, loadPDFConfig } from "./pdf-extract.ts";
 import { extractGitHub, parseGitHubUrl } from "./github-extract.ts";
 import { extractGitHubIssuePr, parseGitHubIssuePrUrl } from "./github-issue-pr.ts";
-import { isYouTubeURL, isYouTubeEnabled, extractYouTube, extractYouTubeFrame, extractYouTubeFrames, getYouTubeStreamInfo } from "./youtube-extract.ts";
+import { isYouTubeURL, isYouTubeEnabled, extractYouTube, extractYouTubeFrame, extractYouTubeFrames, getYouTubeStreamInfo, youTubeAccessError } from "./youtube-extract.ts";
 import { CredentialResolutionError } from "./credential-source.ts";
 import { extractWithUrlContext, extractWithGeminiWeb } from "./gemini-url-context.ts";
+import { browserCookieAccessHint, browserCookieAccessHintLine } from "./gemini-web.ts";
+import type { BrowserCookieConsent } from "./gemini-web-config.ts";
 import { extractWithParallel, isParallelAvailable } from "./parallel.ts";
 import { extractWithParallelMcp } from "./parallel-mcp.ts";
 import { extractWithTinyFish, isTinyFishAvailable } from "./tinyfish.ts";
@@ -392,6 +394,8 @@ export interface ExtractOptions {
 	/** "same-origin" refuses cross-origin redirects and extraction paths whose redirect
 	 * chain cannot be observed. fetchContent.redirects in config is a floor. */
 	redirects?: RedirectPolicy;
+	/** Lets video analysis ask the user to turn on browser cookie access for Gemini Web. */
+	browserCookieConsent?: BrowserCookieConsent;
 }
 
 /** Resolve the direct HTTP/Jina fetch budget, with a per-call override taking precedence. */
@@ -754,7 +758,7 @@ export async function extractContent(
 		try {
 			const result = await extractVideo(localVideo.info, signal, options);
 			if (signal?.aborted) return abortedResult(url);
-			return result ?? { url, title: "", content: "", error: `Video analysis requires Gemini access. Either:\n  1. Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH} (free, uses cookies)\n  2. Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}` };
+			return result ?? { url, title: "", content: "", error: `Video analysis requires Gemini access. Either:\n  1. Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}\n  2. ${browserCookieAccessHint(options?.browserCookieConsent, "     ")}` };
 		} catch (err) {
 			if (isAbortError(err)) return abortedResult(url);
 			return { url, title: "", content: "", error: errorMessage(err) };
@@ -800,7 +804,7 @@ export async function extractContent(
 	}
 	if (ytInfo.isYouTube && youtubeEnabled) {
 		try {
-			const ytResult = await extractYouTube(url, signal, options?.prompt, options?.model);
+			const ytResult = await extractYouTube(url, signal, options?.prompt, options?.model, options?.browserCookieConsent);
 			if (ytResult) return ytResult;
 			if (signal?.aborted) return abortedResult(url);
 		} catch (err) {
@@ -812,7 +816,7 @@ export async function extractContent(
 			url,
 			title: "",
 			content: "",
-			error: "Could not extract YouTube video content. Sign into Google in a supported Chromium browser for automatic access, or set GEMINI_API_KEY.",
+			error: youTubeAccessError(options?.browserCookieConsent),
 		};
 	}
 
@@ -1164,7 +1168,7 @@ export async function extractContent(
 		`  • Set exaApiKey in ${WEB_SEARCH_CONFIG_PATH} or EXA_API_KEY and add "exa" to fetchRouting.providers`,
 		`  • Set tabstackApiKey in ${WEB_SEARCH_CONFIG_PATH} or TABSTACK_API_KEY and add "tabstack" to fetchRouting.providers`,
 		// Gemini page fetching is a model route, so it is no way forward under the retrieval-only policy.
-		...(getRetrievalOnlyPolicy().enabled ? [] : [`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`, `  • Sign into gemini.google.com in a supported Chromium-based browser and set allowBrowserCookies: true in ${WEB_SEARCH_CONFIG_PATH}`]),
+		...(getRetrievalOnlyPolicy().enabled ? [] : [`  • Set GEMINI_API_KEY in ${WEB_SEARCH_CONFIG_PATH}`, `  • ${browserCookieAccessHintLine()}`]),
 		...(searchToolName ? [`  • Use ${searchToolName} to find content about this topic`] : []),
 	].join("\n");
 	return { ...(finalHttpResult ?? { url, title: "", content: "", error: null }), error: guidance };

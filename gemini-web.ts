@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { getLastGoogleCookieDiagnostic, getLastGoogleCookieDiagnosticDetails, type BrowserCookieDiagnosticDetails, type CookieMap, getGoogleCookies } from "./chrome-cookies.ts";
-import { getBrowserCookieSelectionFromConfig, isBrowserCookieAccessAllowed, normalizeChromeProfile } from "./gemini-web-config.ts";
+import { detectBrowserProfiles, getLastGoogleCookieDiagnostic, getLastGoogleCookieDiagnosticDetails, type BrowserCookieDiagnosticDetails, type CookieMap, getGoogleCookies } from "./chrome-cookies.ts";
+import { getBrowserCookieSelection, isBrowserCookieAccessAllowed, normalizeChromeProfile, type BrowserCookieConsent } from "./gemini-web-config.ts";
+import { getWebSearchConfigPath } from "./utils.ts";
 
 const GEMINI_APP_URL = "https://gemini.google.com/app";
 const GEMINI_STREAM_GENERATE_URL =
@@ -105,7 +106,7 @@ export interface GeminiWebFile {
 export async function isGeminiWebAvailable(chromeProfile?: string): Promise<CookieMap | null> {
 	if (!isBrowserCookieAccessAllowed()) return null;
 
-	const configured = getBrowserCookieSelectionFromConfig();
+	const configured = getBrowserCookieSelection();
 	const result = await getGoogleCookies({
 		browser: configured.browser,
 		profile: normalizeChromeProfile(chromeProfile) ?? configured.profile,
@@ -117,6 +118,40 @@ export async function isGeminiWebAvailable(chromeProfile?: string): Promise<Cook
 
 export function getGeminiWebAvailabilityDiagnostic(): string | null {
 	return isBrowserCookieAccessAllowed() ? getLastGoogleCookieDiagnostic() : null;
+}
+
+const SIGN_IN_HINT = "Sign into gemini.google.com in a supported Chromium-based browser";
+
+/** Tells the agent how the user can let Gemini Web use the Google login from their browser.
+ * Lines after the first start with indent. */
+export function browserCookieAccessHint(consent?: BrowserCookieConsent, indent = ""): string {
+	if (isBrowserCookieAccessAllowed()) return SIGN_IN_HINT;
+	const found = detectBrowserProfiles();
+	const where = found.length > 0
+		? `Found on this machine: ${found.map(({ name, profiles }) => `${name} (${profiles.join(", ")})`).join(", ")}.`
+		: "No supported Chromium-based browser profile was found on this machine.";
+	const json = found.length > 0
+		? `"allowBrowserCookies": true, "browserCookies": { "browser": "${found[0].browser}" }`
+		: `"allowBrowserCookies": true`;
+	return [
+		`Gemini can use the Google login from the user's browser (free), but reading browser cookies is off. ${where}`,
+		`To turn it on, add to ${getWebSearchConfigPath()}: ${json}${consent?.command ? `, or run ${consent.command}` : ""}.`,
+		"This reads the user's browser cookies: ask the user first, and don't change this setting yourself.",
+	].join(`\n${indent}`);
+}
+
+/** browserCookieAccessHint in one line, for lists of setup options. */
+export function browserCookieAccessHintLine(): string {
+	if (isBrowserCookieAccessAllowed()) return SIGN_IN_HINT;
+	const [first] = detectBrowserProfiles();
+	return `Sign into gemini.google.com in ${first?.name ?? "a supported Chromium-based browser"} and set allowBrowserCookies: true in ${getWebSearchConfigPath()} (reads browser cookies; ask the user first)`;
+}
+
+/** For routes where Gemini Web is the only way left: asks the user when cookie access is off.
+ * True when access is now on and the caller should try Gemini Web again. */
+export async function requestBrowserCookieAccess(consent: BrowserCookieConsent | undefined): Promise<boolean> {
+	if (!consent?.ask || isBrowserCookieAccessAllowed()) return false;
+	return consent.ask();
 }
 
 export function getGeminiWebAvailabilityDiagnosticDetails(): BrowserCookieDiagnosticDetails | null {
