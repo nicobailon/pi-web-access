@@ -284,14 +284,14 @@ function rateLimitResult(url: string, info: GitHubIssuePrUrlInfo, response: Resp
 	const resetNote = reset ? ` Rate limit resets at Unix time ${reset}.` : "";
 	const guidance = ghAvailable
 		? "Authenticate the gh CLI and retry:\n\n`gh auth login`"
-		: "This request used the anonymous GitHub API because Pi could not run gh. Check that gh is installed and on the PATH available to Pi (`gh --version`), then restart Pi and retry.";
+		: "This request used the anonymous GitHub API because gh could not be run. Check that gh is installed and on the PATH of the process running this extension (`gh --version`), then restart it.";
 	return {
 		url,
 		title: `${info.owner}/${info.repo}#${info.number}`,
 		content: `GitHub API rate limit reached for ${info.owner}/${info.repo} ${info.kind} #${info.number}.${resetNote}\n\n${guidance}\n\nThen fetch this URL again.`,
 		error: ghAvailable
 			? "GitHub API rate limit reached; authenticate gh to fetch this PR or issue."
-			: "Anonymous GitHub API rate limit reached; make gh available on Pi’s PATH.",
+			: "Anonymous GitHub API rate limit reached; put gh on the PATH of the process running this extension.",
 		status: response.status,
 	};
 }
