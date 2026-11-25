@@ -582,30 +582,29 @@ async function fetchViaCurlOnce(url: URL, init: RequestInit, { command, proxy, n
 	}
 
 	const body = init.body;
+	let requestBody: Buffer | undefined;
 	if (body !== undefined && body !== null) {
-		let buffer: Buffer;
-		if (typeof body === "string") buffer = Buffer.from(body, "utf-8");
-		else if (body instanceof URLSearchParams) buffer = Buffer.from(body.toString(), "utf-8");
-		else if (body instanceof ArrayBuffer) buffer = Buffer.from(body);
-		else if (ArrayBuffer.isView(body)) buffer = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+		if (typeof body === "string") requestBody = Buffer.from(body, "utf-8");
+		else if (body instanceof URLSearchParams) requestBody = Buffer.from(body.toString(), "utf-8");
+		else if (body instanceof ArrayBuffer) requestBody = Buffer.from(body);
+		else if (ArrayBuffer.isView(body)) requestBody = Buffer.from(body.buffer, body.byteOffset, body.byteLength);
 		else throw new Error(`Unsupported request body type for proxy fetch: ${typeof body}`);
-		await writeFile(requestBodyFile, buffer);
 		args.push("--data-binary", `@${requestBodyFile}`);
 		if (method === "GET") args.unshift("-X", "GET");
 	} else if ((method === "POST" || method === "PUT") && !headers.has("content-length")) {
 		// Native fetch sends a zero length for a bodyless POST/PUT; some origins answer 411 without it.
 		headerLines.push("Content-Length: 0");
 	}
-	if (headerLines.length > 0) {
-		await writeFile(requestHeaderFile, `${headerLines.join("\n")}\n`, { mode: 0o600 });
-		args.push("-H", `@${requestHeaderFile}`);
-	}
+	if (headerLines.length > 0) args.push("-H", `@${requestHeaderFile}`);
 
 	args.push(url.toString());
 
 	const signal = init.signal ?? null;
 	let stdout: string;
 	try {
+		// Written inside the try so a failed or partial write still removes the dir and any secrets in it.
+		if (requestBody) await writeFile(requestBodyFile, requestBody, { mode: 0o600 });
+		if (headerLines.length > 0) await writeFile(requestHeaderFile, `${headerLines.join("\n")}\n`, { mode: 0o600 });
 		stdout = await new Promise<string>((resolve, reject) => {
 			if (signal?.aborted) {
 				reject(new DOMException("The operation was aborted.", "AbortError"));
