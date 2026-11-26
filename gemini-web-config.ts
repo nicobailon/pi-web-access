@@ -17,6 +17,16 @@ export interface BrowserCookieSelection {
 }
 
 let cachedConfig: GeminiWebConfig | null = null;
+// Set when the user allows browser cookie access for this session only; never written to config.
+let sessionGrant: BrowserCookieSelection | null = null;
+
+/** How a tool call can get browser cookie access turned on. */
+export interface BrowserCookieConsent {
+	/** Asks the user; resolves true once access is on, false on a no or when signal aborts. Absent without a UI. */
+	ask?: (signal?: AbortSignal) => Promise<boolean>;
+	/** Pi command that turns access on or off; absent outside Pi. */
+	command?: string;
+}
 
 export function normalizeChromeProfile(value: unknown): string | undefined {
 	if (typeof value !== "string") return undefined;
@@ -83,7 +93,27 @@ export function getBrowserCookieSelectionFromConfig(): BrowserCookieSelection {
 	return { ...loadConfig().browserCookies };
 }
 
+/** The browser a session grant chose, otherwise the configured selection. */
+export function getBrowserCookieSelection(): BrowserCookieSelection {
+	return sessionGrant ? { ...sessionGrant } : getBrowserCookieSelectionFromConfig();
+}
+
+/** Turns browser cookie access on until the process exits, without saving anything. */
+export function grantBrowserCookieAccessForSession(selection: BrowserCookieSelection): void {
+	sessionGrant = { ...selection };
+}
+
+export function revokeBrowserCookieAccessForSession(): void {
+	sessionGrant = null;
+}
+
+/** Call after writing web-search.json so the next read sees the new browser selection. */
+export function clearGeminiWebConfigCache(): void {
+	cachedConfig = null;
+}
+
 export function isBrowserCookieAccessAllowed(): boolean {
+	if (sessionGrant) return true;
 	if (process.env.PI_ALLOW_BROWSER_COOKIES === "1" || process.env.FEYNMAN_ALLOW_BROWSER_COOKIES === "1") {
 		return true;
 	}

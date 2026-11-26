@@ -7,6 +7,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { Usage } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { BrowserCookieConsent } from "./gemini-web-config.ts";
 import type { KeyId } from "@earendil-works/pi-tui";
 import pLimit from "p-limit";
 import type { ExtractedContent, ExtractOptions } from "./extract.ts";
@@ -115,6 +116,8 @@ export interface WebSearchConfig {
 		/** Skip local hostname DNS preflight when an HTTP(S)_PROXY env var applies. */
 		trustEnvProxy?: boolean;
 	};
+	allowBrowserCookies?: unknown;
+	browserCookies?: unknown;
 }
 
 export function parseConfigRoot(raw: string): Record<string, unknown> {
@@ -669,6 +672,8 @@ export type WebToolUpdate = (update: { content: Array<{ type: "text"; text: stri
 export interface WebToolCallOptions {
 	extensionContext?: ExtensionContext;
 	onUpdate?: WebToolUpdate;
+	/** Lets Gemini-only routes ask the user to turn on browser cookie access. */
+	browserCookieConsent?: BrowserCookieConsent;
 }
 
 export interface WebSearchCallOptions extends WebToolCallOptions {
@@ -890,7 +895,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 
 	async function webSearch(params: WebSearchParams, signal?: AbortSignal, call: WebSearchCallOptions = {}): Promise<WebToolResult> {
 		const model = validateSearchModelOverride(params.provider, params.model);
-		const { extensionContext: ctx, onUpdate } = call;
+		const { extensionContext: ctx, onUpdate, browserCookieConsent } = call;
 		return runWithProxy(typeof params.proxy === "string" ? params.proxy : undefined, async () => {
 			const rawQueryList: unknown[] = Array.isArray(params.queries)
 				? params.queries
@@ -931,6 +936,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 						category: params.category,
 						signal,
 						extensionContext: ctx,
+						browserCookieConsent,
 					});
 
 					const providers = providerResponses?.map(response => response.provider) ?? [provider];
@@ -1157,6 +1163,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 			const requestOptions = {
 				...(mode === "answer" ? answerExtractionOptions : extractionOptions),
 				...(authFetchProfile ? { authFetchProfile } : {}),
+				...(call.browserCookieConsent ? { browserCookieConsent: call.browserCookieConsent } : {}),
 			};
 			const fetchResults = await fetchAllContent(urlList, signal, fetchOptions(requestOptions, options.proxy));
 			// Image-as-payload results (direct images, video frames) set mimeType and/or frames. Answer mode sends
