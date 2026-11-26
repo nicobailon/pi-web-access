@@ -149,9 +149,9 @@ export function browserCookieAccessHintLine(): string {
 
 /** For routes where Gemini Web is the only way left: asks the user when cookie access is off.
  * True when access is now on and the caller should try Gemini Web again. */
-export async function requestBrowserCookieAccess(consent: BrowserCookieConsent | undefined): Promise<boolean> {
-	if (!consent?.ask || isBrowserCookieAccessAllowed()) return false;
-	return consent.ask();
+export async function requestBrowserCookieAccess(consent: BrowserCookieConsent | undefined, signal: AbortSignal | undefined): Promise<boolean> {
+	if (!consent?.ask || signal?.aborted || isBrowserCookieAccessAllowed()) return false;
+	return consent.ask(signal);
 }
 
 export function getGeminiWebAvailabilityDiagnosticDetails(): BrowserCookieDiagnosticDetails | null {

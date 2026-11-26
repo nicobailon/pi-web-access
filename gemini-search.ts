@@ -603,7 +603,7 @@ async function searchWithResolvedProvider(
 	if (provider === "kimi") return { ...(await searchWithKimi(query, options, options.extensionContext)), provider };
 	if (provider === "gemini") {
 		const result = await searchWithGemini(query, options, true)
-			?? (askBrowserCookies && await requestBrowserCookieAccess(options.browserCookieConsent) ? await searchWithGemini(query, options, true) : null);
+			?? (askBrowserCookies && await requestBrowserCookieAccess(options.browserCookieConsent, options.signal) ? await searchWithGemini(query, options, true) : null);
 		if (result) return { ...result, provider };
 		throw new Error(
 			"Gemini search unavailable. Either:\n" +

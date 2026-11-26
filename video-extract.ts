@@ -182,7 +182,7 @@ export async function extractVideo(
 
 	const result = await tryVideoGeminiApi(info, effectivePrompt, effectiveModel, signal)
 		?? await tryVideoGeminiWeb(info, effectivePrompt, effectiveModel, signal)
-		?? (!signal?.aborted && await requestBrowserCookieAccess(options?.browserCookieConsent) ? await tryVideoGeminiWeb(info, effectivePrompt, effectiveModel, signal) : null);
+		?? (await requestBrowserCookieAccess(options?.browserCookieConsent, signal) ? await tryVideoGeminiWeb(info, effectivePrompt, effectiveModel, signal) : null);
 
 	if (result) {
 		if (canAttachImages()) {

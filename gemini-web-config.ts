@@ -22,8 +22,8 @@ let sessionGrant: BrowserCookieSelection | null = null;
 
 /** How a tool call can get browser cookie access turned on. */
 export interface BrowserCookieConsent {
-	/** Asks the user; resolves true once access is on. Absent when the session has no UI. */
-	ask?: () => Promise<boolean>;
+	/** Asks the user; resolves true once access is on, false on a no or when signal aborts. Absent without a UI. */
+	ask?: (signal?: AbortSignal) => Promise<boolean>;
 	/** Pi command that turns access on or off; absent outside Pi. */
 	command?: string;
 }

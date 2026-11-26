@@ -2637,44 +2637,68 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	const googleAccountCommand = isCommandEnabled(initConfig, "google-account") ? "/google-account" : undefined;
-	let browserCookieQuestion: Promise<boolean> | null = null;
+	let browserCookieQuestion: { answer: Promise<boolean>; dismiss: AbortController; waiting: number } | null = null;
 	// After a "No", Gemini-only routes return the setup hint for the rest of the session instead of asking again.
 	let browserCookiesDeclined = false;
 
 	function browserCookieConsent(ctx: ExtensionContext | undefined): BrowserCookieConsent {
 		return {
 			...(googleAccountCommand ? { command: googleAccountCommand } : {}),
-			...(ctx?.hasUI ? { ask: () => askForBrowserCookies(ctx) } : {}),
+			...(ctx?.hasUI ? { ask: (signal?: AbortSignal) => askForBrowserCookies(ctx, signal) } : {}),
 		};
 	}
 
-	function askForBrowserCookies(ctx: ExtensionContext): Promise<boolean> {
-		if (browserCookiesDeclined) return Promise.resolve(false);
-		// Parallel tool calls (several URLs in one fetch_content) share one question.
-		browserCookieQuestion ??= chooseBrowserCookieAccess(ctx, "Gemini needs your Google login.")
-			.then((granted) => {
-				if (!granted) browserCookiesDeclined = true;
-				return granted;
-			})
-			.finally(() => { browserCookieQuestion = null; });
-		return browserCookieQuestion;
+	/** Parallel tool calls (several URLs in one fetch_content) share one question. A caller whose signal
+	 * aborts stops waiting with false; the dialog closes once every caller has aborted, and an abort
+	 * is not a "No", so a later call asks again. */
+	function askForBrowserCookies(ctx: ExtensionContext, signal?: AbortSignal): Promise<boolean> {
+		if (browserCookiesDeclined || signal?.aborted) return Promise.resolve(false);
+		if (!browserCookieQuestion) {
+			const dismiss = new AbortController();
+			const question = {
+				dismiss,
+				waiting: 0,
+				answer: chooseBrowserCookieAccess(ctx, "Gemini needs your Google login.", dismiss.signal)
+					.then((granted) => {
+						if (!granted && !dismiss.signal.aborted) browserCookiesDeclined = true;
+						return granted;
+					})
+					.finally(() => { if (browserCookieQuestion === question) browserCookieQuestion = null; }),
+			};
+			browserCookieQuestion = question;
+		}
+		const question = browserCookieQuestion;
+		question.waiting++;
+		return new Promise((resolve, reject) => {
+			const onAbort = () => {
+				if (--question.waiting === 0) {
+					question.dismiss.abort();
+					// A dialog that ignores the abort must not keep later calls from asking.
+					if (browserCookieQuestion === question) browserCookieQuestion = null;
+				}
+				resolve(false);
+			};
+			signal?.addEventListener("abort", onAbort, { once: true });
+			question.answer.then(resolve, reject).finally(() => signal?.removeEventListener("abort", onAbort));
+		});
 	}
 
 	/** Asks which browser's Google login Gemini Web may use, and for how long. True once access is on.
 	 * Detection only checks that profile folders exist; no cookie is read before the user says yes. */
-	async function chooseBrowserCookieAccess(ctx: ExtensionContext, reason: string): Promise<boolean> {
+	async function chooseBrowserCookieAccess(ctx: ExtensionContext, reason: string, signal?: AbortSignal): Promise<boolean> {
 		const found = detectBrowserProfiles();
 		if (found.length === 0) return false;
 		let chosen = found[0];
 		if (found.length > 1) {
 			const labels = found.map(({ name, profiles }) => `${name} (${profiles.join(", ")})`);
-			const index = labels.indexOf(await ctx.ui.select(`${reason} Which browser are you signed into Google in?`, [...labels, "No"]) ?? "");
-			if (index === -1) return false;
+			const index = labels.indexOf(await ctx.ui.select(`${reason} Which browser are you signed into Google in?`, [...labels, "No"], { signal }) ?? "");
+			if (index === -1 || signal?.aborted) return false;
 			chosen = found[index];
 		}
 		const session = "Yes, this session";
 		const always = "Yes, always (saves to web-search.json)";
-		const answer = await ctx.ui.select(`${reason} Read ${chosen.name}'s browser cookies to use it?`, [session, always, "No"]);
+		const answer = await ctx.ui.select(`${reason} Read ${chosen.name}'s browser cookies to use it?`, [session, always, "No"], { signal });
+		if (signal?.aborted) return false;
 		if (answer === session) {
 			grantBrowserCookieAccessForSession({ browser: chosen.browser });
 			return true;

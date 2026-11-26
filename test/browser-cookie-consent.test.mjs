@@ -49,7 +49,8 @@ function runPi({ hasUI, answers = [], config, calls }) {
 			const ctx = {
 				hasUI: ${hasUI}, cwd: ${JSON.stringify(root)}, isProjectTrusted() { return true; },
 				modelRegistry: { getAvailable() { return []; }, find() { return undefined; } },
-				ui: { notify() {}, async select(title, options) { selects.push({ title, options }); return answers.shift(); } },
+				// "hang" is a dialog that never answers, even when its signal aborts.
+				ui: { notify() {}, select(title, options) { selects.push({ title, options }); const answer = answers.shift(); return answer === "hang" ? new Promise(() => {}) : Promise.resolve(answer); } },
 			};
 			const run = (name, params) => tools.find((t) => t.name === name).execute("call", params, undefined, () => {}, ctx)
 				.then((result) => ({ text: result.content.map((part) => part.text ?? "").join("\\n"), selects: selects.length }));
@@ -109,6 +110,26 @@ test("web_search asks only when Gemini was requested, never during automatic pro
 	});
 	assert.deepEqual(results.map((result) => result.selects), [0, 1]);
 	assert.match(results[1].text, /reading browser cookies is off/);
+});
+
+test("aborting a tool call while the question is open ends the call, and a later call asks again", () => {
+	const { results } = runPi({
+		hasUI: true,
+		answers: ["hang", "No"],
+		calls: `
+			const controller = new AbortController();
+			const pending = tools.find((t) => t.name === "fetch_content").execute("call", { url: video }, controller.signal, () => {}, ctx)
+				.then((result) => result.content.map((part) => part.text ?? "").join("\\n"), (err) => String(err));
+			while (selects.length === 0) await new Promise((resolve) => setTimeout(resolve, 5));
+			const started = Date.now();
+			controller.abort();
+			results.push({ text: await pending, ms: Date.now() - started });
+			results.push(await run("fetch_content", { url: video }));
+		`,
+	});
+	assert.match(results[0].text, /abort/i);
+	assert.ok(results[0].ms < 2000, `settled ${results[0].ms}ms after the abort`);
+	assert.equal(results[1].selects, 2, "an abort is not a No, so the next call asks again");
 });
 
 test("/google-account turns browser cookie access on, then off", () => {

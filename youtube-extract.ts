@@ -124,7 +124,7 @@ export async function extractYouTube(
 	const result = await tryGeminiWeb(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors)
 		?? await tryGeminiApi(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors)
 		// Perplexity only summarizes the video, so ask for the browser login before settling for it.
-		?? (!signal?.aborted && await requestBrowserCookieAccess(browserCookieConsent) ? await tryGeminiWeb(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors) : null)
+		?? (await requestBrowserCookieAccess(browserCookieConsent, signal) ? await tryGeminiWeb(canonicalUrl, effectivePrompt, effectiveModel, signal, attemptErrors) : null)
 		?? await tryPerplexity(url, effectivePrompt, signal, attemptErrors);
 
 	if (result) {
