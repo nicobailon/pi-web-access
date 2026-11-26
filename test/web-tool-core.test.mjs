@@ -88,6 +88,28 @@ function runStandalone(body, { config = {}, env = {} } = {}) {
 	}
 }
 
+test("standalone search tolerates empty optional fields without hiding missing queries", () => {
+	const { out, requests, blocked } = runStandalone(`
+		const core = createStandaloneWebToolCore();
+		return {
+			fallback: await core.webSearch({ query: "fallback query", queries: [], model: "", provider: "brave" }),
+			selected: await core.webSearch({ query: "ignored", queries: ["selected"], provider: "brave" }),
+			missing: await core.webSearch({ queries: [], model: "", provider: "brave" }),
+			blank: await core.webSearch({ query: "  ", queries: [], model: "  ", provider: "brave" }),
+		};
+	`);
+	assert.deepEqual(blocked, []);
+	assert.equal(requests.length, 2);
+	assert.equal(out.fallback.isError, undefined);
+	assert.deepEqual(out.fallback.details.queries, ["fallback query"]);
+	assert.equal(out.selected.isError, undefined);
+	assert.deepEqual(out.selected.details.queries, ["selected"]);
+	for (const result of [out.missing, out.blank]) {
+		assert.equal(result.isError, true);
+		assert.equal(result.details.error, "No query provided");
+	}
+});
+
 test("standalone auto search skips Pi-only routes and only calls where nothing succeeded are errors", () => {
 	const { out, blocked } = runStandalone(`
 		const core = createStandaloneWebToolCore();

@@ -3,7 +3,8 @@ import { activityMonitor } from "./activity.ts";
 import type { ExtractedContent } from "./extract.ts";
 import { hasCredentialSource, redactCredential, resolveCredential } from "./credential-source.ts";
 import { formatSearchResultsAsAnswer } from "./search-answer-formatting.ts";
-import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects } from "./utils.ts";
+import { applyDomainFilter } from "./domain-filter-normalization.ts";
+import { getWebSearchConfigPath, resolveProviderApiUrl, fetchWithCredentialRedirects, isRecord } from "./utils.ts";
 
 const PERPLEXITY_SEARCH_URL = "https://api.perplexity.ai/search";
 const PERPLEXITY_CHAT_URL = "https://api.perplexity.ai/chat/completions";
@@ -42,6 +43,8 @@ export interface SearchOptions {
 interface WebSearchConfig {
 	perplexityBaseUrl?: unknown;
 	perplexityApiKey?: unknown;
+	perplexitySearchMode?: unknown;
+	perplexityChatModel?: unknown;
 }
 
 let cachedConfig: WebSearchConfig | null = null;
@@ -192,12 +195,82 @@ async function postPerplexity(
 	}
 }
 
+function getSearchMode(): "search" | "chat" {
+	const mode = loadConfig().perplexitySearchMode;
+	if (mode === undefined) return "search";
+	if (mode !== "search" && mode !== "chat") {
+		throw new Error("perplexitySearchMode must be \"search\" or \"chat\"");
+	}
+	return mode;
+}
+
+function getChatModel(): string {
+	const model = loadConfig().perplexityChatModel;
+	if (model === undefined) return "sonar";
+	if (typeof model !== "string" || !model.trim()) {
+		throw new Error("perplexityChatModel must be a non-empty string");
+	}
+	return model.trim();
+}
+
+function citationUrl(value: unknown): string | undefined {
+	if (typeof value !== "string" || !value.trim()) return undefined;
+	try {
+		const url = new URL(value);
+		if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return undefined;
+		return url.href;
+	} catch {
+		return undefined;
+	}
+}
+
+function parseChatSearch(data: unknown, numResults: number, domainFilter?: string[]): SearchResponse {
+	const choice = isRecord(data) && Array.isArray(data.choices) ? data.choices[0] : undefined;
+	const message = isRecord(choice) && isRecord(choice.message) ? choice.message : undefined;
+	if (!isRecord(data) || !message || typeof message.content !== "string") {
+		throw new Error("Perplexity Chat API returned an invalid response: expected choices[0].message.content to be a string");
+	}
+
+	// Native Sonar returns citations (URLs) and search_results (metadata). Some
+	// OpenAI-compatible gateways preserve citations inside message.extensions.
+	const metadata = new Map<string, string>();
+	const searchResults = Array.isArray(data.search_results) ? data.search_results : [];
+	for (const entry of searchResults) {
+		if (!isRecord(entry)) continue;
+		const url = citationUrl(entry.url);
+		if (url && typeof entry.title === "string" && entry.title.trim()) metadata.set(url, entry.title.trim());
+	}
+	const sources = new Map<string, SearchResult>();
+	const addCitation = (entry: unknown) => {
+		const record = isRecord(entry) ? entry : undefined;
+		const url = citationUrl(record ? record.url : entry);
+		if (!url) return;
+		const title = record && typeof record.title === "string" ? record.title.trim() : "";
+		if (!sources.has(url)) sources.set(url, { title: title || metadata.get(url) || url, url, snippet: "" });
+	};
+	if (Array.isArray(data.citations)) data.citations.forEach(addCitation);
+	const extensions = isRecord(message.extensions) ? message.extensions : undefined;
+	if (Array.isArray(extensions?.citations)) extensions.citations.forEach(addCitation);
+	for (const entry of searchResults) addCitation(entry);
+
+	const results = applyDomainFilter([...sources.values()], domainFilter).slice(0, numResults);
+	// Match the Search API's source-list output, not Sonar's generated prose.
+	// Citation metadata is not page text: source_check must fetch its own evidence.
+	return { answer: formatSearchResultsAsAnswer(results), results };
+}
+
 export async function searchWithPerplexity(query: string, options: SearchOptions = {}): Promise<SearchResponse> {
 	const numResults = typeof options.numResults === "number" && Number.isFinite(options.numResults)
 		? Math.max(1, Math.min(Math.floor(options.numResults), 20))
 		: 5;
 
-	const requestBody: Record<string, unknown> = {
+	const chat = getSearchMode() === "chat";
+	const requestBody: Record<string, unknown> = chat ? {
+		model: getChatModel(),
+		messages: [{ role: "user", content: query }],
+		stream: false,
+		max_tokens: 1024,
+	} : {
 		query,
 		max_results: numResults,
 		search_type: "fast",
@@ -215,7 +288,8 @@ export async function searchWithPerplexity(query: string, options: SearchOptions
 		}
 	}
 
-	const data = await postPerplexity(PERPLEXITY_SEARCH_URL, requestBody, { activityQuery: query, signal: options.signal });
+	const data = await postPerplexity(chat ? PERPLEXITY_CHAT_URL : PERPLEXITY_SEARCH_URL, requestBody, { activityQuery: query, signal: options.signal });
+	if (chat) return parseChatSearch(data, numResults, options.domainFilter);
 
 	const results: SearchResult[] = [];
 	for (const entry of Array.isArray(data.results) ? data.results : []) {

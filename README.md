@@ -756,7 +756,25 @@ Defaults remain the providers' official API roots. Overrides require HTTPS, exce
 
 To use a plain-HTTP gateway on another host, such as a Kubernetes Service (`"braveBaseUrl": "http://search-gateway:8080/brave/res/v1"`), set `"allowHttpBaseUrls": true` in `web-search.json` or `PI_WEB_ACCESS_ALLOW_HTTP_BASE_URLS=true`. The environment variable wins over config and accepts `true`, `false`, `1`, or `0`; any other value, or a non-boolean config value, is a configuration error. The switch defaults to `false` and lets every base URL above use `http://`. **HTTP sends API keys and request data in plaintext**, so enable it only for gateways on a trusted network. All the other checks above still apply.
 
-These settings change API destinations, not provider protocols, credentials, pricing options, or activation. Search and extraction use the same root where listed. Existing SSRF and target-domain checks still apply to extraction; in particular, Kagi, Ollama, and Bright Data Web Unlocker gateway addresses remain subject to their API transport's SSRF checks. For a loopback gateway on those extraction transports, use a literal address (`http://127.0.0.1:8080` or `http://[::1]:8080`) and add its matching range (`127.0.0.1/32` or `::1/128`) to `ssrf.allowRanges`. These transports reject `localhost` even when allowed ranges are configured.
+These base-URL settings change API destinations, not provider protocols, credentials, pricing options, or activation. For Perplexity gateways that only support Chat Completions, explicitly select the Sonar Chat mode below. Search and extraction use the same root where listed. Existing SSRF and target-domain checks still apply to extraction; in particular, Kagi, Ollama, and Bright Data Web Unlocker gateway addresses remain subject to their API transport's SSRF checks. For a loopback gateway on those extraction transports, use a literal address (`http://127.0.0.1:8080` or `http://[::1]:8080`) and add its matching range (`127.0.0.1/32` or `::1/128`) to `ssrf.allowRanges`. These transports reject `localhost` even when allowed ranges are configured.
+
+**Perplexity Sonar Chat gateways.** Perplexity search uses the Search API (`/search`) by default. If your gateway exposes Sonar only through OpenAI-compatible Chat Completions, set `perplexitySearchMode` to `"chat"`:
+
+```json
+{
+  "provider": "perplexity",
+  "perplexityBaseUrl": "http://localhost:4000/v1",
+  "perplexityApiKey": "$GATEWAY_API_KEY",
+  "perplexitySearchMode": "chat",
+  "perplexityChatModel": "sonar"
+}
+```
+
+Chat mode sends a non-streaming request to `<perplexityBaseUrl>/chat/completions`; `perplexityChatModel` defaults to `sonar` and accepts gateway-specific model IDs. `perplexitySearchMode` accepts only `"search"` (the default) or `"chat"`. It applies to both `web_search` and `source_check` through their existing Perplexity provider; it does not change Pi's agent model or the separate `askPerplexity` helper. Queries and filters are sent to the configured gateway and may incur that model's charges. There is no automatic fallback between the two protocols.
+
+The adapter recognizes native Sonar `citations` URL arrays and `search_results` metadata, plus gateway citations at `choices[0].message.extensions.citations` (`url` and optional `title`). It deduplicates HTTP(S) sources and rejects credential-bearing URLs. Chat mode returns only the source list, using the same formatting as the Search API; Sonar's generated prose is discarded, not parsed or rewritten. Citation metadata is **not page text**: snippets remain empty, and `source_check` needs `fetchContent: true` to retrieve original passages. A response without source metadata returns no results or generated answer.
+
+`numResults` caps the returned source list; domain and recency filters are forwarded for the gateway to honor. Domain filters are also enforced on returned sources locally. Recency still depends on the gateway honoring the filter; no source dates are inferred from model prose. Existing credential resolution, redirect handling, rate limits, cancellation, and request/body deadlines are shared with Search API mode.
 
 Existing Responses endpoint settings (`openaiResponsesUrl`, `xaiResponsesUrl`), Gemini API routing, and self-hosted providers keep their current semantics. No new overrides are added for TinyFish's two-origin API, Kimi Code sign-in, hosted MCP transports, browser-backed search, or the keyless Jina Reader. `jinaSearchBaseUrl` affects only authenticated Jina search, not Reader requests.
 

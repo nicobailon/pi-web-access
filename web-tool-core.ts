@@ -897,7 +897,7 @@ export function createWebToolCore(host: WebToolCoreHost): WebToolCoreInstance {
 		const model = validateSearchModelOverride(params.provider, params.model);
 		const { extensionContext: ctx, onUpdate, browserCookieConsent } = call;
 		return runWithProxy(typeof params.proxy === "string" ? params.proxy : undefined, async () => {
-			const rawQueryList: unknown[] = Array.isArray(params.queries)
+			const rawQueryList: unknown[] = Array.isArray(params.queries) && params.queries.length > 0
 				? params.queries
 				: (params.query !== undefined ? expandQueryString(params.query) : []);
 			const queryList = normalizeQueryList(rawQueryList);
