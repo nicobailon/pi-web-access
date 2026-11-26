@@ -2699,15 +2699,15 @@ export default function (pi: ExtensionAPI) {
 		const always = "Yes, always (saves to web-search.json)";
 		const answer = await ctx.ui.select(`${reason} Read ${chosen.name}'s browser cookies to use it?`, [session, always, "No"], { signal });
 		if (signal?.aborted) return false;
+		// Keep a configured profile when it belongs to the chosen browser, so the same Google account is used.
+		const configured = getBrowserCookieSelectionFromConfig();
+		const selection = { ...(!configured.browser || configured.browser === chosen.browser ? configured : {}), browser: chosen.browser };
 		if (answer === session) {
-			grantBrowserCookieAccessForSession({ browser: chosen.browser });
+			grantBrowserCookieAccessForSession(selection);
 			return true;
 		}
 		if (answer !== always) return false;
-		// Keep a configured profile when it belongs to the chosen browser.
-		const configured = getBrowserCookieSelectionFromConfig();
-		const keep = !configured.browser || configured.browser === chosen.browser ? configured : {};
-		saveConfig({ allowBrowserCookies: true, browserCookies: { ...keep, browser: chosen.browser } });
+		saveConfig({ allowBrowserCookies: true, browserCookies: selection });
 		clearGeminiWebConfigCache();
 		revokeBrowserCookieAccessForSession();
 		return true;

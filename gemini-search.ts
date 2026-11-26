@@ -602,9 +602,20 @@ async function searchWithResolvedProvider(
 	if (provider === "duckduckgo") return { ...(await searchWithDuckDuckGo(query, options)), provider };
 	if (provider === "kimi") return { ...(await searchWithKimi(query, options, options.extensionContext)), provider };
 	if (provider === "gemini") {
-		const result = await searchWithGemini(query, options, true)
-			?? (askBrowserCookies && await requestBrowserCookieAccess(options.browserCookieConsent, options.signal) ? await searchWithGemini(query, options, true) : null);
+		let result: SearchResponse | null = null;
+		let failure: unknown;
+		try {
+			result = await searchWithGemini(query, options, true);
+		} catch (err) {
+			// A failing API route (429, 500) can still be rescued by Gemini Web; these can't.
+			if (options.model !== undefined || err instanceof CredentialResolutionError || isAbortError(err)) throw err;
+			failure = err;
+		}
+		if (!result && askBrowserCookies && await requestBrowserCookieAccess(options.browserCookieConsent, options.signal)) {
+			result = await searchWithGeminiWeb(query, options);
+		}
 		if (result) return { ...result, provider };
+		if (failure) throw failure;
 		throw new Error(
 			"Gemini search unavailable. Either:\n" +
 			`  1. Configure geminiApiKey in ${CONFIG_PATH} or set GEMINI_API_KEY\n` +

@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 
 const indexUrl = new URL("../index.ts", import.meta.url).href;
+// The browser helpers are replaced with POSIX shell scripts, and the fake browser uses the macOS/Linux layout.
+const posixTest = process.platform === "win32" ? test.skip : test;
 const roots = [];
 after(() => { for (const root of roots) rmSync(root, { recursive: true, force: true }); });
 
@@ -72,7 +74,7 @@ function runPi({ hasUI, answers = [], config, calls }) {
 
 const fetchVideoTwice = `results.push(await run("fetch_content", { url: video })); results.push(await run("fetch_content", { url: video }));`;
 
-test("without a UI, video analysis names the browsers found and reads no browser data", () => {
+posixTest("without a UI, video analysis names the browsers found and reads no browser data", () => {
 	const { results: [result], helpers } = runPi({ hasUI: false, calls: `results.push(await run("fetch_content", { url: video }));` });
 	assert.equal(result.selects, 0);
 	assert.match(result.text, /Found on this machine: Chrome \(Default\)/);
@@ -81,19 +83,19 @@ test("without a UI, video analysis names the browsers found and reads no browser
 	assert.deepEqual(helpers, []);
 });
 
-test("\"Yes, this session\" reads the browser cookies right away and saves nothing", () => {
+posixTest("\"Yes, this session\" reads the browser cookies right away and saves nothing", () => {
 	const { results, config, helpers } = runPi({ hasUI: true, answers: ["Yes, this session"], calls: fetchVideoTwice });
 	assert.deepEqual(results.map((result) => result.selects), [1, 1]);
 	assert.ok(helpers.length > 0, "the retried Gemini Web route reads the cookie database");
 	assert.equal(config, null);
 });
 
-test("\"Yes, always\" saves browser cookie access and the chosen browser", () => {
+posixTest("\"Yes, always\" saves browser cookie access and the chosen browser", () => {
 	const { config } = runPi({ hasUI: true, answers: ["Yes, always (saves to web-search.json)"], config: { workflow: "none" }, calls: fetchVideoTwice });
 	assert.deepEqual(config, { workflow: "none", allowBrowserCookies: true, browserCookies: { browser: "chrome" } });
 });
 
-test("\"No\" returns the setup hint and is not asked again this session", () => {
+posixTest("\"No\" returns the setup hint and is not asked again this session", () => {
 	const { results, config, helpers } = runPi({ hasUI: true, answers: ["No"], calls: fetchVideoTwice });
 	assert.deepEqual(results.map((result) => result.selects), [1, 1]);
 	assert.match(results[1].text, /reading browser cookies is off/);
@@ -101,7 +103,7 @@ test("\"No\" returns the setup hint and is not asked again this session", () => 
 	assert.deepEqual(helpers, []);
 });
 
-test("web_search asks only when Gemini was requested, never during automatic provider selection", () => {
+posixTest("web_search asks only when Gemini was requested, never during automatic provider selection", () => {
 	const { results } = runPi({
 		hasUI: true,
 		answers: ["No"],
@@ -112,7 +114,7 @@ test("web_search asks only when Gemini was requested, never during automatic pro
 	assert.match(results[1].text, /reading browser cookies is off/);
 });
 
-test("aborting a tool call while the question is open ends the call, and a later call asks again", () => {
+posixTest("aborting a tool call while the question is open ends the call, and a later call asks again", () => {
 	const { results } = runPi({
 		hasUI: true,
 		answers: ["hang", "No"],
@@ -132,7 +134,7 @@ test("aborting a tool call while the question is open ends the call, and a later
 	assert.equal(results[1].selects, 2, "an abort is not a No, so the next call asks again");
 });
 
-test("/google-account turns browser cookie access on, then off", () => {
+posixTest("/google-account turns browser cookie access on, then off", () => {
 	const { results, config } = runPi({
 		hasUI: true,
 		answers: ["Yes, always (saves to web-search.json)", "Turn it off"],
@@ -141,4 +143,16 @@ test("/google-account turns browser cookie access on, then off", () => {
 	assert.deepEqual(results.map((result) => result.selects), [1, 2]);
 	assert.match(results[1].text, /Browser cookie access is off/);
 	assert.deepEqual(config, { allowBrowserCookies: false, browserCookies: { browser: "chrome" } });
+});
+
+posixTest("\"Yes, this session\" keeps the configured profile of the chosen browser", () => {
+	// Profile 2 has no cookie database here, so keeping it means no browser data is read; dropping it would read Default.
+	const { helpers } = runPi({ hasUI: true, answers: ["Yes, this session"], config: { browserCookies: { browser: "chrome", profile: "Profile 2" } }, calls: `results.push(await run("fetch_content", { url: video }));` });
+	assert.deepEqual(helpers, []);
+});
+
+posixTest("an explicit Gemini search still asks when the Gemini API fails", () => {
+	const { results } = runPi({ hasUI: true, answers: ["No"], config: { geminiApiKey: "test-key" }, calls: `results.push(await run("web_search", { query: "q", provider: "gemini" }));` });
+	assert.equal(results[0].selects, 1);
+	assert.match(results[0].text, /Gemini API: .*network disabled in test/);
 });
