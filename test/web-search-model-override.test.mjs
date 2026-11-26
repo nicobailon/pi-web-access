@@ -15,6 +15,9 @@ const geminiWebStub = `
 	export const getGeminiWebAvailabilityDiagnostic = () => null;
 	export const getGeminiWebAvailabilityDiagnosticDetails = () => null;
 	export const getActiveGoogleEmail = async () => null;
+	export const browserCookieAccessHint = () => "";
+	export const browserCookieAccessHintLine = () => "";
+	export const requestBrowserCookieAccess = async () => false;
 `;
 const loader = `export async function resolve(s, c, next) {
 	if (s.endsWith("/gemini-web.ts")) return { url: ${JSON.stringify("data:text/javascript," + encodeURIComponent(geminiWebStub))}, shortCircuit: true };
