@@ -241,40 +241,22 @@ function parseChatSearch(data: unknown, numResults: number, domainFilter?: strin
 		if (url && typeof entry.title === "string" && entry.title.trim()) metadata.set(url, entry.title.trim());
 	}
 	const sources = new Map<string, SearchResult>();
-	const references = new Map<number, string | null>();
-	const addCitation = (entry: unknown, index?: number) => {
+	const addCitation = (entry: unknown) => {
 		const record = isRecord(entry) ? entry : undefined;
 		const url = citationUrl(record ? record.url : entry);
 		if (!url) return;
 		const title = record && typeof record.title === "string" ? record.title.trim() : "";
 		if (!sources.has(url)) sources.set(url, { title: title || metadata.get(url) || url, url, snippet: "" });
-		const id = record?.ref_id ?? (index === undefined ? undefined : index + 1);
-		if (typeof id === "number" && Number.isSafeInteger(id) && id > 0) {
-			// Conflicting IDs must not silently point an answer at the wrong page.
-			references.set(id, references.has(id) && references.get(id) !== url ? null : url);
-		}
 	};
 	if (Array.isArray(data.citations)) data.citations.forEach(addCitation);
 	const extensions = isRecord(message.extensions) ? message.extensions : undefined;
 	if (Array.isArray(extensions?.citations)) extensions.citations.forEach(addCitation);
 	for (const entry of searchResults) addCitation(entry);
 
-	const allResults = [...sources.values()];
-	const allowedResults = applyDomainFilter(allResults, domainFilter);
-	const results = allowedResults.slice(0, numResults);
-	// A generated answer can mix excluded sources into its prose. When local
-	// filtering drops sources (or cannot verify any), return only the kept list.
-	if (domainFilter?.length && (allowedResults.length < allResults.length || !allowedResults.length)) {
-		return { answer: formatSearchResultsAsAnswer(results), results };
-	}
-	const keptUrls = new Set(results.map((result) => result.url));
-	const answer = message.content.trim().replace(/\[(\d+)\](?!\()/g, (marker, id: string) => {
-		const url = references.get(Number(id));
-		return url && keptUrls.has(url) ? `${marker}(<${url}>)` : `[citation ${id} unavailable]`;
-	});
-	// Citation metadata is not page text. Leave snippets empty so source_check
-	// only gets evidence from its normal page-fetch pipeline, never from prose.
-	return { answer: answer || formatSearchResultsAsAnswer(results), results };
+	const results = applyDomainFilter([...sources.values()], domainFilter).slice(0, numResults);
+	// Match the Search API's source-list output, not Sonar's generated prose.
+	// Citation metadata is not page text: source_check must fetch its own evidence.
+	return { answer: formatSearchResultsAsAnswer(results), results };
 }
 
 export async function searchWithPerplexity(query: string, options: SearchOptions = {}): Promise<SearchResponse> {

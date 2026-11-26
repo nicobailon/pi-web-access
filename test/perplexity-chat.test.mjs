@@ -89,10 +89,27 @@ test("native citations use search_results metadata but never generated prose as 
 	`);
 	assert.equal(output.model, "sonar");
 	assert.deepEqual(output.result.results, [{ title: "API docs", url: PAGE, snippet: "" }]);
-	assert.equal(output.result.answer, `Generated answer [1](<${PAGE}>).`);
+	assert.equal(output.result.answer, `Source: API docs (${PAGE})`);
 });
 
-test("gateway citations retain non-sequential ref_id values and collapse duplicate URLs", async () => {
+for (const [name, content] of [
+	["inline code", "Claim [1]. Use `items[0]` and `items[1]`."],
+	["fenced code", "Claim [1].\n\n```js\nitems[0]; items[1];\n```\n\n~~~js\nitems[1];\n~~~"],
+]) {
+	test(`chat search returns only sources when generated prose contains ${name}`, async () => {
+		const output = await child({}, `
+			globalThis.fetch = async () => ${reply(chatReply(content, { citations: [PAGE] }))};
+			${load}
+			console.log(JSON.stringify(await searchWithPerplexity("q")));
+		`);
+		assert.deepEqual(output, {
+			answer: `Source: ${PAGE} (${PAGE})`,
+			results: [{ title: PAGE, url: PAGE, snippet: "" }],
+		});
+	});
+}
+
+test("gateway citations collapse duplicate URLs regardless of non-sequential ref_id values", async () => {
 	const output = await child({}, `
 		globalThis.fetch = async () => ${reply(chatReply("Answer [7] [2] [9].", {}, {
 			extensions: { citations: [
@@ -105,11 +122,11 @@ test("gateway citations retain non-sequential ref_id values and collapse duplica
 		console.log(JSON.stringify(await searchWithPerplexity("q")));
 	`);
 	assert.deepEqual(output.results.map(result => result.url), [PAGE, "https://example.org/other"]);
-	assert.equal(output.answer, `Answer [7](<${PAGE}>) [2](<${PAGE}>) [9](<https://example.org/other>).`);
+	assert.equal(output.answer, `Source: API docs (${PAGE})\n\nSource: Other (https://example.org/other)`);
 	assert.ok(output.results.every(result => result.snippet === ""));
 });
 
-test("invalid URLs are ignored, limits do not renumber citations, and missing references are explicit", async () => {
+test("invalid URLs are ignored and the result limit applies to deduplicated sources", async () => {
 	const output = await child({}, `
 		globalThis.fetch = async () => ${reply(chatReply("Answer [1] [3] [4] [5] [6] [99].", {
 			citations: ["javascript:alert(1)", "https://user:password@example.com/secret", PAGE, PAGE, "https://example.org/", "not-a-url"],
@@ -119,10 +136,10 @@ test("invalid URLs are ignored, limits do not renumber citations, and missing re
 	`);
 	assert.equal(output.results.length, 1);
 	assert.equal(output.results[0].url, PAGE);
-	assert.equal(output.answer, `Answer [citation 1 unavailable] [3](<${PAGE}>) [4](<${PAGE}>) [citation 5 unavailable] [citation 6 unavailable] [citation 99 unavailable].`);
+	assert.equal(output.answer, `Source: ${PAGE} (${PAGE})`);
 });
 
-test("conflicting citation IDs never link to an arbitrarily chosen source", async () => {
+test("sources with conflicting citation IDs remain independent search results", async () => {
 	const output = await child({}, `
 		globalThis.fetch = async () => ${reply(chatReply("Answer [1]", { citations: [PAGE] }, {
 			extensions: { citations: [{ ref_id: 1, url: "https://example.org/" }] },
@@ -130,8 +147,8 @@ test("conflicting citation IDs never link to an arbitrarily chosen source", asyn
 		${load}
 		console.log(JSON.stringify(await searchWithPerplexity("q")));
 	`);
-	assert.equal(output.answer, "Answer [citation 1 unavailable]");
-	assert.equal(output.results.length, 2);
+	assert.equal(output.answer, `Source: ${PAGE} (${PAGE})\n\nSource: https://example.org/ (https://example.org/)`);
+	assert.deepEqual(output.results.map(result => result.url), [PAGE, "https://example.org/"]);
 });
 
 test("uncited search_results remain usable sources without inventing citation IDs", async () => {
@@ -158,13 +175,13 @@ test("domain filtering drops excluded sources and prose that could cite them", a
 
 test("a citation-free response invents no results or passages, and domain filters fail closed", async () => {
 	const output = await child({}, `
-		globalThis.fetch = async () => ${reply(chatReply("Unsupported model assertion."))};
+		globalThis.fetch = async () => ${reply(chatReply("Unsupported assertion [1]. [Invented source](https://generated.example/)."))};
 		${load}
 		const plain = await searchWithPerplexity("q");
 		const filtered = await searchWithPerplexity("q", { domainFilter: ["example.com"] });
 		console.log(JSON.stringify({ plain, filtered }));
 	`);
-	assert.deepEqual(output.plain, { answer: "Unsupported model assertion.", results: [] });
+	assert.deepEqual(output.plain, { answer: "", results: [] });
 	assert.deepEqual(output.filtered, { answer: "", results: [] });
 });
 
