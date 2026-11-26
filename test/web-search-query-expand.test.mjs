@@ -84,6 +84,36 @@ function capturedQueries(home, params) {
 	return runWebSearch(home, params).queries;
 }
 
+test("web_search falls back to query when agents supply empty optional fields", async () => {
+	const home = await setupHome();
+	for (const model of ["", "  "]) {
+		const { result, queries } = runWebSearch(home, {
+			query: "fallback query", queries: [], model, provider: "stub", workflow: "none",
+		});
+		assert.notEqual(result.isError, true, result.content[0].text);
+		assert.deepEqual(queries, ["fallback query"]);
+	}
+});
+
+test("web_search keeps nonempty queries authoritative over query", async () => {
+	const home = await setupHome();
+	assert.deepEqual(capturedQueries(home, {
+		query: "ignored", queries: ["selected"], provider: "stub", workflow: "none",
+	}), ["selected"]);
+});
+
+test("web_search still rejects missing or blank query with empty queries", async () => {
+	const home = await setupHome();
+	for (const query of [undefined, "", "  "]) {
+		const { result, queries } = runWebSearch(home, {
+			query, queries: [], provider: "stub", workflow: "none",
+		});
+		assert.deepEqual(queries, []);
+		assert.equal(result.isError, true);
+		assert.equal(result.details.error, "No query provided");
+	}
+});
+
 test("web_search expands a JSON-array string in query into separate searches", async () => {
 	const home = await setupHome();
 	// What a small/local model actually sends: the queries array serialized as

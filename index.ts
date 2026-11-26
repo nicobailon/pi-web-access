@@ -1466,7 +1466,7 @@ export default function (pi: ExtensionAPI) {
 			// Nested calls neither open the curator unless asked nor fetch content in the background.
 			const nested = nestedSearchCallIds.delete(callId);
 			return markToolError(await runWithProxy(typeof params.proxy === "string" ? params.proxy : undefined, async () => {
-				const rawQueryList: unknown[] = Array.isArray(params.queries)
+				const rawQueryList: unknown[] = Array.isArray(params.queries) && params.queries.length > 0
 					? params.queries
 					: (params.query !== undefined ? expandQueryString(params.query) : []);
 				const queryList = normalizeQueryList(rawQueryList);
